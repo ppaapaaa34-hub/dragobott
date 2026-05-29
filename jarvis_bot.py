@@ -196,7 +196,20 @@ def handle_text(message):
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=error_text)
         else:
             bot.reply_to(message, error_text)
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import os
 
+# Функція для запуску фейкового веб-сервера
+def run_dummy_server():
+    # Render автоматично передає порт у змінну оточення PORT
+    port = int(os.environ.get("PORT", 8080))
+    server_address = ("", port)
+    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+    httpd.serve_forever()
+
+# Запускаємо сервер в окремому потоці, щоб він не заважав боту
+threading.Thread(target=run_dummy_server, daemon=True).start()
 # Запуск бота
 if __name__ == "__main__":
     print("=========================================")
