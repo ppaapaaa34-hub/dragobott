@@ -93,49 +93,59 @@ def send_meme(message):
 import io
 import random
 import requests
+from PIL import Image  # Переконайся, що Pillow є в requirements.txt
 
 # ===================================================================
-# 🖼️ КОМАНДА /generate (ЗАЛІЗОБЕТОННА ГЕНЕРАЦІЯ ГОТОВОЇ КАРТИНКИ В ЧАТ)
+# 🖼️ КОМАНДА /generate (ОЧІКУВАННЯ ГЕНЕРАЦІЇ + ВІДПРАВКА ГОТОВОГО ФОТО)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
-def generate_image_perfect(message):
-    # Забираємо промпт (пропускаємо перші 10 символів: "/generate ")
+def generate_image_wait_and_send(message):
+    # Відрізаємо команду "/generate " (10 символів)
     prompt = message.text[10:].strip()
 
     if not prompt:
-        bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate cyberpunk wolf")
+        bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate cyberpunk warrior wolf")
         return
 
-    # Надсилаємо статус
-    status_msg = bot.reply_to(message, "⏳ Драго малює твій шедевр... Зачекай пару секунд.")
+    # Попереджаємо юзера, що треба почекати, поки ШІ малює
+    status_msg = bot.reply_to(message, "⏳ Драго починає малювати... Це може зайняти від 30 секунд до 2 хвилин. Будь ласка, зачекай.")
 
     try:
-        # 1. Безпечно кодуємо промпт
+        # 1. Кодуємо текст промпту для безпечного URL
         encoded_prompt = requests.utils.quote(prompt)
         
-        # 2. Використовуємо стабільне інженерне API (швидкий сервер Stable Diffusion)
-        # Воно віддає готові байти без редиректів та черг
-        provider = random.choice(["prodia", "pollinations"]) # Рандомізуємо для стабільності
-        
-        if provider == "prodia":
-            # Чисте швидке дзеркало
-            image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=768&height=768&seed={random.randint(1, 999999)}&model=turbo&nologo=true"
-        else:
-            image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=768&height=768&seed={random.randint(1, 999999)}&model=dreamshaper&nologo=true"
+        # 2. Беремо топову модель Flux (вона малює довше, але якість — бомба)
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux&nologo=true"
 
-        # 3. Бот САМ іде в інтернет і чекає, поки картинка повністю скачається в пам'ять (до 30 секунд таймаут)
-        response = requests.get(image_url, timeout=30)
+        # 3. БОТ ЧЕКАЄ: Ставимо timeout=120 (це рівно 2 хвилини)
+        # Бот буде висіти і чекати, поки сервер повністю згенерує і віддасть усі байти
+        response = requests.get(image_url, timeout=120)
         
         if response.status_code == 200:
-            # Перевіряємо, чи це точно картинка, а не текст помилки JSON
-            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 5000:
-                raise Exception("Сервер віддав пустий файл або помилку черги.")
+            # Перевіряємо, чи нам не підсунули текст помилки замість картинки
+            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
+                raise Exception("Сервер ШІ перевантажений або повернув помилку ліміту.")
 
-            # Загортаємо готові байти у файл для Telegram
-            bio = io.BytesIO(response.content)
-            bio.name = 'drago_art.jpg'
+            # Оновлюємо статус у чаті, що байти отримано і ми їх обробляємо
+            try:
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=status_msg.message_id,
+                    text="⚡ Картинку згенеровано! Обробляю формат для Telegram..."
+                )
+            except Exception:
+                pass
+
+            # 4. ОБРОБКА ЧЕРЕЗ PILLOW (перетворюємо прогресивний JPEG у звичайний, щоб Telegram не падав)
+            img = Image.open(io.BytesIO(response.content))
+            img = img.convert("RGB")
             
-            # 4. Надсилаємо як ГОТОВЕ ФОТО. Оскільки байти вже на сервері Render, Telegram проковтне їх миттєво!
+            bio = io.BytesIO()
+            bio.name = 'drago_art.jpg'
+            img.save(bio, 'JPEG', progressive=False, quality=95)
+            bio.seek(0)  # Скидаємо покажчик на початок файлу
+
+            # 5. НАДСИЛАЄМО ГОТОВЕ ФОТО (воно розгорнеться відразу в чаті)
             bot.send_photo(
                 chat_id=message.chat.id,
                 photo=bio,
@@ -144,27 +154,27 @@ def generate_image_perfect(message):
                 reply_to_message_id=message.message_id
             )
             
-            # Видаляємо статус
+            # Видаляємо статус-повідомлення
             try:
                 bot.delete_message(message.chat.id, status_msg.message_id)
             except Exception:
                 pass
+                
         else:
-            raise Exception(f"Код відповіді сервера: {response.status_code}")
+            raise Exception(f"Сервер повернув код помилки: {response.status_code}")
 
     except Exception as e:
         print(f"Помилка генерації: {e}")
-        # Якщо Telegram чи сервер таки впали, бот не мовчить, а кидає пряме робоче посилання
+        error_text = str(e)[:100]
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram не зміг обробити файл прямо в чаті, тому тримай лінк:\n\n👉 <a href='https://image.pollinations.ai/p/{encoded_prompt}?model=turbo'>ВІДКРИТИ КАРТИНКУ</a>",
-                parse_mode="HTML",
-                disable_web_page_preview=False
+                text=f"❌ Не зміг отримати готову картинку.\nПомилка: <code>{error_text}</code>\n\nСпробуй повторити запит ще раз за хвилинку, бро.",
+                parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, "❌ Сервери малювання перевантажені. Спробуй ще раз за хвилину.")
+            bot.reply_to(message, "❌ Сервер малювання тимчасово ліг. Спробуй пізніше.")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
