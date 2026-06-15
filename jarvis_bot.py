@@ -88,8 +88,9 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
+
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (Перенесено вище тексту!)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ВИПРАВЛЕНО)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -104,44 +105,58 @@ def generate_image_gemini(message):
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Використовуємо твій імпорт 'genai' для виклику Imagen 3
-        imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
+        # ВИПРАВЛЕНО: Правильний виклик моделі Imagen через стару бібліотеку google-generativeai
+        model_imagen = genai.GenerativeModel("imagen-3.0-generate-002")
         
-        # Генеруємо зображення
-        result = imagen.generate_images(
-            prompt=prompt,
-            number_of_images=1,
-            aspect_ratio="1:1" # Квадратна картинка
-        )
+        # Запитуємо генерацію картини
+        result = model_imagen.generate_content(prompt)
 
-        # Оскільки результат повертає об'єкт зображення PIL, конвертуємо його в байти для Telegram
-        for image in result.images:
-            bio = io.BytesIO()
+        # Перевіряємо, чи повернулися взагалі якісь дані
+        # Бібліотека віддає малюнок у байтах прямо в першому атічменті (part)
+        try:
+            generated_part = result.candidates[0].content.parts[0]
+            # Якщо Google віддав байти картинки
+            image_bytes = generated_part.inline_data.data
+            bio = io.BytesIO(image_bytes)
             bio.name = 'image.jpeg'
-            image.image.save(bio, 'JPEG')
-            bio.seek(0)
-            
-            # Видаляємо статус-повідомлення "⏳ Драго запускає..."
-            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+        except (IndexError, AttributeError):
+            # Якщо синтаксис з інлайн-даними збійнув, пробуємо стандартний метод для зображень
+            # Деякі версії google-generativeai повертають PIL об'єкт у спеціальному атрибуті
+            if hasattr(result, 'images') and result.images:
+                bio = io.BytesIO()
+                bio.name = 'image.jpeg'
+                result.images[0].save(bio, 'JPEG')
+                bio.seek(0)
+            else:
+                raise Exception("Google API не повернув зображення у відповіді (можливо, цензура запиту)")
 
-            # Надсилаємо готове фото
-            bot.send_photo(
-                chat_id=message.chat.id,
-                photo=bio,
-                caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3)",
-                reply_to_message_id=message.message_id
-            )
+        # Видаляємо статус-повідомлення "⏳ Драго запускає..."
+        try:
+            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+        except Exception:
+            pass
+
+        # Надсилаємо готове фото
+        bot.send_photo(
+            chat_id=message.chat.id,
+            photo=bio,
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3)",
+            reply_to_message_id=message.message_id
+        )
 
     except Exception as e:
         print(f"Помилка генерації зображення: {e}")
+        # Виводимо реальну помилку в консоль і даємо юзеру знати, що сталося
+        error_text = f"❌ Щось пішло не так при створенні картинки.\nДебаг: <code>{str(e)[:100]}</code>"
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text="❌ Щось пішло не так при створенні картинки. Зміни опис або спробуй пізніше."
+                text=error_text,
+                parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, "❌ Щось пішло не так при створенні картинки. Зміни опис або спробуй пізніше.")
+            bot.reply_to(message, error_text)
 
 
 # ===================================================================
