@@ -91,40 +91,39 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ОФІЦІЙНИЙ ТА СТАБІЛЬНИЙ GOOGLE IMAGEN 3)
+# 🖼️ 2. КОМАНДА /generate (ФІКС ОФІЦІЙНОГО GOOGLE IMAGEN 3)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Забираємо текст після команди /generate
+    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Надсилаємо статус-повідомлення
+    # Надсилаємо повідомлення про старт генерації
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Викликаємо офіційну модель Imagen 3 через встановлену бібліотеку Google
-        imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-002")
-        
-        # Запускаємо генерацію
-        result = imagen_model.generate_images(
+        # ПРАВИЛЬНИЙ виклик для поточної бібліотеки google-generativeai
+        # Використовуємо функцію generate_images напряму з модуля genai
+        result = genai.generate_images(
+            model="imagen-3.0-generate-002",
             prompt=prompt,
             number_of_images=1,
             aspect_ratio="1:1"
         )
         
-        # Дістаємо байти згенерованого зображення
+        # Дістаємо байти картинки з результату
         generated_image = result.images[0]
         image_bytes = generated_image.image.bytes
         
-        # Загортаємо в потік для Telegram
+        # Загортаємо байти в потік для Telegram
         bio = io.BytesIO(image_bytes)
         bio.name = 'drago_art.jpg'
 
-        # Надсилаємо чисту, соковиту картинку як ФОТО
+        # Надсилаємо готове фото користувачу
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
@@ -132,7 +131,7 @@ def generate_image_gemini(message):
             reply_to_message_id=message.message_id
         )
 
-        # Видаляємо статус тільки після успішної відправки
+        # Видаляємо статус "Драго запускає Imagen 3"
         try:
             bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
         except Exception:
@@ -140,18 +139,18 @@ def generate_image_gemini(message):
 
     except Exception as e:
         print(f"Помилка генерації Google Imagen: {e}")
-        error_details = str(e)[:200]
+        error_details = str(e)[:250]
         
-        # Якщо Google знову капризує через білінг чи регіон, миттєво повідомляємо в чат
+        # Якщо Google видасть помилку (наприклад, ліміти чи білінг) — виводимо її в чат
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Не зміг намалювати через Google API.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
+                text=f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
                 parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, f"❌ Помилка: {error_details}")
+            bot.reply_to(message, f"❌ Помилка генерації: {error_details}")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
