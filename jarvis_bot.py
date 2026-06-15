@@ -90,84 +90,87 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ОПТИМІЗОВАНО З ОБРОБКОЮ JSON)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ОФІЦІЙНИЙ МЕТОД GOOGLE API)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
+    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
+    # Надсилаємо повідомлення про старт генерації
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Прямий запит до Imagen 3 API v1beta
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
+        # Офіційне та правильне URL для Imagen 3 у Gemini API через метод :predict
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={GEMINI_API_KEY}"
         
+        # Актуальна структура payload для методу :predict відповідно до документації Google
         payload = {
-            "prompt": prompt,
-            "numberOfImages": 1,
-            "aspectRatio": "1:1",
-            "outputMimeType": "image/jpeg"
+            "instances": [
+                {
+                    "prompt": prompt
+                }
+            ],
+            "parameters": {
+                "sampleCount": 1,        # Кількість картинок
+                "aspectRatio": "1:1",     # Формат (квадрат)
+                "outputMimeType": "image/jpeg"
+            }
         }
         
         headers = {
             "Content-Type": "application/json"
         }
 
-        # Відправляємо запит і отримуємо відповідь
+        # Робимо прямий POST запит до сервера Google
         response = requests.post(url, json=payload, headers=headers)
         
-        # --- ПОКРАЩЕНА ПЕРЕВІРКА ВІДПОВІДІ ---
-        # Спочатку перевіряємо, чи взагалі запит пройшов успішно (код 200)
+        # Перевіряємо, чи взагалі пройшов запит
         if response.status_code != 200:
-            raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}\n(Можливо, проблеми з квотами або балансом)")
-        
-        # Намагаємося перетворити відповідь у JSON, обережно обробляючи помилку JSONDecodeError
+            raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. Можливо, опис заблоковано цензурою або є проблеми з білінгом.")
+
         try:
             response_data = response.json()
         except requests.exceptions.JSONDecodeError:
-            # Якщо Google повернув щось інше замість JSON (HTML помилку, пустку)
-            raise Exception(f"Google Cloud Error: Сервер повернув пусту відповідь або HTML замість JSON.\n(Тимчасовий збій Google API або цензура промпта)")
+            raise Exception("Google Cloud Error: Сервер повернув пусту або некоректну відповідь замість JSON.")
 
-        # Перевіряємо, чи Google повернув помилку всередині JSON
+        # Обробка помилок усередині відповіді від Google
         if "error" in response_data:
             error_msg = response_data["error"].get("message", "Невідома помилка API")
-            raise Exception(f"Google Cloud Error: {error_msg}")
+            raise Exception(f"Google API Error: {error_msg}")
 
-        # Дістаємо та декодуємо Base64 байти зображення
+        # Дістаємо картинку, яка у методі :predict лежить за іншим шляхом у JSON
         try:
-            image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
+            # У структурі :predict картинки повертаються у списку predictions
+            image_base64 = response_data["predictions"][0]["bytesBase64Encoded"]
             image_bytes = base64.b64decode(image_base64)
             bio = io.BytesIO(image_bytes)
             bio.name = 'image.jpeg'
         except (KeyError, IndexError):
-            raise Exception("Google API повернув пусту відповідь або заблокував генерацію (цензура).")
+            raise Exception("Google API успішно виконав запит, але не зміг віддати байти картини (можливо, цензура промпту).")
 
-        # Видаляємо статус
+        # Видаляємо проміжне статус-повідомлення
         try:
             bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
         except Exception:
             pass
 
-        # Надсилаємо готове фото
+        # Надсилаємо готове фото в Telegram
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з платного тарифу)",
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з твого платного акаунту)",
             reply_to_message_id=message.message_id
         )
 
     except Exception as e:
         print(f"Помилка генерації зображення: {e}")
-        error_details = str(e)[:200]
-        # Залишаємо зухвалий дебаг, але додаємо більше конкретики
-        error_text = (
-            f"❌ Щось пішло не так при створенні картинки.\n\n"
-            f"<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>"
-        )
+        error_details = str(e)[:250]
+        error_text = f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>"
         
         try:
             bot.edit_message_text(
