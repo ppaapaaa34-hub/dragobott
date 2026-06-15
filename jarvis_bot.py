@@ -1,4 +1,5 @@
 import os
+import base64
 import requests
 import random
 import io
@@ -89,72 +90,89 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
+
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ФІНАЛЬНИЙ ФІКС ЧЕРЕЗ PRODIA API)
+# 🖼️ 2. КОМАНДА /generate (ФІНАЛЬНИЙ РОБОЧИЙ ВАРІАНТ ЧЕРЕЗ ОФІЦІЙНИЙ IMAGEN 3)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Відокремлюємо промпт від команди
+    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Створюємо повідомлення-статус
-    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай пару секунд.")
+    # Надсилаємо повідомлення про старт генерації
+    status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Безпечно кодуємо промпт для URL
-        encoded_prompt = requests.utils.quote(prompt)
+        # Офіційний правильний шлях до Imagen 3 в Gemini API v1beta
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
         
-        # Використовуємо стабільний IMAGE.PRODIA.COM API
-        # Він працює через метод GET і віддає чисте фото миттєво
-        image_url = f"https://image.prodia.com/generate?prompt={encoded_prompt}&width=1024&height=1024&seed={random.randint(1, 999999)}&model=sdxl_base_1.0.safetensors&aspect_ratio=square"
+        # Актуальна структура JSON-запиту для Gemini API зображень
+        payload = {
+            "prompt": prompt,
+            "numberOfImages": 1,
+            "outputMimeType": "image/jpeg",
+            "aspectRatio": "1:1"
+        }
         
-        # Намагаємося завантажити картинку з Prodia локально, щоб Telegram не конфліктував
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        # Робимо прямий POST запит до серверів Google
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        # Перевіряємо статус відповіді
+        if response.status_code != 200:
+            raise Exception(f"Google Cloud Error: {response.status_code}. Текст: {response.text[:100]}")
+
+        response_data = response.json()
+
+        # Обробка помилок всередині відповіді від Google
+        if "error" in response_data:
+            error_msg = response_data["error"].get("message", "Невідома помилка API")
+            raise Exception(f"Google API Error: {error_msg}")
+
+        # Дістаємо картинку з масиву generatedImages (вона прилітає у форматі Base64)
         try:
-            response = requests.get(image_url, timeout=30)
-            if response.status_code == 200:
-                bio = io.BytesIO(response.content)
-                bio.name = 'image.jpeg'
-                
-                # Надсилаємо фото в Telegram
-                bot.send_photo(
-                    chat_id=message.chat.id,
-                    photo=bio,
-                    caption=f"🔥 Твоя картинка готова, бро! Запит: {prompt}\n(Згенеровано Драго через Prodia/Stable Diffusion XL)",
-                    reply_to_message_id=message.message_id
-                )
-                
-                # Якщо все пройшло успішно, видаляємо статус "Драго малює"
-                bot.delete_message(message.chat.id, status_msg.message_id)
-            else:
-                raise Exception(f"Prodia API відхилив запит (код {response.status_code})")
-                
-        except Exception as prodia_err:
-            print(f"Помилка при роботі з Prodia: {prodia_err}")
-            # Резервний метод: якщо Telegram API не хоче приймати пряму картинку,
-            # ми все одно даємо клікабельне посилання, як раніше
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id,
-                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram API трохи затупив з відображенням фото, але тримай посилання:\n\n👉 <a href='{image_url}'>ВІДКРИТИ КАРТИНКУ</a>",
-                parse_mode="HTML",
-                disable_web_page_preview=False
-            )
+            image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
+            image_bytes = base64.b64decode(image_base64)
+            bio = io.BytesIO(image_bytes)
+            bio.name = 'image.jpeg'
+        except (KeyError, IndexError):
+            raise Exception("API успішно виконав запит, але структура JSON змінилася або спрацювала цензура безпеки.")
+
+        # Спочатку надсилаємо готове фото в Telegram
+        bot.send_photo(
+            chat_id=message.chat.id,
+            photo=bio,
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через офіційний Imagen 3)",
+            reply_to_message_id=message.message_id
+        )
+
+        # Видаляємо статус-повідомлення тільки після успішної відправки фото
+        try:
+            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+        except Exception:
+            pass
 
     except Exception as e:
-        print(f"Загальна помилка генерації: {e}")
+        print(f"Помилка генерації зображення: {e}")
+        error_details = str(e)[:250]
+        
+        # Якщо впало — не мовчимо, а пишемо дебаг у чат
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Не зміг намалювати. Спробуй ще раз. Помилка: {str(e)[:100]}"
+                text=f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
+                parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, f"❌ Помилка: {str(e)[:100]}")
-
+            bot.reply_to(message, f"❌ Помилка генерації: {error_details}")
 
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
