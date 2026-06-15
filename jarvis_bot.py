@@ -90,25 +90,22 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ДЛЯ ПЛАТНИХ АКАУНТІВ)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ОПТИМІЗОВАНО З ОБРОБКОЮ JSON)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Надсилаємо повідомлення про старт генерації
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Офіційне URL для прямого запиту до Imagen 3 через Google API v1beta
+        # Прямий запит до Imagen 3 API v1beta
         url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
         
-        # Налаштування параметрів генерації згідно з документацією Google
         payload = {
             "prompt": prompt,
             "numberOfImages": 1,
@@ -120,32 +117,42 @@ def generate_image_gemini(message):
             "Content-Type": "application/json"
         }
 
-        # Робимо прямий запит до серверів Google
+        # Відправляємо запит і отримуємо відповідь
         response = requests.post(url, json=payload, headers=headers)
-        response_data = response.json()
+        
+        # --- ПОКРАЩЕНА ПЕРЕВІРКА ВІДПОВІДІ ---
+        # Спочатку перевіряємо, чи взагалі запит пройшов успішно (код 200)
+        if response.status_code != 200:
+            raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}\n(Можливо, проблеми з квотами або балансом)")
+        
+        # Намагаємося перетворити відповідь у JSON, обережно обробляючи помилку JSONDecodeError
+        try:
+            response_data = response.json()
+        except requests.exceptions.JSONDecodeError:
+            # Якщо Google повернув щось інше замість JSON (HTML помилку, пустку)
+            raise Exception(f"Google Cloud Error: Сервер повернув пусту відповідь або HTML замість JSON.\n(Тимчасовий збій Google API або цензура промпта)")
 
-        # Якщо Google повернув помилку (наприклад, проблеми з балансом або лімітами)
+        # Перевіряємо, чи Google повернув помилку всередині JSON
         if "error" in response_data:
             error_msg = response_data["error"].get("message", "Невідома помилка API")
-            raise Exception(f"Google API Error: {error_msg}")
+            raise Exception(f"Google Cloud Error: {error_msg}")
 
-        # Дістаємо байти картинки, які Google повертає закодованими в Base64
+        # Дістаємо та декодуємо Base64 байти зображення
         try:
             image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
-            import base64
             image_bytes = base64.b64decode(image_base64)
             bio = io.BytesIO(image_bytes)
             bio.name = 'image.jpeg'
         except (KeyError, IndexError):
-            raise Exception("Google API повернув пусту відповідь або не зміг віддати байти картини.")
+            raise Exception("Google API повернув пусту відповідь або заблокував генерацію (цензура).")
 
-        # Видаляємо статус-повідомлення "⏳ Драго запускає..."
+        # Видаляємо статус
         try:
             bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
         except Exception:
             pass
 
-        # Надсилаємо готове фото в Telegram
+        # Надсилаємо готове фото
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
@@ -156,7 +163,11 @@ def generate_image_gemini(message):
     except Exception as e:
         print(f"Помилка генерації зображення: {e}")
         error_details = str(e)[:200]
-        error_text = f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки:</b>\n<code>{error_details}</code>"
+        # Залишаємо зухвалий дебаг, але додаємо більше конкретики
+        error_text = (
+            f"❌ Щось пішло не так при створенні картинки.\n\n"
+            f"<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>"
+        )
         
         try:
             bot.edit_message_text(
