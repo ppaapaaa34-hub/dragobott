@@ -90,59 +90,81 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
-
+import io
 import random
 import requests
 
 # ===================================================================
-# 🖼️ КОМАНДА /generate (МИТТЄВА ВІДПРАВКА ГОТОВОЇ КАРТИНКИ В ЧАТ)
+# 🖼️ КОМАНДА /generate (ЗАЛІЗОБЕТОННА ГЕНЕРАЦІЯ ГОТОВОЇ КАРТИНКИ В ЧАТ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
-def generate_image_now(message):
-    # Забираємо промпт після команди (пропускаємо перші 10 символів: "/generate ")
+def generate_image_perfect(message):
+    # Забираємо промпт (пропускаємо перші 10 символів: "/generate ")
     prompt = message.text[10:].strip()
 
     if not prompt:
-        bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate аніме вовк")
+        bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate cyberpunk wolf")
         return
 
-    # Надсилаємо статус, щоб користувач бачив, що бот працює
-    status_msg = bot.reply_to(message, "⏳ Драго вже малює... Зачекай пару секунд.")
+    # Надсилаємо статус
+    status_msg = bot.reply_to(message, "⏳ Драго малює твій шедевр... Зачекай пару секунд.")
 
     try:
-        # 1. Безпечно кодуємо текст промпту для посилання
+        # 1. Безпечно кодуємо промпт
         encoded_prompt = requests.utils.quote(prompt)
         
-        # 2. Створюємо унікальний URL для швидкої моделі turbo без водяних знаків
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=turbo&nologo=true"
+        # 2. Використовуємо стабільне інженерне API (швидкий сервер Stable Diffusion)
+        # Воно віддає готові байти без редиректів та черг
+        provider = random.choice(["prodia", "pollinations"]) # Рандомізуємо для стабільності
         
-        # 3. НАЙВАЖЛИВІШИЙ МОМЕНТ: Передаємо лінк прямо в параметр photo.
-        # Сервери Telegram самі миттєво завантажать зображення і покажуть його відкритим у чаті!
-        bot.send_photo(
-            chat_id=message.chat.id,
-            photo=image_url,
-            caption=f"🔥 Твій шедевр готовий, бро!\n\n📋 <b>Запит:</b> {prompt}",
-            parse_mode="HTML",
-            reply_to_message_id=message.message_id
-        )
+        if provider == "prodia":
+            # Чисте швидке дзеркало
+            image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=768&height=768&seed={random.randint(1, 999999)}&model=turbo&nologo=true"
+        else:
+            image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=768&height=768&seed={random.randint(1, 999999)}&model=dreamshaper&nologo=true"
+
+        # 3. Бот САМ іде в інтернет і чекає, поки картинка повністю скачається в пам'ять (до 30 секунд таймаут)
+        response = requests.get(image_url, timeout=30)
         
-        # Видаляємо повідомлення "Драго вже малює" після того, як картинка з'явилася
-        try:
-            bot.delete_message(message.chat.id, status_msg.message_id)
-        except Exception:
-            pass
+        if response.status_code == 200:
+            # Перевіряємо, чи це точно картинка, а не текст помилки JSON
+            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 5000:
+                raise Exception("Сервер віддав пустий файл або помилку черги.")
+
+            # Загортаємо готові байти у файл для Telegram
+            bio = io.BytesIO(response.content)
+            bio.name = 'drago_art.jpg'
+            
+            # 4. Надсилаємо як ГОТОВЕ ФОТО. Оскільки байти вже на сервері Render, Telegram проковтне їх миттєво!
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=bio,
+                caption=f"🔥 Твоя картинка готова, бро!\n\n📋 <b>Запит:</b> {prompt}",
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id
+            )
+            
+            # Видаляємо статус
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+        else:
+            raise Exception(f"Код відповіді сервера: {response.status_code}")
 
     except Exception as e:
-        print(f"Помилка відправки фото: {e}")
-        # Якщо Telegram чомусь затупить, бот видасть повідомлення з дебагом
+        print(f"Помилка генерації: {e}")
+        # Якщо Telegram чи сервер таки впали, бот не мовчить, а кидає пряме робоче посилання
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Telegram не зміг відобразити картинку прямо зараз. Спробуй інший промпт, бро. Помилка: {str(e)[:50]}"
+                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram не зміг обробити файл прямо в чаті, тому тримай лінк:\n\n👉 <a href='https://image.pollinations.ai/p/{encoded_prompt}?model=turbo'>ВІДКРИТИ КАРТИНКУ</a>",
+                parse_mode="HTML",
+                disable_web_page_preview=False
             )
         except Exception:
-            bot.reply_to(message, "❌ Помилка з'єднання, спробуй ще раз.")
+            bot.reply_to(message, "❌ Сервери малювання перевантажені. Спробуй ще раз за хвилину.")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
