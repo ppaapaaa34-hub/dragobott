@@ -90,66 +90,68 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
-
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (БЕЗВІДКАЗНИЙ ВАРІАНТ ЧЕРЕЗ ДОКУМЕНТ)
+# 🖼️ 2. КОМАНДА /generate (ОФІЦІЙНИЙ ТА СТАБІЛЬНИЙ GOOGLE IMAGEN 3)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Відокремлюємо промпт від команди
+    # Забираємо текст після команди /generate
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Створюємо повідомлення-статус
-    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай пару секунд.")
+    # Надсилаємо статус-повідомлення
+    status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Безпечно кодуємо промпт для URL
-        encoded_prompt = requests.utils.quote(prompt)
+        # Викликаємо офіційну модель Imagen 3 через встановлену бібліотеку Google
+        imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-002")
         
-        # Повертаємо круту модель Flux (вона малює найкраще у світі)
-        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux"
+        # Запускаємо генерацію
+        result = imagen_model.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            aspect_ratio="1:1"
+        )
         
-        # Локально завантажуємо сирі байти з Pollinations
-        response = requests.get(image_url, timeout=30)
+        # Дістаємо байти згенерованого зображення
+        generated_image = result.images[0]
+        image_bytes = generated_image.image.bytes
         
-        if response.status_code == 200:
-            # Загортаємо байти у файл
-            bio = io.BytesIO(response.content)
-            bio.name = 'drago_art.jpg'  # Даємо розширення файлу
-            
-            # НАДСИЛАЄМО ЯК ДОКУМЕНТ. Це обходить будь-які затики процесингу фото в Telegram!
-            bot.send_document(
-                chat_id=message.chat.id,
-                document=bio,
-                caption=f"🔥 Твоя картинка готова, бро! Запит: {prompt}\n(Згенеровано Драго через Flux у високій якості)",
-                reply_to_message_id=message.message_id
-            )
-            
-            # Видаляємо статус "Драго малює"
-            try:
-                bot.delete_message(message.chat.id, status_msg.message_id)
-            except Exception:
-                pass
-        else:
-            raise Exception(f"Сервер Pollinations повернув код {response.status_code}")
+        # Загортаємо в потік для Telegram
+        bio = io.BytesIO(image_bytes)
+        bio.name = 'drago_art.jpg'
+
+        # Надсилаємо чисту, соковиту картинку як ФОТО
+        bot.send_photo(
+            chat_id=message.chat.id,
+            photo=bio,
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через офіційний Imagen 3.0)",
+            reply_to_message_id=message.message_id
+        )
+
+        # Видаляємо статус тільки після успішної відправки
+        try:
+            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+        except Exception:
+            pass
 
     except Exception as e:
-        print(f"Загальна помилка генерації: {e}")
-        # Якщо впаде навіть як файл — даємо пряме робоче посилання
+        print(f"Помилка генерації Google Imagen: {e}")
+        error_details = str(e)[:200]
+        
+        # Якщо Google знову капризує через білінг чи регіон, миттєво повідомляємо в чат
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram таки заблокував пряму відправку, але тримай лінк на свій шедевр:\n\n👉 <a href='{image_url}'>ВІДКРИТИ КАРТИНКУ</a>",
+                text=f"❌ Не зміг намалювати через Google API.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
                 parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, f"❌ Помилка: {str(e)[:50]}")
-
+            bot.reply_to(message, f"❌ Помилка: {error_details}")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
