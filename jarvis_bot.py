@@ -22,7 +22,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Налаштування конфігурації генерації (максимум токенів для повних відповідей)
 generation_config = {
-    "max_output_tokens": 2048,  # Дозволяємо писати великі розгорнуті тексти
+    "max_output_tokens": 2048,  # коротко і ясно
     "temperature": 0.85,
 }
 
