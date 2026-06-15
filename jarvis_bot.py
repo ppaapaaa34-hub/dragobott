@@ -94,80 +94,55 @@ def send_meme(message):
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
+    # Відокремлюємо промпт від команди
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
+    # Створюємо повідомлення-статус
     status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай секунду.")
 
     try:
-        # Формуємо URL для генерації (використовуємо випадкове число seed для унікальності)
+        # Безпечно кодуємо промпт для URL
         encoded_prompt = requests.utils.quote(prompt)
         image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux"
         
-        # Завантажуємо картинку з URL
-        response = requests.get(image_url)
+        # Робимо запит до Pollinations з таймаутом, щоб бот не зависав назавжди
+        response = requests.get(image_url, timeout=20)
         
         if response.status_code == 200:
             bio = io.BytesIO(response.content)
             bio.name = 'image.jpeg'
             
-            bot.delete_message(message.chat.id, status_msg.message_id)
-            
+            # СПОЧАТКУ надсилаємо фото
             bot.send_photo(
                 chat_id=message.chat.id,
                 photo=bio,
                 caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Flux/Pollinations)",
                 reply_to_message_id=message.message_id
             )
+            
+            # ТІЛЬКИ ПІСЛЯ УСПІШНОЇ ВІДПРАВКИ видаляємо статус "Драго малює"
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
         else:
-            raise Exception(f"Сервер генерації повернув помилку {response.status_code}")
+            raise Exception(f"Сервер ліг (код {response.status_code})")
 
     except Exception as e:
         print(f"Помилка генерації: {e}")
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=status_msg.message_id,
-            text=f"❌ Не зміг намалювати. Спробуй ще раз, бро. Помилка: {str(e)[:50]}"
-        )
-            
-# ===================================================================
-# 📷 3. ЗІР (ОБРОБКА ФОТО)
-# ===================================================================
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    chat_id = message.chat.id
-    chat_type = message.chat.type
-    caption = message.caption or "Уважно подивись на це photo, розпізнай що на ньому зображено і розпиши своїми словами."
-
-    if chat_type in ['group', 'supergroup']:
-        trigger_words = ['драго', 'джарвіс']
-        if not (any(w in caption.lower() for w in trigger_words) or f"@{bot.get_me().username}" in caption):
-            return
-
-    try:
-        bot.send_chat_action(chat_id, 'typing')
-        
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        
-        image_part = {
-            "data": downloaded_file,
-            "mime_type": "image/jpeg"
-        }
-        
-        response = model.generate_content([caption, image_part])
-        
+        # Якщо щось пішло не так — міняємо текст статусу на помилку, а не видаляємо його
         try:
-            bot.reply_to(message, response.text, parse_mode="Markdown")
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=status_msg.message_id,
+                text=f"❌ Не зміг намалювати. Спробуй ще раз, бро. Помилка: {str(e)[:100]}"
+            )
         except Exception:
-            bot.reply_to(message, response.text)  # Беккап без розмітки
-            
-    except Exception as e:
-        print(f"Помилка обробки фото: {e}")
-        bot.reply_to(message, "Не зміг нормально роздивитися фотку, якась лажа з файлом.")
+            bot.reply_to(message, f"❌ Помилка: {str(e)[:100]}")
 
 
 # ===================================================================
