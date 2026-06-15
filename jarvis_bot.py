@@ -207,7 +207,56 @@ def run_dummy_server():
     server_address = ("", port)
     httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
     httpd.serve_forever()
+# Хендлер на команду /generate для генерації картинок через твою бібліотеку
+@bot.message_handler(commands=['generate'])
+def generate_image_gemini(message):
+    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
+    prompt = message.text[9:].strip()
 
+    if not prompt:
+        bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
+        return
+
+    # Надсилаємо повідомлення про старт генерації
+    status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
+
+    try:
+        # Використовуємо твій імпорт 'genai' для виклику Imagen 3
+        # Завантажуємо модель для зображень
+        imagen = genai.ImageGenerationModel("imagen-3.0-generate-002")
+        
+        # Генеруємо зображення
+        result = imagen.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            aspect_ratio="1:1" # Квадратна картинка
+        )
+
+        # Оскільки результат повертає об'єкт зображення PIL, конвертуємо його в байти для Telegram
+        for image in result.images:
+            bio = io.BytesIO()
+            bio.name = 'image.jpeg'
+            image.image.save(bio, 'JPEG')
+            bio.seek(0)
+            
+            # Видаляємо статус-повідомлення "⏳ Драго запускає..."
+            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+
+            # Надсилаємо готове фото
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=bio,
+                caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3)",
+                reply_to_message_id=message.message_id
+            )
+
+    except Exception as e:
+        print(f"Помилка генерації зображення: {e}")
+        bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=status_msg.message_id,
+            text="❌ Щось пішло не так при створенні картинки. Зміни опис або спробуй пізніше."
+        )
 # Запускаємо сервер в окремому потоці, щоб він не заважав боту
 threading.Thread(target=run_dummy_server, daemon=True).start()
 # Запуск бота
