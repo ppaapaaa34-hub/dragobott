@@ -90,7 +90,7 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ОПТИМІЗОВАНО ЧЕРЕЗ POLLINATIONS AI)
+# 🖼️ 2. КОМАНДА /generate (ВАРІАНТ З ФІКСОМ IMAGE_PROCESS_FAILED)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -107,34 +107,45 @@ def generate_image_gemini(message):
     try:
         # Безпечно кодуємо промпт для URL
         encoded_prompt = requests.utils.quote(prompt)
-        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux"
         
-        # Робимо запит до Pollinations з таймаутом, щоб бот не зависав назавжди
+        # Використовуємо модель turbo — вона генерує миттєво і дає ідеальний формат для Telegram
+        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=turbo"
+        
+        # Робимо запит до Pollinations з таймаутом
         response = requests.get(image_url, timeout=20)
         
         if response.status_code == 200:
             bio = io.BytesIO(response.content)
             bio.name = 'image.jpeg'
             
-            # СПОЧАТКУ надсилаємо фото
-            bot.send_photo(
-                chat_id=message.chat.id,
-                photo=bio,
-                caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Flux/Pollinations)",
-                reply_to_message_id=message.message_id
-            )
-            
-            # ТІЛЬКИ ПІСЛЯ УСПІШНОЇ ВІДПРАВКИ видаляємо статус "Драго малює"
+            # Намагаємося надіслати картинку як фото
             try:
+                bot.send_photo(
+                    chat_id=message.chat.id,
+                    photo=bio,
+                    caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Pollinations)",
+                    reply_to_message_id=message.message_id
+                )
+                
+                # Тільки після успішної відправки видаляємо статус "Драго малює"
                 bot.delete_message(message.chat.id, status_msg.message_id)
-            except Exception:
-                pass
+                
+            except Exception as tel_err:
+                # АЛЬТЕРНАТИВА: Якщо Telegram знову лається на формат файлу (IMAGE_PROCESS_FAILED),
+                # ми просто кидаємо йому пряме посилання на зображення, яке Telegram завантажить сам!
+                print(f"Telegram не зміг обробити байти: {tel_err}")
+                
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=status_msg.message_id,
+                    text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram крутить носом через формат файлу, тому тримай пряме посилання:\n\n👉 <a href='{image_url}'>ВІДКРИТИ КАРТИНКУ</a>",
+                    parse_mode="HTML"
+                )
         else:
-            raise Exception(f"Сервер ліг (код {response.status_code})")
+            raise Exception(f"Сервер генерації повернув код {response.status_code}")
 
     except Exception as e:
-        print(f"Помилка генерації: {e}")
-        # Якщо щось пішло не так — міняємо текст статусу на помилку, а не видаляємо його
+        print(f"Загальна помилка генерації: {e}")
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
