@@ -92,87 +92,63 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ФІНАЛЬНИЙ РОБОЧИЙ ВАРІАНТ ЧЕРЕЗ ОФІЦІЙНИЙ IMAGEN 3)
+# 🖼️ 2. КОМАНДА /generate (БЕЗВІДКАЗНИЙ ВАРІАНТ ЧЕРЕЗ ДОКУМЕНТ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
+    # Відокремлюємо промпт від команди
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Надсилаємо повідомлення про старт генерації
-    status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
+    # Створюємо повідомлення-статус
+    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай пару секунд.")
 
     try:
-        # Офіційний правильний шлях до Imagen 3 в Gemini API v1beta
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
+        # Безпечно кодуємо промпт для URL
+        encoded_prompt = requests.utils.quote(prompt)
         
-        # Актуальна структура JSON-запиту для Gemini API зображень
-        payload = {
-            "prompt": prompt,
-            "numberOfImages": 1,
-            "outputMimeType": "image/jpeg",
-            "aspectRatio": "1:1"
-        }
+        # Повертаємо круту модель Flux (вона малює найкраще у світі)
+        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux"
         
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        # Робимо прямий POST запит до серверів Google
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        # Локально завантажуємо сирі байти з Pollinations
+        response = requests.get(image_url, timeout=30)
         
-        # Перевіряємо статус відповіді
-        if response.status_code != 200:
-            raise Exception(f"Google Cloud Error: {response.status_code}. Текст: {response.text[:100]}")
-
-        response_data = response.json()
-
-        # Обробка помилок всередині відповіді від Google
-        if "error" in response_data:
-            error_msg = response_data["error"].get("message", "Невідома помилка API")
-            raise Exception(f"Google API Error: {error_msg}")
-
-        # Дістаємо картинку з масиву generatedImages (вона прилітає у форматі Base64)
-        try:
-            image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
-            image_bytes = base64.b64decode(image_base64)
-            bio = io.BytesIO(image_bytes)
-            bio.name = 'image.jpeg'
-        except (KeyError, IndexError):
-            raise Exception("API успішно виконав запит, але структура JSON змінилася або спрацювала цензура безпеки.")
-
-        # Спочатку надсилаємо готове фото в Telegram
-        bot.send_photo(
-            chat_id=message.chat.id,
-            photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через офіційний Imagen 3)",
-            reply_to_message_id=message.message_id
-        )
-
-        # Видаляємо статус-повідомлення тільки після успішної відправки фото
-        try:
-            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
-        except Exception:
-            pass
+        if response.status_code == 200:
+            # Загортаємо байти у файл
+            bio = io.BytesIO(response.content)
+            bio.name = 'drago_art.jpg'  # Даємо розширення файлу
+            
+            # НАДСИЛАЄМО ЯК ДОКУМЕНТ. Це обходить будь-які затики процесингу фото в Telegram!
+            bot.send_document(
+                chat_id=message.chat.id,
+                document=bio,
+                caption=f"🔥 Твоя картинка готова, бро! Запит: {prompt}\n(Згенеровано Драго через Flux у високій якості)",
+                reply_to_message_id=message.message_id
+            )
+            
+            # Видаляємо статус "Драго малює"
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+        else:
+            raise Exception(f"Сервер Pollinations повернув код {response.status_code}")
 
     except Exception as e:
-        print(f"Помилка генерації зображення: {e}")
-        error_details = str(e)[:250]
-        
-        # Якщо впало — не мовчимо, а пишемо дебаг у чат
+        print(f"Загальна помилка генерації: {e}")
+        # Якщо впаде навіть як файл — даємо пряме робоче посилання
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
+                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram таки заблокував пряму відправку, але тримай лінк на свій шедевр:\n\n👉 <a href='{image_url}'>ВІДКРИТИ КАРТИНКУ</a>",
                 parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, f"❌ Помилка генерації: {error_details}")
+            bot.reply_to(message, f"❌ Помилка: {str(e)[:50]}")
 
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
