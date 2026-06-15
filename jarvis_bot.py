@@ -88,9 +88,8 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
-
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ВИПРАВЛЕНО)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ДЛЯ ПЛАТНИХ АКАУНТІВ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -105,30 +104,39 @@ def generate_image_gemini(message):
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # ВИПРАВЛЕНО: Правильний виклик моделі Imagen через стару бібліотеку google-generativeai
-        model_imagen = genai.GenerativeModel("imagen-3.0-generate-002")
+        # Офіційне URL для прямого запиту до Imagen 3 через Google API v1beta
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
         
-        # Запитуємо генерацію картини
-        result = model_imagen.generate_content(prompt)
+        # Налаштування параметрів генерації згідно з документацією Google
+        payload = {
+            "prompt": prompt,
+            "numberOfImages": 1,
+            "aspectRatio": "1:1",
+            "outputMimeType": "image/jpeg"
+        }
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
 
-        # Перевіряємо, чи повернулися взагалі якісь дані
-        # Бібліотека віддає малюнок у байтах прямо в першому атічменті (part)
+        # Робимо прямий запит до серверів Google
+        response = requests.post(url, json=payload, headers=headers)
+        response_data = response.json()
+
+        # Якщо Google повернув помилку (наприклад, проблеми з балансом або лімітами)
+        if "error" in response_data:
+            error_msg = response_data["error"].get("message", "Невідома помилка API")
+            raise Exception(f"Google API Error: {error_msg}")
+
+        # Дістаємо байти картинки, які Google повертає закодованими в Base64
         try:
-            generated_part = result.candidates[0].content.parts[0]
-            # Якщо Google віддав байти картинки
-            image_bytes = generated_part.inline_data.data
+            image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
+            import base64
+            image_bytes = base64.b64decode(image_base64)
             bio = io.BytesIO(image_bytes)
             bio.name = 'image.jpeg'
-        except (IndexError, AttributeError):
-            # Якщо синтаксис з інлайн-даними збійнув, пробуємо стандартний метод для зображень
-            # Деякі версії google-generativeai повертають PIL об'єкт у спеціальному атрибуті
-            if hasattr(result, 'images') and result.images:
-                bio = io.BytesIO()
-                bio.name = 'image.jpeg'
-                result.images[0].save(bio, 'JPEG')
-                bio.seek(0)
-            else:
-                raise Exception("Google API не повернув зображення у відповіді (можливо, цензура запиту)")
+        except (KeyError, IndexError):
+            raise Exception("Google API повернув пусту відповідь або не зміг віддати байти картини.")
 
         # Видаляємо статус-повідомлення "⏳ Драго запускає..."
         try:
@@ -136,18 +144,19 @@ def generate_image_gemini(message):
         except Exception:
             pass
 
-        # Надсилаємо готове фото
+        # Надсилаємо готове фото в Telegram
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3)",
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з платного тарифу)",
             reply_to_message_id=message.message_id
         )
 
     except Exception as e:
         print(f"Помилка генерації зображення: {e}")
-        # Виводимо реальну помилку в консоль і даємо юзеру знати, що сталося
-        error_text = f"❌ Щось пішло не так при створенні картинки.\nДебаг: <code>{str(e)[:100]}</code>"
+        error_details = str(e)[:200]
+        error_text = f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки:</b>\n<code>{error_details}</code>"
+        
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
@@ -156,9 +165,8 @@ def generate_image_gemini(message):
                 parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, error_text)
-
-
+            bot.reply_to(message, error_text, parse_mode="HTML")
+            
 # ===================================================================
 # 📷 3. ЗІР (ОБРОБКА ФОТО)
 # ===================================================================
