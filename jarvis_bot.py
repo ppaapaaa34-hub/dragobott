@@ -91,7 +91,7 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ФІКС ОФІЦІЙНОГО GOOGLE IMAGEN 3)
+# 🖼️ 2. КОМАНДА /generate (ВЕРСІЯ ЧЕРЕЗ GENERATIVE MODEL)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -106,22 +106,23 @@ def generate_image_gemini(message):
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # ПРАВИЛЬНИЙ виклик для поточної бібліотеки google-generativeai
-        # Використовуємо функцію generate_images напряму з модуля genai
-        result = genai.generate_images(
-            model="imagen-3.0-generate-002",
-            prompt=prompt,
-            number_of_images=1,
-            aspect_ratio="1:1"
-        )
+        # Створюємо екземпляр моделі Imagen через стандартний GenerativeModel
+        imagen = genai.GenerativeModel("imagen-3.0-generate-002")
         
-        # Дістаємо байти картинки з результату
-        generated_image = result.images[0]
-        image_bytes = generated_image.image.bytes
+        # Викликаємо генерацію через стандартний generate_content
+        result = imagen.generate_content(prompt)
         
-        # Загортаємо байти в потік для Telegram
-        bio = io.BytesIO(image_bytes)
-        bio.name = 'drago_art.jpg'
+        # Отримуємо байтову структуру картинки з першої відповіді кандидатів
+        try:
+            # Дістаємо частину (part) відповіді, яка містить inline_data зображення
+            generated_part = result.candidates[0].content.parts[0]
+            image_bytes = generated_part.inline_data.data
+            
+            # Загортаємо байти в потік для Telegram
+            bio = io.BytesIO(image_bytes)
+            bio.name = 'drago_art.jpg'
+        except (AttributeError, IndexError, KeyError):
+            raise Exception("Google повернув відповідь, але в ній немає байтів картинки (можливо, спрацював фільтр безпеки).")
 
         # Надсилаємо готове фото користувачу
         bot.send_photo(
@@ -141,7 +142,7 @@ def generate_image_gemini(message):
         print(f"Помилка генерації Google Imagen: {e}")
         error_details = str(e)[:250]
         
-        # Якщо Google видасть помилку (наприклад, ліміти чи білінг) — виводимо її в чат
+        # Якщо впаде — виводимо красивий дебаг, щоб бачити причину
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
