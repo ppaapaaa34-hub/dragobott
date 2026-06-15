@@ -95,58 +95,54 @@ import random
 import requests
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ФІНАЛЬНИЙ ЗАЛІЗОБЕТОННИЙ ВАРІАНТ)
+# 🖼️ КОМАНДА /generate (МИТТЄВА ВІДПРАВКА ГОТОВОЇ КАРТИНКИ В ЧАТ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
-def generate_image_final(message):
-    # Відокремлюємо промпт від команди (пропускаємо перші 10 символів: "/generate ")
+def generate_image_now(message):
+    # Забираємо промпт після команди (пропускаємо перші 10 символів: "/generate ")
     prompt = message.text[10:].strip()
 
     if not prompt:
-        bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
+        bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate аніме вовк")
         return
 
-    # Створюємо повідомлення-статус
-    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай пару секунд.")
+    # Надсилаємо статус, щоб користувач бачив, що бот працює
+    status_msg = bot.reply_to(message, "⏳ Драго вже малює... Зачекай пару секунд.")
 
     try:
-        # 1. Обов'язково безпечно кодуємо текст промпту для URL (щоб не ламалися пробіли)
+        # 1. Безпечно кодуємо текст промпту для посилання
         encoded_prompt = requests.utils.quote(prompt)
         
-        # 2. Формуємо пряме посилання на відкрите стабільне дзеркало Stable Diffusion XL.
-        # Додаємо випадковий seed, щоб картинки за однаковим запитом завжди були унікальними.
+        # 2. Створюємо унікальний URL для швидкої моделі turbo без водяних знаків
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=turbo&nologo=true"
         
-        # 3. НАЙВАЖЛИВІШИЙ ТРЮК: твій сервер на Render взагалі НЕ робить запитів у мережу!
-        # Ми просто віддаємо згенерований URL прямо в Telegram через параметр photo.
-        # Сервери самого Дурова (Telegram) завантажать, оптимізують і покажуть картинку в чаті.
+        # 3. НАЙВАЖЛИВІШИЙ МОМЕНТ: Передаємо лінк прямо в параметр photo.
+        # Сервери Telegram самі миттєво завантажать зображення і покажуть його відкритим у чаті!
         bot.send_photo(
             chat_id=message.chat.id,
             photo=image_url,
-            caption=f"🔥 Твоя картинка готова, бро!\n\n📋 <b>Запит:</b> {prompt}",
+            caption=f"🔥 Твій шедевр готовий, бро!\n\n📋 <b>Запит:</b> {prompt}",
             parse_mode="HTML",
             reply_to_message_id=message.message_id
         )
         
-        # Видаляємо статус "Драго малює" тільки після успішної відправки
+        # Видаляємо повідомлення "Драго вже малює" після того, як картинка з'явилася
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
             pass
 
     except Exception as e:
-        print(f"Помилка генерації: {e}")
-        # Якщо вже і сервери Telegram не зможуть зчитати лінк, бот красиво видасть посилання кнопкою
+        print(f"Помилка відправки фото: {e}")
+        # Якщо Telegram чомусь затупить, бот видасть повідомлення з дебагом
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram крутить носом і не хоче завантажувати її прямо в чат, тому тримай пряме посилання:\n\n👉 <a href='https://image.pollinations.ai/p/{encoded_prompt}?model=turbo'>ВІДКРИТИ КАРТИНКУ В БРАУЗЕРІ</a>",
-                parse_mode="HTML",
-                disable_web_page_preview=False
+                text=f"❌ Telegram не зміг відобразити картинку прямо зараз. Спробуй інший промпт, бро. Помилка: {str(e)[:50]}"
             )
         except Exception:
-            bot.reply_to(message, "❌ Щось сервери Telegram геть втомилися. Спробуй ще раз трохи пізніше.")
+            bot.reply_to(message, "❌ Помилка з'єднання, спробуй ще раз.")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
