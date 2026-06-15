@@ -88,9 +88,9 @@ def send_meme(message):
     except Exception as e:
         print(f"Помилка мему: {e}")
 
-
+\
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ОФІЦІЙНИЙ МЕТОД GOOGLE API)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (СПРОБА ЗМІНИ ІМЕНІ МОДЕЛІ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -105,10 +105,10 @@ def generate_image_gemini(message):
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Офіційне та правильне URL для Imagen 3 у Gemini API через метод :predict
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={GEMINI_API_KEY}"
+        # Змінюємо формат імені моделі в URL-адресі. Imagen 3 Flash часто доступніша.
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-flash-generate-001:predict?key={GEMINI_API_KEY}"
         
-        # Актуальна структура payload для методу :predict відповідно до документації Google
+        # Залишаємо payload та headers без змін, вони вірні для методу :predict
         payload = {
             "instances": [
                 {
@@ -131,7 +131,14 @@ def generate_image_gemini(message):
         
         # Перевіряємо, чи взагалі пройшов запит
         if response.status_code != 200:
-            raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. Можливо, опис заблоковано цензурою або є проблеми з білінгом.")
+            # Тут ми додаємо більше деталей про помилку 404
+            if response.status_code == 404:
+                raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. "
+                                "Модель 'imagen-3.0-flash-generate-001' не знайдена за цим посиланням. "
+                                "Це часто означає, що ваш API-ключ не має доступу до генерації зображень у Gemini API.")
+            else:
+                raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. "
+                                "Можливо, опис заблоковано цензурою або є проблеми з білінгом.")
 
         try:
             response_data = response.json()
@@ -163,7 +170,7 @@ def generate_image_gemini(message):
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з твого платного акаунту)",
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з вашого акаунту)",
             reply_to_message_id=message.message_id
         )
 
