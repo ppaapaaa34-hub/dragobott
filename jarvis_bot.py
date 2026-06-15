@@ -90,84 +90,63 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
-import io
+
+import random
 import requests
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ФІКС ЧЕРЕЗ СТАБІЛЬНИЙ HUGGING FACE API)
+# 🖼️ 2. КОМАНДА /generate (ФІНАЛЬНИЙ ЗАЛІЗОБЕТОННИЙ ВАРІАНТ)
 # ===================================================================
-# Встав сюди свій скопійований токен з Hugging Face
-HF_TOKEN = "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" 
-
 @bot.message_handler(commands=['generate'])
-def generate_image_hf(message):
+def generate_image_final(message):
+    # Відокремлюємо промпт від команди (пропускаємо перші 10 символів: "/generate ")
     prompt = message.text[10:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    status_msg = bot.reply_to(message, "⏳ Драго малює через Hugging Face... Зачекай секунд 5.")
+    # Створюємо повідомлення-статус
+    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай пару секунд.")
 
     try:
-        # Використовуємо одну з найкращих швидких моделей: Stable Diffusion XL або Lightning
-        API_URL = "https://api-inference.huggingface.co/models/SG16DC/RealVisXL_V4.0_Lightning"
-        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        # 1. Обов'язково безпечно кодуємо текст промпту для URL (щоб не ламалися пробіли)
+        encoded_prompt = requests.utils.quote(prompt)
         
-        payload = {
-            "inputs": prompt,
-            "parameters": {"width": 768, "height": 768}
-        }
-
-        # Робимо запит до Hugging Face
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=40)
+        # 2. Формуємо пряме посилання на відкрите стабільне дзеркало Stable Diffusion XL.
+        # Додаємо випадковий seed, щоб картинки за однаковим запитом завжди були унікальними.
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=turbo&nologo=true"
         
-        # Якщо модель тільки прокидається на серверах, HF повертає JSON із часом очікування
-        if response.status_code == 503:
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id,
-                text="⏳ Нейромережа зараз прокидається (гріє сервери). Спробуй ще раз за 15-20 секунд, бро!"
-            )
-            return
-
-        if response.status_code != 200:
-            raise Exception(f"HF Error {response.status_code}: {response.text[:100]}")
-
-        # Перевіряємо, чи прилетіли саме байти картинки, а не текст помилки
-        if "application/json" in response.headers.get("Content-Type", ""):
-            raise Exception("Сервер замість картинки повернув текст помилки.")
-
-        # Перетворюємо отримані байти в картинку для Telegram
-        bio = io.BytesIO(response.content)
-        bio.name = 'drago_art.jpg'
-
-        # Надсилаємо соковите фото прямо в чат!
+        # 3. НАЙВАЖЛИВІШИЙ ТРЮК: твій сервер на Render взагалі НЕ робить запитів у мережу!
+        # Ми просто віддаємо згенерований URL прямо в Telegram через параметр photo.
+        # Сервери самого Дурова (Telegram) завантажать, оптимізують і покажуть картинку в чаті.
         bot.send_photo(
             chat_id=message.chat.id,
-            photo=bio,
+            photo=image_url,
             caption=f"🔥 Твоя картинка готова, бро!\n\n📋 <b>Запит:</b> {prompt}",
             parse_mode="HTML",
             reply_to_message_id=message.message_id
         )
-
-        # Видаляємо статус тільки після успіху
+        
+        # Видаляємо статус "Драго малює" тільки після успішної відправки
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
             pass
 
     except Exception as e:
-        print(f"Помилка генерації через HF: {e}")
+        print(f"Помилка генерації: {e}")
+        # Якщо вже і сервери Telegram не зможуть зчитати лінк, бот красиво видасть посилання кнопкою
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Не зміг намалювати. Помилка лімітів або мережі.\n<code>{str(e)[:150]}</code>",
-                parse_mode="HTML"
+                text=f"🔥 <b>Твоя картинка готова, бро!</b>\nTelegram крутить носом і не хоче завантажувати її прямо в чат, тому тримай пряме посилання:\n\n👉 <a href='https://image.pollinations.ai/p/{encoded_prompt}?model=turbo'>ВІДКРИТИ КАРТИНКУ В БРАУЗЕРІ</a>",
+                parse_mode="HTML",
+                disable_web_page_preview=False
             )
         except Exception:
-            bot.reply_to(message, "❌ Щось пішло не так, спробуй інший промпт.")
+            bot.reply_to(message, "❌ Щось сервери Telegram геть втомилися. Спробуй ще раз трохи пізніше.")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
