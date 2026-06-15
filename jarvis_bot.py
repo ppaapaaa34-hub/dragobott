@@ -90,104 +90,48 @@ def send_meme(message):
 
 
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ОФІЦІЙНИЙ GEMINI IMAGE API)
+# 🖼️ 2. КОМАНДА /generate (ОПТИМІЗОВАНО ЧЕРЕЗ POLLINATIONS AI)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
-    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
     prompt = message.text[9:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
         return
 
-    # Надсилаємо повідомлення про старт генерації
-    status_msg = bot.reply_to(message, "⏳ Драго запускає генерацію зображення... Зачекай трохи.")
+    status_msg = bot.reply_to(message, "⏳ Драго малює... Зачекай секунду.")
 
     try:
-        # Використовуємо стабільну модель генерації зображень через стандартний метод :generateContent
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key={GEMINI_API_KEY}"
+        # Формуємо URL для генерації (використовуємо випадкове число seed для унікальності)
+        encoded_prompt = requests.utils.quote(prompt)
+        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux"
         
-        # Стандартна структура JSON для текстово-мультимедійних запитів Gemini
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": f"Generate an image based on this prompt: {prompt}"
-                        }
-                    ]
-                }
-            ],
-            # Додаткові параметри конфігурації (формат) за потреби передаються сюди
-            "generationConfig": {
-                "responseMimeType": "image/jpeg"
-            }
-        }
+        # Завантажуємо картинку з URL
+        response = requests.get(image_url)
         
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        # Робимо POST запит до актуального ендпоінту
-        response = requests.post(url, json=payload, headers=headers)
-        
-        # Перевіряємо статус відповіді
-        if response.status_code != 200:
-            raise Exception(f"Google API Error: Сервер повернув статус {response.status_code}. Текст відповіді: {response.text[:150]}")
-
-        try:
-            response_data = response.json()
-        except requests.exceptions.JSONDecodeError:
-            raise Exception("Google API Error: Сервер повернув пусту відповідь замість JSON.")
-
-        # Обробка внутрішніх помилок
-        if "error" in response_data:
-            error_msg = response_data["error"].get("message", "Невідома помилка API")
-            raise Exception(f"Google API Error: {error_msg}")
-
-        # Витягуємо згенеровані байти зображення з контенту відповіді
-        try:
-            # У нових моделях картинка повертається у стандартній структурі parts як inlineData
-            part = response_data["candidates"][0]["content"]["parts"][0]
-            if "inlineData" in part:
-                image_base64 = part["inlineData"]["data"]
-                image_bytes = base64.b64decode(image_base64)
-                bio = io.BytesIO(image_bytes)
-                bio.name = 'image.jpeg'
-            else:
-                raise Exception("API повернув текст замість зображення. Можливо, промпт заблоковано безпекою.")
-        except (KeyError, IndexError):
-            raise Exception("Не вдалося розпарсити байти зображення з відповіді Google.")
-
-        # Видаляємо проміжне статус-повідомлення
-        try:
-            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
-        except Exception:
-            pass
-
-        # Надсилаємо готове фото в Telegram
-        bot.send_photo(
-            chat_id=message.chat.id,
-            photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через нову модель Gemini Image з платного тарифу)",
-            reply_to_message_id=message.message_id
-        )
+        if response.status_code == 200:
+            bio = io.BytesIO(response.content)
+            bio.name = 'image.jpeg'
+            
+            bot.delete_message(message.chat.id, status_msg.message_id)
+            
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=bio,
+                caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Flux/Pollinations)",
+                reply_to_message_id=message.message_id
+            )
+        else:
+            raise Exception(f"Сервер генерації повернув помилку {response.status_code}")
 
     except Exception as e:
-        print(f"Помилка генерації зображення: {e}")
-        error_details = str(e)[:250]
-        error_text = f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>"
-        
-        try:
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id,
-                text=error_text,
-                parse_mode="HTML"
-            )
-        except Exception:
-            bot.reply_to(message, error_text, parse_mode="HTML")
+        print(f"Помилка генерації: {e}")
+        bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=status_msg.message_id,
+            text=f"❌ Не зміг намалювати. Спробуй ще раз, бро. Помилка: {str(e)[:50]}"
+        )
             
 # ===================================================================
 # 📷 3. ЗІР (ОБРОБКА ФОТО)
