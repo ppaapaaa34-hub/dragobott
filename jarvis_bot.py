@@ -88,9 +88,9 @@ def send_meme(message):
     except Exception as e:
         print(f"Помилка мему: {e}")
 
-\
+
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (СПРОБА ЗМІНИ ІМЕНІ МОДЕЛІ)
+# 🖼️ 2. КОМАНДА /generate ДЛЯ ГЕНЕРАЦІЇ КАРТИНОК (ПРАВИЛЬНИЙ GEMINI API URL)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_gemini(message):
@@ -98,28 +98,24 @@ def generate_image_gemini(message):
     prompt = message.text[9:].strip()
 
     if not prompt:
-        bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
+        bot.reply_to(message, "⚠️ Напиши опис картини! Например: /generate a cyberpunk cat")
         return
 
     # Надсилаємо повідомлення про старт генерації
     status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
 
     try:
-        # Змінюємо формат імені моделі в URL-адресі. Imagen 3 Flash часто доступніша.
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-flash-generate-001:predict?key={GEMINI_API_KEY}"
+        # УВАГА: Офіційний і єдино правильний шлях для Imagen 3 в Gemini API v1beta!
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key={GEMINI_API_KEY}"
         
-        # Залишаємо payload та headers без змін, вони вірні для методу :predict
+        # Актуальна структура JSON-запиту для Gemini API (НЕ Vertex AI)
         payload = {
-            "instances": [
-                {
-                    "prompt": prompt
-                }
-            ],
-            "parameters": {
-                "sampleCount": 1,        # Кількість картинок
-                "aspectRatio": "1:1",     # Формат (квадрат)
-                "outputMimeType": "image/jpeg"
-            }
+            "prompt": {
+                "text": prompt
+            },
+            "numberOfImages": 1,
+            "outputMimeType": "image/jpeg",
+            "aspectRatio": "1:1"
         }
         
         headers = {
@@ -129,16 +125,9 @@ def generate_image_gemini(message):
         # Робимо прямий POST запит до сервера Google
         response = requests.post(url, json=payload, headers=headers)
         
-        # Перевіряємо, чи взагалі пройшов запит
+        # Перевіряємо статус відповіді
         if response.status_code != 200:
-            # Тут ми додаємо більше деталей про помилку 404
-            if response.status_code == 404:
-                raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. "
-                                "Модель 'imagen-3.0-flash-generate-001' не знайдена за цим посиланням. "
-                                "Це часто означає, що ваш API-ключ не має доступу до генерації зображень у Gemini API.")
-            else:
-                raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. "
-                                "Можливо, опис заблоковано цензурою або є проблеми з білінгом.")
+            raise Exception(f"Google Cloud Error: Сервер повернув статус {response.status_code}. Текст відповіді: {response.text[:150]}")
 
         try:
             response_data = response.json()
@@ -150,17 +139,16 @@ def generate_image_gemini(message):
             error_msg = response_data["error"].get("message", "Невідома помилка API")
             raise Exception(f"Google API Error: {error_msg}")
 
-        # Дістаємо картинку, яка у методі :predict лежить за іншим шляхом у JSON
+        # Дістаємо картинку. В актуальному Gemini API вона лежить у масиві generatedImages
         try:
-            # У структурі :predict картинки повертаються у списку predictions
-            image_base64 = response_data["predictions"][0]["bytesBase64Encoded"]
+            image_base64 = response_data["generatedImages"][0]["image"]["imageBytes"]
             image_bytes = base64.b64decode(image_base64)
             bio = io.BytesIO(image_bytes)
             bio.name = 'image.jpeg'
         except (KeyError, IndexError):
-            raise Exception("Google API успішно виконав запит, але не зміг віддати байти картини (можливо, цензура промпту).")
+            raise Exception("Google API успішно виконав запит, але структура JSON змінилася або спрацювала цензура промпту.")
 
-        # Видаляємо проміжне статус-повідомлення
+        # Видаляємо статус-повідомлення
         try:
             bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
         except Exception:
@@ -170,7 +158,7 @@ def generate_image_gemini(message):
         bot.send_photo(
             chat_id=message.chat.id,
             photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з вашого акаунту)",
+            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через Imagen 3 з платного тарифу)",
             reply_to_message_id=message.message_id
         )
 
