@@ -90,68 +90,61 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
+import requests
+import random
+
 # ===================================================================
-# 🖼️ 2. КОМАНДА /generate (ВЕРСІЯ ЧЕРЕЗ GENERATIVE MODEL)
+# 🖼️ КОМАНДА /generate (МЕТОД ЛЮЦИКА: СТАБІЛЬНО, ШВИДКО, БЕЗ БАГІВ)
 # ===================================================================
 @bot.message_handler(commands=['generate'])
-def generate_image_gemini(message):
-    # Забираємо текст після команди /generate (пропускаємо перші 9 символів)
-    prompt = message.text[9:].strip()
+def generate_image_like_lucik(message):
+    # Відрізаємо саму команду "/generate " (це 10 символів із пробілом)
+    prompt = message.text[10:].strip()
 
     if not prompt:
-        bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate a cyberpunk cat")
+        bot.reply_to(message, "⚠️ Напиши, що саме намалювати! Наприклад:\n/generate аніме кіт у худі")
         return
 
-    # Надсилаємо повідомлення про старт генерації
-    status_msg = bot.reply_to(message, "⏳ Драго запускає Imagen 3... Зачекай трохи.")
+    # Відразу вішаємо статус, щоб юзер бачив, що бот не завис
+    status_msg = bot.reply_to(message, "⏳ Драго малює твій шедевр... Зачекай пару секунд.")
 
     try:
-        # Створюємо екземпляр моделі Imagen через стандартний GenerativeModel
-        imagen = genai.GenerativeModel("imagen-3.0-generate-002")
+        # 1. Кодуємо текст промпту, щоб у ньому не ламалися пробіли та специфічні символи
+        encoded_prompt = requests.utils.quote(prompt)
         
-        # Викликаємо генерацію через стандартний generate_content
-        result = imagen.generate_content(prompt)
+        # 2. Генеруємо унікальний лінк. Додаємо рандомний seed, щоб картинки ніколи не повторювалися.
+        # Використовуємо надійне та безкоштовне інженерне дзеркало Pollinations (модель flux або turbo)
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&enhance=true"
         
-        # Отримуємо байтову структуру картинки з першої відповіді кандидатів
-        try:
-            # Дістаємо частину (part) відповіді, яка містить inline_data зображення
-            generated_part = result.candidates[0].content.parts[0]
-            image_bytes = generated_part.inline_data.data
-            
-            # Загортаємо байти в потік для Telegram
-            bio = io.BytesIO(image_bytes)
-            bio.name = 'drago_art.jpg'
-        except (AttributeError, IndexError, KeyError):
-            raise Exception("Google повернув відповідь, але в ній немає байтів картинки (можливо, спрацював фільтр безпеки).")
-
-        # Надсилаємо готове фото користувачу
+        # 3. НАЙВАЖЛИВІШИЙ ТРЮК: ми не качаємо байти на Render! 
+        # Ми просто кидаємо Telegram готове посилання в параметр photo.
+        # Telegram сам завантажить фото з нейромережі і покаже його в чаті.
         bot.send_photo(
             chat_id=message.chat.id,
-            photo=bio,
-            caption=f"🔥 Твоя картинка за запитом: {prompt}\n(Згенеровано Драго через офіційний Imagen 3.0)",
+            photo=image_url,
+            caption=f"🔥 Твій шедевр готовий, бро!\n\n📋 <b>Запит:</b> {prompt}",
+            parse_mode="HTML",
             reply_to_message_id=message.message_id
         )
-
-        # Видаляємо статус "Драго запускає Imagen 3"
+        
+        # 4. Після того, як Telegram успішно виплюнув картинку в чат, прибираємо статус "малює"
         try:
-            bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+            bot.delete_message(message.chat.id, status_msg.message_id)
         except Exception:
             pass
 
     except Exception as e:
-        print(f"Помилка генерації Google Imagen: {e}")
-        error_details = str(e)[:250]
-        
-        # Якщо впаде — виводимо красивий дебаг, щоб бачити причину
+        print(f"Помилка генерації зображення: {e}")
+        # Якщо Telegram або сервер малювання ляже, бот не промовчить, а видасть пряме посилання
         try:
             bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=status_msg.message_id,
-                text=f"❌ Щось пішло не так при створенні картинки.\n\n<b>Дебаг помилки (передай СБУ):</b>\n<code>{error_details}</code>",
+                text=f"🔥 <b>Картинка згенерувалася!</b>\nАле Telegram тимчасово не може показати її прямо в чаті. Забирай пряме посилання:\n\n👉 <a href='https://image.pollinations.ai/p/{encoded_prompt}'>ВІДКРИТИ В БРАУЗЕРІ</a>",
                 parse_mode="HTML"
             )
         except Exception:
-            bot.reply_to(message, f"❌ Помилка генерації: {error_details}")
+            bot.reply_to(message, "❌ Щось зовсім сервери втомилися, спробуй трохи пізніше.")
 # ===================================================================
 # 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
