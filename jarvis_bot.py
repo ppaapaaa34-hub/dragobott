@@ -267,6 +267,35 @@ def handle_text(message):
         else:
             bot.reply_to(message, error_text)
 
+# ===================================================================
+# 👋 ПРИВІТАННЯ НОВИХ УЧАСНИКІВ
+# ===================================================================
+@bot.chat_member_handler()
+def welcome_new_member(message: types.ChatMemberUpdated):
+    # Перевіряємо, чи це подія "вступ до групи" (new_chat_member)
+    new_member = message.new_chat_member
+    
+    # Якщо це новий користувач і він не бот
+    if new_member.status in ['member', 'restricted'] and not new_member.user.is_bot:
+        
+        # Отримуємо ім'я користувача для персоналізації
+        name = new_member.user.first_name
+        
+        welcome_text = (
+            f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
+            "Будь ласка, розкажи трохи про себе — будемо раді познайомитись.\n"
+            "Увечері ми зазвичай збираємося в Discord, тож заходь за посиланням — "
+            "із задоволенням зустрінемось 🫶🏼\n\n"
+            "👉 [Тут встав лінк на свій Discord]"
+        )
+        
+        # Надсилаємо привітання в чат
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=welcome_text,
+            parse_mode="HTML"
+        )
+
 
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
