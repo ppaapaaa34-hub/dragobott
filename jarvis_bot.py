@@ -271,28 +271,32 @@ def handle_text(message):
 # 👋 ПРИВІТАННЯ НОВИХ УЧАСНИКІВ
 # ===================================================================
 @bot.chat_member_handler()
-def welcome_new_member(message: types.ChatMemberUpdated):
-    # Перевіряємо, чи це подія "вступ до групи" (new_chat_member)
-    new_member = message.new_chat_member
-    
-    # Якщо це новий користувач і він не бот
-    if new_member.status in ['member', 'restricted'] and not new_member.user.is_bot:
-        
-        # Отримуємо ім'я користувача для персоналізації
-        name = new_member.user.first_name
-        
+def handle_member_updates(message: types.ChatMemberUpdated):
+    # 1. ОБРОБКА ВХОДУ
+    if message.new_chat_member.status in ['member', 'restricted'] and not message.new_chat_member.user.is_bot:
+        name = message.new_chat_member.user.first_name
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
-            "Будь ласка, розкажи трохи про себе — будемо раді познайомитись.\n"
-            "Увечері ми зазвичай збираємося в Discord, тож заходь за посиланням — "
-            "із задоволенням зустрінемось 🫶🏼\n\n"
-            "👉 [Тут встав лінк на свій Discord]"
+            "Розкажи трохи про себе, будемо раді познайомитись! "
+            "Ввечері збираємось у Discord — долучайся 🫶🏼"
         )
+        bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
+
+    # 2. ОБРОБКА ВИХОДУ
+    elif message.new_chat_member.status in ['left', 'kicked']:
+        name = message.old_chat_member.user.first_name
         
-        # Надсилаємо привітання в чат
+        # Іронічна відповідь Драго
+        goodbye_texts = [
+            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
+            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
+            f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
+            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
+        ]
+        
         bot.send_message(
-            chat_id=message.chat.id,
-            text=welcome_text,
+            chat_id=message.chat.id, 
+            text=random.choice(goodbye_texts), 
             parse_mode="HTML"
         )
 
