@@ -4,6 +4,7 @@ import requests
 import random
 import io
 import threading
+from telebot import telebot, types
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
 import google.generativeai as genai
