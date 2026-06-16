@@ -308,4 +308,4 @@ if __name__ == "__main__":
     print(" DRAGO BOT УСПІШНО ЗАПУЩЕНИЙ НА TIER 1! ")
     print(" Код повністю оптимізовано під тексти! ")
     print("=========================================")
-    bot.infinity_polling()
+    bot.infinity_polling(allowed_updates=['message', 'chat_member'])
