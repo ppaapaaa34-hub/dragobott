@@ -286,7 +286,7 @@ def handle_text(message):
 
 
 # ===================================================================
-# 👋 ПРИВІТАННЯ ТА ВИБІР СТАТІ (ОНОВЛЕНО)
+# 👋 ПРИВІТАННЯ ТА ВИБІР СТАТІ (ОНОВЛЕНИЙ І СТАБІЛЬНИЙ)
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
@@ -300,14 +300,14 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Повідомлення 1: Привітання
+        # Привітання
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись! "
         )
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
         
-        # Повідомлення 2: Кнопки
+        # Кнопки (окреме повідомлення для стабільності)
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
         markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
         
