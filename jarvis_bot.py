@@ -764,12 +764,19 @@ def show_profile(message):
         cursor.execute("SELECT COUNT(*) FROM achievements WHERE user_id=?", (uid,))
         ach_count = cursor.fetchone()[0]
     if not row:
-        bot.reply_to(message, "Ти не в базі. Пиши більше!"); return
+        bot.reply_to(message, 
+        bot.reply_to(message,
+"Ти не в базі. Пиши більше!"); return
     count, gender, warns, coins, rep, city = row
-    rep_emoji  = "⭐" if rep > 0 else ("💀" if rep < 0 else "😐")
-    city_text  = f"🏙️ Місто: <b>{city}</b>\n" if city else ""
+    rep_emoji    = "⭐" if rep > 0 else ("💀" if rep < 0 else "😐")
+    city_text    = f"🏙️ Місто: <b>{city}</b>\n" if city else ""
+    username     = message.from_user.username
+    nick_text    = 
+    username     = message.from_user.
+f"🔖 Нікнейм: <b>@{username}</b>\n" if username else "🔖 Нікнейм: <b>не встановлено</b>\n"
     bot.send_message(message.chat.id,
         f"👤 <b>Профіль {message.from_user.first_name}</b>\n\n"
+        f"{nick_text}"
         f"💬 Повідомлень: <b>{count}</b>\n"
         f"🚻 Стать: <b>{gender}</b>\n"
         f"{city_text}"
