@@ -278,7 +278,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись! "
-            "Ввечері збираємось у Discord — долучайся 🫶🏼"
+            "Ввечері збираємось у Добрий Друг — долучайся 🫶🏼"
         )
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
 
@@ -299,6 +299,44 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             text=random.choice(goodbye_texts), 
             parse_mode="HTML"
         )
+
+
+# --- АВТОМАТИЧНЕ ВИЗНАЧЕННЯ СТАТІ ---
+
+@bot.chat_member_handler()
+def handle_new_member(message: types.ChatMemberUpdated):
+    # Перевіряємо вступ нового користувача
+    if message.new_chat_member.status in ['member', 'restricted'] and not message.new_chat_member.user.is_bot:
+        user_id = message.new_chat_member.user.id
+        name = message.new_chat_member.user.first_name
+        
+        # Додаємо юзера в БД, якщо він новий
+        cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
+        conn.commit()
+
+        # Створюємо кнопки
+        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+        markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
+        
+        bot.send_message(
+            message.chat.id, 
+            f"Вітаємо в групі, <b>{name}</b>! 🤍\n\n"
+            "Щоб Драго знав, як до тебе звертатися, обери свій варіант нижче:", 
+            parse_mode="HTML", 
+            reply_markup=markup
+        )
+
+@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
+def save_gender_auto(message):
+    gender = message.text.split()[0] # Витягуємо тільки слово (Хлопець/Дівчина/Інше)
+    user_id = message.from_user.id
+    
+    # Оновлюємо стать в БД
+    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, user_id))
+    conn.commit()
+    
+    bot.reply_to(message, f"Прийнято! Ти — {gender.lower()}. Драго все записав. 😎", reply_markup=types.ReplyKeyboardRemove())
+
 
 
 # ===================================================================
