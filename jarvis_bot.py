@@ -27,14 +27,21 @@ logging.basicConfig(
     ])
 logger = logging.getLogger(__name__)
 
+
+        logging.StreamHandler()
 # ===================================================================
 # 💾 БАЗА ДАНИХ
 # ===================================================================
-conn    = sqlite3.connect('drago_bot.db', check_same_thread=False)
+conn    = sqlite3.connect(
+conn    
+'drago_bot.db', check_same_thread=False)
 cursor  = conn.cursor()
 db_lock = threading.Lock()
-
-cursor.executescript("""
+cursor.executescript(
+cursor  = conn.cursor()
+db_lock = threading.Lock()
+cursor
+"""
 CREATE TABLE IF NOT EXISTS stats (
     user_id      INTEGER PRIMARY KEY,
     name         TEXT,
@@ -46,14 +53,12 @@ CREATE TABLE IF NOT EXISTS stats (
     last_bonus   INTEGER DEFAULT 0,
     last_lottery INTEGER DEFAULT 0,
     city         TEXT    DEFAULT '');
-
 CREATE TABLE IF NOT EXISTS daily_stats (
     user_id INTEGER,
     chat_id INTEGER,
     date    TEXT,
     count   INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, chat_id, date));
-
 CREATE TABLE IF NOT EXISTS reminders (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id   INTEGER,
@@ -61,19 +66,16 @@ CREATE TABLE IF NOT EXISTS reminders (
     remind_at INTEGER,
     text      TEXT,
     done      INTEGER DEFAULT 0);
-
 CREATE TABLE IF NOT EXISTS trivia (
     chat_id  INTEGER PRIMARY KEY,
     question TEXT,
     answer   TEXT,
     active   INTEGER DEFAULT 0);
-
 CREATE TABLE IF NOT EXISTS confessions (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id INTEGER,
     text    TEXT,
     created INTEGER);
-
 CREATE TABLE IF NOT EXISTS achievements (
     user_id     INTEGER,
     achievement TEXT,
@@ -88,24 +90,22 @@ conn.commit()
 TELEGRAM_TOKEN  = '8788139276:AAGKr6sFii4n9B1E5sysHSa-xMTgYsmUZfI'
 GEMINI_API_KEY  = 'AIzaSyC_7U44ek_eaN0u6GV4FqL-m1N9OcpvVJM'
 WEATHER_API_KEY = 'ТВІЙ_КЛЮЧ_OPENWEATHER'
-
 FLOOD_LIMIT   = 5
 FLOOD_TIME    = 10
 MUTE_DURATION = 300
-
 BAD_WORDS = [
     'хуй','піздець','пізда','єбать','їбать',
     'блять','сука','нігер','гандон','залупа',
     'мудак','пидор','пидорас']
-
 ZODIAC_SIGNS = {
     'овен':'Aries','телець':'Taurus','близнюки':'Gemini',
     'рак':'Cancer','лев':'Leo','діва':'Virgo',
     'терези':'Libra','скорпіон':'Scorpio','стрілець':'Sagittarius',
     'козоріг':'Capricorn','водолій':'Aquarius','риби':'Pisces'}
-
 AUTO_REACTIONS = {
-    'пиво':      ["🍺 Налий і мені!", "Пиво — це рідкий хліб. Поживно! 🍺"],
+    
+AUTO_REACTIONS
+'пиво':      ["🍺 Налий і мені!", "Пиво — це рідкий хліб. Поживно! 🍺"],
     'їжа':       ["А мені нічого не принесли 😤", "Замовляй, я слідкую 👀"],
     'сон':       ["Сон — це смерть для слабаків 💀", "Поспи, може розумнішим прокинешся 😴"],
     'гроші':     ["Де гроші, Лебовскі?! 💸", "Гроші — зло. Але без зла нудно."],
@@ -115,7 +115,6 @@ AUTO_REACTIONS = {
     'гпт':       ["Той ChatGPT — просто мій менший брат. Я крутіший. 😎"],
     'нудно':     ["Нудно? Пограй у !фортуна або !кості. Або просто поговори зі мною 🤖"],
 }
-
 ACHIEVEMENTS = {
     'перше_повідомлення': ('🌱', 'Перші кроки', 'Надіслав перше повідомлення'),
     'сто_повідомлень':    ('💬', 'Балакун',      '100 повідомлень у чаті'),
@@ -133,17 +132,21 @@ ACHIEVEMENTS = {
 # ===================================================================
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
-
-generation_config = {"max_output_tokens": 2048, "temperature": 0.85}
+generation_config = {
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+gen
+"max_output_tokens": 2048, "temperature": 0.85}
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
-
 model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
+    model_name=
+]
+model = genai.GenerativeModel(
+"gemini-2.5-flash",
     generation_config=generation_config,
     safety_settings=safety_settings,
     system_instruction=(
@@ -154,25 +157,42 @@ model = genai.GenerativeModel(
         "Завжди закінчуй думки! Пиши коротко і ясно!"
     )
 )
-
 bot_chats   = {}
-flood_data  = defaultdict(list)
+flood_data  = defaultdict(
+    )
+)
+list)
 game_state  = {}
 rap_pending = {}
 
-bot_chats   = {}
-flood_data  = defaultdict(list)
+
 game_state  = {}
-rap_pending = {}
+rap
 
+game_state
+# ===================================================================
+# 🗑️ АВТО-ВИДАЛЕННЯ ПОВІДОМЛЕНЬ БОТА
+# ===================================================================
+def auto_delete(msg, delay=30):
+    """Видаляє повідомлення бота через delay секунд"""
+    def _delete():
+        time.sleep(delay)
+        try:
+            bot.delete_message(msg.chat.id, msg.message_id)
+        except Exception:
+            pass
+    threading.Thread(target=_delete, daemon=True).start()
 
-# ✅ ВИПРАВЛЕНО: тепер ключ = (chat_id, user_id) — кожен юзер має свою розмову
+# ===================================================================
+# ✅ ВИПРАВЛЕНО: тепер ключ = (chat_id, user_id)
+# ===================================================================
 def get_gemini_chat(chat_id, user_id):
     key = (chat_id, user_id)
-    if key not in bot_chats:
+    
+    key = (chat_id, user
+if key not in bot_chats:
         bot_chats[key] = model.start_chat(history=[])
     return bot_chats[key]
-
 
 # ===================================================================
 # 🛠️ УТИЛІТИ
@@ -189,7 +209,9 @@ def has_bad_words(text):
 def check_flood(user_id, chat_id):
     now  = time.time()
     key  = (user_id, chat_id)
-    flood_data[key] = [t for t in flood_data[key] if now - t < FLOOD_TIME]
+    flood_data[key] = [t 
+    now  = time
+for t in flood_data[key] if now - t < FLOOD_TIME]
     flood_data[key].append(now)
     return len(flood_data[key]) > FLOOD_LIMIT
 
@@ -217,6 +239,15 @@ def update_message_count(user_id, name, chat_id):
         conn.commit()
     check_achievements(user_id, chat_id)
 
+
+            (user_id, chat_id, today))
+        conn.commit()
+    check
+
+            (user_id, chat_id, today))
+        conn.commit()
+
+            (user_id, chat_id, today))
 def give_achievement(user_id, key, chat_id):
     with db_lock:
         cursor.execute("SELECT 1 FROM achievements WHERE user_id=? AND achievement=?", (user_id, key))
@@ -226,13 +257,18 @@ def give_achievement(user_id, key, chat_id):
                        (user_id, key, int(time.time())))
         conn.commit()
     emoji, title, desc = ACHIEVEMENTS[key]
-    try:
+    
+        conn.commit()
+    emoji, title
+try:
         with db_lock:
             cursor.execute("SELECT name FROM stats WHERE user_id=?", (user_id,))
             row = cursor.fetchone()
         name = row[0] if row else "Хтось"
         bot.send_message(chat_id,
-            f"🏅 <b>ДОСЯГНЕННЯ!</b>\n\n"
+            
+        bot.send
+f"🏅 <b>ДОСЯГНЕННЯ!</b>\n\n"
             f"{emoji} <b>{title}</b>\n"
             f"<i>{desc}</i>\n\n"
             f"Отримав: <b>{name}</b> 🎉",
@@ -245,17 +281,25 @@ def check_achievements(user_id, chat_id):
     with db_lock:
         cursor.execute("SELECT count, coins FROM stats WHERE user_id=?", (user_id,))
         row = cursor.fetchone()
-    if not row:
+    
+        row = cursor.
+if not row:
         return
     count, coins = row
     if count == 1:
-        threading.Thread(target=give_achievement, args=(user_id, 'перше_повідомлення', chat_id), daemon=True).start()
+        threading.Thread(target=give_achievement, args=(user_id, 
+        threading
+'перше_повідомлення', chat_id), daemon=True).start()
     if count >= 100:
         threading.Thread(target=give_achievement, args=(user_id, 'сто_повідомлень', chat_id), daemon=True).start()
-    if count >= 1000:
+    
+    
+if count >= 1000:
         threading.Thread(target=give_achievement, args=(user_id, 'тисяча_повідомлень', chat_id), daemon=True).start()
     if coins >= 1000:
-        threading.Thread(target=give_achievement, args=(user_id, 'мільйонер', chat_id), daemon=True).start()
+        threading.Thread(target=give_achievement, args=(user_id, 
+        threading.Thread(target=give_achievement, args=(user_id, 
+'мільйонер', chat_id), daemon=True).start()
 
 def run_dummy_server():
     port  = int(os.environ.get("PORT", 8080))
@@ -265,7 +309,9 @@ def run_dummy_server():
 def analyze_gender(text):
     try:
         resp = model.generate_content(
-            f"Визнач стать (Хлопець/Дівчина/Незрозуміло). Тільки одне слово: {text}")
+            
+        resp = model
+f"Визнач стать (Хлопець/Дівчина/Незрозуміло). Тільки одне слово: {text}")
         return resp.text.strip()
     except Exception:
         return "Незрозуміло"
@@ -277,17 +323,25 @@ def analyze_gender(text):
 def set_gender(message):
     parts = message.text.split()
     if len(parts) < 2:
-        bot.reply_to(message,
-            "Вкажи стать:\n<code>!стать хлопець</code>\n<code>!стать дівчина</code>",
+        sent = bot.reply_to(message,
+            
+        sent = bot
+
+        sent =
+"Вкажи стать:\n<code>!стать хлопець</code>\n<code>!стать дівчина</code>",
             parse_mode="HTML")
+        auto_delete(sent, 20)
         return
     g_input = parts[1].lower()
     if g_input in ['хлопець', 'хлоп', 'м', 'чол', 'boy', 'male', 'чоловік']:
         gender = 'Хлопець'
     elif g_input in ['дівчина', 'дів', 'ж', 'жін', 'girl', 'female', 'жінка']:
-        gender = 'Дівчина'
+        gender = 
+        gender
+'Дівчина'
     else:
-        bot.reply_to(message, "Не зрозумів. Напиши: !стать хлопець або !стать дівчина")
+        sent = bot.reply_to(message, "Не зрозумів. Напиши: !стать хлопець або !стать дівчина")
+        auto_delete(sent, 20)
         return
     uid = message.from_user.id
     with db_lock:
@@ -295,7 +349,13 @@ def set_gender(message):
                        (uid, message.from_user.first_name))
         cursor.execute("UPDATE stats SET gender=? WHERE user_id=?", (gender, uid))
         conn.commit()
-    bot.reply_to(message, f"✅ Стать збережена: <b>{gender}</b>", parse_mode="HTML")
+    sent = bot.reply_to(message, 
+        conn.commit()
+    sent
+
+        
+f"✅ Стать збережена: <b>{gender}</b>", parse_mode="HTML")
+    auto_delete(sent, 20)
 
 # ===================================================================
 # 🏙️ МІСТО
@@ -304,35 +364,49 @@ def set_gender(message):
 def set_city(message):
     parts = message.text.split(' ', 1)
     if len(parts) < 2 or not parts[1].strip():
-        bot.reply_to(message, "Вкажи місто: <code>!місто Київ</code>", parse_mode="HTML")
+        sent = bot.reply_to(message, "Вкажи місто: <code>!місто Київ</code>", parse_mode="HTML")
+        auto_delete(sent, 20)
         return
     city = parts[1].strip()
-    uid  = message.from_user.id
+    uid  = message.from_user.
+    uid
+id
     with db_lock:
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name) VALUES (?, ?)",
                        (uid, message.from_user.first_name))
-        cursor.execute("UPDATE stats SET city=? WHERE user_id=?", (city, uid))
+        cursor.execute(
+                       (uid, message.from_
+"UPDATE stats SET city=? WHERE user_id=?", (city, uid))
         conn.commit()
-    bot.reply_to(message,
+    sent = bot.reply_to(message,
         f"✅ Місто збережено: <b>{city}</b>\nТепер <code>!погода</code> без параметрів покаже твоє місто!",
         parse_mode="HTML")
+    auto_delete(sent, 20)
 
 # ===================================================================
 # 🏅 ДОСЯГНЕННЯ
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!нагороди')
 def show_achievements(message):
-    uid  = message.from_user.id
+    uid  = message.from_user.
+    
+id
     name = message.from_user.first_name
     with db_lock:
         cursor.execute("SELECT achievement FROM achievements WHERE user_id=? ORDER BY earned_at", (uid,))
         rows = cursor.fetchall()
     if not rows:
-        bot.reply_to(message,
-            f"У <b>{name}</b> ще немає досягнень. Пиши більше, грай, будь активним!",
+        sent = bot.reply_to(message,
+            
+        sent = bot.reply_to(message,
+            f
+f"У <b>{name}</b> ще немає досягнень. Пиши більше, грай, будь активним!",
             parse_mode="HTML")
+        auto_delete(sent, 30)
         return
-    text = f"🏅 <b>Досягнення {name}:</b>\n\n"
+    text = 
+    text = f
+f"🏅 <b>Досягнення {name}:</b>\n\n"
     for (key,) in rows:
         if key in ACHIEVEMENTS:
             emoji, title, desc = ACHIEVEMENTS[key]
@@ -340,7 +414,10 @@ def show_achievements(message):
     total = len(ACHIEVEMENTS)
     earned = len(rows)
     text += f"\n<b>{earned}/{total}</b> досягнень отримано"
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
+    sent = bot.send_message(message.chat.id, text, parse_mode="HTML")
+    auto_delete(sent, 
+    auto_
+60)
 
 # ===================================================================
 # 🌡️ ПОГОДА
@@ -353,72 +430,113 @@ def get_weather(message):
         with db_lock:
             cursor.execute("SELECT city FROM stats WHERE user_id=?", (message.from_user.id,))
             row = cursor.fetchone()
-        city = row[0] if row and row[0] else ''
+        city = row[
+            row =
+0] if row and row[0] else ''
     if not city:
-        bot.reply_to(message,
-            "Вкажи місто: <code>!погода Київ</code>\n"
+        sent = bot.reply_to(message,
+            
+        sent = bot.reply_to(message
+
+        sent =
+"Вкажи місто: <code>!погода Київ</code>\n"
             "Або збережи своє місто: <code>!місто Київ</code>",
             parse_mode="HTML")
+        auto_delete(sent, 20)
         return
     try:
         d = requests.get(
-            f"http://api.openweathermap.org/data/2.5/weather"
+            
+        d
+f"http://api.openweathermap.org/data/2.5/weather"
             f"?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ua",
             timeout=10).json()
         if d.get('cod') != 200:
-            bot.reply_to(message, f"Не знайшов місто '{city}'."); return
+            sent = bot.reply_to(message, f"Не знайшов місто '{city}'.")
+            auto_delete(sent, 20)
+            return
         temp     = d['main']['temp']
         feels    = d['main']['feels_like']
-        desc     = d['weather'][0]['description']
+        desc     = d[
+        desc
+'weather'][0]['description']
         humidity = d['main']['humidity']
         wind     = d['wind']['speed']
         w_id = d['weather'][0]['id']
         if w_id < 300:    w_emoji = "⛈️"
         elif w_id < 500:  w_emoji = "🌦️"
         elif w_id < 600:  w_emoji = "🌧️"
-        elif w_id < 700:  w_emoji = "❄️"
+        
+        
+elif w_id < 700:  w_emoji = "❄️"
         elif w_id < 800:  w_emoji = "🌫️"
         elif w_id == 800: w_emoji = "☀️"
         else:              w_emoji = "⛅"
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send_message(message.chat.
+
+        sent
+id,
             f"{w_emoji} <b>Погода в {city}</b>\n\n"
             f"🌡 {temp:.1f}°C (відчув. {feels:.1f}°C)\n"
-            f"☁️ {desc}\n"
+            
+            f
+f"☁️ {desc}\n"
             f"💧 Вологість: {humidity}%\n"
             f"💨 Вітер: {wind} м/с",
             parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception as e:
         logger.error(f"Weather: {e}")
-        bot.reply_to(message, "Помилка погоди. Перевір API ключ.")
+        bot.reply_to(message, 
+        bot.reply_to(message,
+"Помилка погоди. Перевір API ключ.")
 
 # ===================================================================
 # 🎁 ЩОДЕННИЙ БОНУС
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!бонус')
 def daily_bonus(message):
-    uid  = message.from_user.id
+    uid  = message.from_user.
+    uid  = message.from_
+
+    
+id
     now  = int(time.time())
     with db_lock:
-        cursor.execute("SELECT last_bonus FROM stats WHERE user_id=?", (uid,))
+        cursor.execute(
+        
+"SELECT last_bonus FROM stats WHERE user_id=?", (uid,))
         row = cursor.fetchone()
     last = row[0] if row else 0
     if now - last < 86400:
         remaining = 86400 - (now - last)
         h = remaining // 3600
-        m_ = (remaining % 3600) // 60
-        bot.reply_to(message,
+        m_ = (remaining % 
+        m_ = (
+3600) // 60
+        sent = bot.reply_to(message,
             f"⏳ Бонус вже забрав! Наступний через <b>{h}год {m_}хв</b>", parse_mode="HTML")
+        auto_delete(sent, 20)
         return
     bonus = random.randint(50, 200)
     add_coins(uid, bonus)
     with db_lock:
         cursor.execute("UPDATE stats SET last_bonus=? WHERE user_id=?", (now, uid))
         conn.commit()
-    give_achievement(uid, 'перший_бонус', message.chat.id)
-    bot.send_message(message.chat.id,
+    give_achievement(uid, 
+        conn.commit()
+    give
+
+        conn.commit
+'перший_бонус', message.chat.id)
+    sent = bot.send_message(message.chat.
+    sent = bot.send_message(message.chat.
+id,
         f"🎁 <b>{message.from_user.first_name}</b> забрав щоденний бонус!\n"
         f"+<b>{bonus} 🪙</b> | Баланс: {get_coins(uid)} 🪙",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 # ===================================================================
 # 🎟️ ЛОТЕРЕЯ
@@ -430,31 +548,52 @@ def daily_lottery(message):
     with db_lock:
         cursor.execute("SELECT last_lottery FROM stats WHERE user_id=?", (uid,))
         row = cursor.fetchone()
-    last = row[0] if row else 0
+    last = row[
+        row = cursor
+0] if row else 0
     if now - last < 86400:
         remaining = 86400 - (now - last)
-        h = remaining // 3600
-        bot.reply_to(message,
+        h = remaining // 
+        h = remaining // 
+3600
+        sent = bot.reply_to(message,
             f"⏳ Вже брав участь! Наступна через <b>{h} год</b>", parse_mode="HTML")
+        auto_delete(sent, 20)
         return
     with db_lock:
-        cursor.execute("UPDATE stats SET last_lottery=? WHERE user_id=?", (now, uid))
+        cursor.execute(
+        cursor
+"UPDATE stats SET last_lottery=? WHERE user_id=?", (now, uid))
         conn.commit()
     r = random.random()
     if r < 0.05:
-        prize = 1000; text = f"💥 <b>ДЖЕКПОТ!!!</b> +{prize} 🪙"
-        give_achievement(uid, 'везунчик', message.chat.id)
+        prize = 
+        prize
+1000; text = f"💥 <b>ДЖЕКПОТ!!!</b> +{prize} 🪙"
+        give_achievement(uid, 
+        give
+
+        
+'везунчик', message.chat.id)
     elif r < 0.20:
         prize = 300;  text = f"🌟 <b>Великий виграш!</b> +{prize} 🪙"
-    elif r < 0.50:
+    
+    
+elif r < 0.50:
         prize = 100;  text = f"✅ <b>Виграш</b> +{prize} 🪙"
     else:
         prize = 0;    text = f"😢 <b>{message.from_user.first_name}</b> нічого не виграв."
     if prize > 0:
         add_coins(uid, prize)
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.
+        add_coins(uid, prize)
+    
+id,
         f"🎟️ <b>{message.from_user.first_name}</b> бере участь у лотереї...\n\n{text}",
         parse_mode="HTML")
+    auto_delete(sent, 
+    auto
+30)
 
 # ===================================================================
 # ⭐ РЕПУТАЦІЯ
@@ -462,29 +601,63 @@ def daily_lottery(message):
 @bot.message_handler(func=lambda m: m.text and m.text.strip() in ['!+', '!-'])
 def change_rep(message):
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай на повідомлення юзера!"); return
+        sent = bot.reply_to(message, "Реплай на повідомлення юзера!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
     giver  = message.from_user
-    if target.id == giver.id:
-        bot.reply_to(message, "Собі репутацію? Нарцис! 😄"); return
+    
+    target = message.reply_to_message.from_user
+    giver
+
+    target = message.reply_to_message.from_user
+    g
+
+    target = message.reply_to_
+if target.id == giver.id:
+        sent = bot.reply_to(message, "Собі репутацію? Нарцис! 😄")
+        auto_delete(sent, 15)
+        return
     if target.is_bot:
-        bot.reply_to(message, "Боту репутацію? 🤖"); return
-    change = +1 if message.text.strip() == '!+' else -1
+        sent = bot.reply_to(message, 
+        sent = bot.reply_to(message
+"Боту репутацію? 🤖")
+        auto_delete(sent, 15)
+        return
+    change = +
+    change =
+
+    change
+1 if message.text.strip() == '!+' else -1
     with db_lock:
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name) VALUES (?, ?)",
                        (target.id, target.first_name))
         cursor.execute("UPDATE stats SET rep=rep+? WHERE user_id=?", (change, target.id))
         cursor.execute("SELECT rep FROM stats WHERE user_id=?", (target.id,))
-        new_rep = cursor.fetchone()[0]
+        new_rep = cursor.fetchone()[
+        new
+0]
         conn.commit()
-    emoji  = "⬆️" if change > 0 else "⬇️"
-    action = "підвищив" if change > 0 else "понизив"
+    emoji  = 
+        conn.commit()
+    emoji
+"⬆️" if change > 0 else "⬇️"
+    action = 
+    action
+"підвищив" if change > 0 else "понизив"
     if change > 0:
-        give_achievement(giver.id, 'добра_людина', message.chat.id)
-    bot.send_message(message.chat.id,
+        give_achievement(giver.
+        
+id, 'добра_людина', message.chat.id)
+    sent = bot.send_message(message.chat.
+    sent = bot.send_message(
+id,
         f"{emoji} <b>{giver.first_name}</b> {action} репутацію <b>{target.first_name}</b>\n"
         f"Репутація: <b>{new_rep}</b>",
         parse_mode="HTML")
+    auto_delete(sent, 
+    auto_
+30)
 
 # ===================================================================
 # 🎤 РАП-БАТЛ
@@ -492,13 +665,27 @@ def change_rep(message):
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!батл'))
 def rap_battle_challenge(message):
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай на повідомлення суперника!"); return
+        sent = bot.reply_to(message, "Реплай на повідомлення суперника!")
+        auto_delete(sent, 
+        auto_
+15)
+        return
     challenger = message.from_user
     opponent   = message.reply_to_message.from_user
     if challenger.id == opponent.id:
-        bot.reply_to(message, "Сам з собою батл? 😂"); return
+        sent = bot.reply_to(message, 
+        sent = bot.reply_to(message,
+
+        sent = bot
+"Сам з собою батл? 😂")
+        auto_delete(sent, 
+        auto_delete(
+15)
+        return
     if opponent.is_bot:
-        bot.reply_to(message, "Бот не рапує (поки що) 🎤"); return
+        sent = bot.reply_to(message, "Бот не рапує (поки що) 🎤")
+        auto_delete(sent, 15)
+        return
     rap_pending[message.chat.id] = {
         'challenger_id':   challenger.id,
         'challenger_name': challenger.first_name,
@@ -506,7 +693,13 @@ def rap_battle_challenge(message):
         'opponent_name':   opponent.first_name,
         'stage':           'waiting_accept'
     }
-    bot.send_message(message.chat.id,
+    bot.send_message(message.chat.
+    }
+    bot.send_message(message.
+
+    }
+    bot
+id,
         f"🎤 <b>{challenger.first_name}</b> кидає виклик → <b>{opponent.first_name}</b>!\n\n"
         f"<code>!прийняти</code> — прийняти\n<code>!відмовити</code> — відмовитись",
         parse_mode="HTML")
@@ -515,13 +708,27 @@ def rap_battle_challenge(message):
 def rap_accept(message):
     cid = message.chat.id
     if cid not in rap_pending:
-        bot.reply_to(message, "Немає активного виклику."); return
+        sent = bot.reply_to(message, "Немає активного виклику.")
+        auto_delete(sent, 15)
+        return
     battle = rap_pending[cid]
-    if message.from_user.id != battle['opponent_id']:
-        bot.reply_to(message, "Не тебе викликали! 😏"); return
+    
+    battle = rap_pending[cid
+
+    battle
+if message.from_user.id != battle['opponent_id']:
+        sent = bot.reply_to(message, 
+        sent = bot.reply_to(message
+"Не тебе викликали! 😏")
+        auto_delete(sent, 15)
+        
+        
+return
     rap_pending[cid]['stage'] = 'waiting_rap1'
     bot.send_message(cid,
-        f"⚔️ <b>РАП-БАТЛ!</b>\n\n"
+        
+    bot.send_message(cid
+f"⚔️ <b>РАП-БАТЛ!</b>\n\n"
         f"<b>{battle['challenger_name']}</b> — напиши свій реп (реплай на це):",
         parse_mode="HTML")
 
@@ -530,19 +737,27 @@ def rap_decline(message):
     cid = message.chat.id
     if cid not in rap_pending: return
     battle = rap_pending.pop(cid)
-    if message.from_user.id != battle['opponent_id']: return
-    bot.send_message(cid,
+    
+    battle = rap_pending.pop(cid)
+    
+if message.from_user.id != battle['opponent_id']: return
+    sent = bot.send_message(cid,
         f"🏳️ <b>{battle['opponent_name']}</b> злякався рапу! Боягуз! 😂",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 # ===================================================================
 # 🤫 КОНФЕСІЯ
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!конфесія'))
 def confession(message):
-    text_ = message.text[9:].strip()
+    text_ = message.text[
+    text_ = message.text[
+9:].strip()
     if not text_:
-        bot.reply_to(message, "Напиши текст! !конфесія [текст]"); return
+        sent = bot.reply_to(message, "Напиши текст! !конфесія [текст]")
+        auto_delete(sent, 15)
+        return
     try:
         bot.delete_message(message.chat.id, message.message_id)
     except Exception:
@@ -551,8 +766,13 @@ def confession(message):
         cursor.execute("INSERT INTO confessions (chat_id, text, created) VALUES (?,?,?)",
                        (message.chat.id, text_, int(time.time())))
         conn.commit()
-    bot.send_message(message.chat.id,
-        f"🤫 <b>АНОНІМНА КОНФЕСІЯ:</b>\n\n<i>{text_}</i>", parse_mode="HTML")
+    bot.send_message(message.chat.
+        conn.commit()
+    bot.send_message(message.
+id,
+        
+        f
+f"🤫 <b>АНОНІМНА КОНФЕСІЯ:</b>\n\n<i>{text_}</i>", parse_mode="HTML")
 
 # ===================================================================
 # 🔮 НОВІ КРУТІ ФУНКЦІЇ
@@ -560,53 +780,86 @@ def confession(message):
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!прогноз')
 def day_forecast(message):
     name = message.from_user.first_name
-    try:
+    
+    
+try:
         resp = model.generate_content(
             f"Персональний прогноз дня для {name} в стилі Драго — іронічний, з підколками. "
             f"Включи: щастя, кохання, гроші, роботу. 4 речення.")
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send_message(
+id,
             f"🔮 <b>Прогноз для {name}:</b>\n\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 
+        auto_delete(sent,
+60)
     except Exception:
-        bot.reply_to(message, "Кристальна куля затуманилась.")
+        sent = bot.reply_to(message, 
+        sent = bot.reply_to(
+"Кристальна куля затуманилась.")
+        auto_delete(sent, 
+        auto_delete(sent
+15)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!роль')
 def random_role(message):
     roles = [
-        "👑 Король чату", "🤡 Клоун дня", "🧠 Найрозумніший",
+        
+    
+"👑 Король чату", "🤡 Клоун дня", "🧠 Найрозумніший",
         "💀 Зомбі чату", "🦁 Альфа самець", "🐑 Вівця стада",
         "🕵️ Секретний агент", "🌟 Зірка вечора", "🍕 Людина-піца",
         "😴 Соня дня", "🦊 Хитрий лис", "🐢 Черепаха-мудрець",
         "🎸 Рок-зірка", "📚 Ходяча енциклопедія", "🤖 Робот-симулятор",
     ]
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         f"🎭 Сьогодні <b>{message.from_user.first_name}</b> — це...\n\n<b>{random.choice(roles)}</b>!",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!куля'))
 def magic_ball(message):
     question = message.text[5:].strip()
     if not question:
-        bot.reply_to(message, "Задай питання! !куля Чи пощастить мені?"); return
+        sent = bot.reply_to(message, "Задай питання! !куля Чи пощастить мені?")
+        auto_delete(sent, 15)
+        return
     answers = [
-        "🟢 Так, однозначно!", "🟢 Все вказує на так!", "🟢 Безперечно!",
+        
+    answers
+"🟢 Так, однозначно!", "🟢 Все вказує на так!", "🟢 Безперечно!",
         "🟢 Можеш розраховувати на це!", "🟡 Спитай пізніше...",
         "🟡 Важко сказати зараз.", "🟡 Не визначено.",
         "🔴 Не розраховуй на це.", "🔴 Відповідь — ні.",
         "🔴 Навіть не мрій!", "😂 Серйозно?! ТИ ЗАДАЄШ ЦЕ ПИТАННЯ?!",
     ]
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.
+    ]
+    sent = bot.
+
+    
+id,
         f"🔮 <b>Питання:</b> {question}\n\n<b>{random.choice(answers)}</b>",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!голос'))
 def quick_poll(message):
     text_ = message.text[6:].strip()
     if not text_:
-        bot.reply_to(message, "!голос Хто найкрутіший?"); return
+        sent = bot.reply_to(message, "!голос Хто найкрутіший?")
+        auto_delete(sent, 15)
+        return
     try:
-        bot.send_poll(message.chat.id, question=text_[:300],
-                      options=["👍 Так", "👎 Ні", "🤷 Все рівно"],
-                      is_anonymous=False)
+        bot.send_poll(message.chat.
+        bot.send_poll
+id, question=text_[:300],
+                      options=[
+                      options=
+"👍 Так", "👎 Ні", "🤷 Все рівно"],
+                      is_anonymous=
+                      is_
+False)
     except Exception as e:
         bot.reply_to(message, f"Не зміг: {e}")
 
@@ -614,32 +867,55 @@ def quick_poll(message):
 def who_is_better(message):
     parts = message.text[11:].strip().split(' vs ')
     if len(parts) < 2:
-        bot.reply_to(message, "Формат: !хто_кращий Кіт vs Собака"); return
-    a, b     = parts[0].strip(), parts[1].strip()
-    score_a  = random.randint(0, 100)
+        sent = bot.reply_to(message, "Формат: !хто_кращий Кіт vs Собака")
+        auto_delete(sent, 15)
+        return
+    a, b     = parts[
+    a, b     
+0].strip(), parts[1].strip()
+    score_a  = random.randint(
+    score_a  
+
+    score
+0, 100)
     score_b  = 100 - score_a
-    winner   = a if score_a > score_b else b
-    bot.send_message(message.chat.id,
+    winner   = a 
+    winner   = a
+
+    winner
+if score_a > score_b else b
+    sent = bot.send_message(message.chat.id,
         f"⚖️ <b>{a}</b> vs <b>{b}</b>\n\n"
         f"📊 {a}: {score_a}%\n📊 {b}: {score_b}%\n\n"
         f"🏆 Переможець: <b>{winner}</b>!",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!цитата')
 def motivational_quote(message):
     try:
-        style = random.choice(['мотиваційна', 'демотиваційна і саркастична', 'філософська', 'смішна'])
+        style = random.choice([
+        style = random
+'мотиваційна', 'демотиваційна і саркастична', 'філософська', 'смішна'])
         resp  = model.generate_content(
             f"Придумай коротку {style} цитату українською. "
             f"Тільки цитата і вигаданий автор. Без зайвого тексту.")
-        bot.send_message(message.chat.id, f"💬 <i>{resp.text}</i>", parse_mode="HTML")
+        sent = bot.send_message(message.chat.id, f"💬 <i>{resp.text}</i>", parse_mode="HTML")
+        auto_delete(sent, 30)
     except Exception:
-        bot.reply_to(message, "Муза покинула Драго.")
+        sent = bot.reply_to(message, "Муза покинула Драго.")
+        auto_delete(sent, 15)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!токсик')
 def toxicity_level(message):
     target_name = (message.reply_to_message.from_user.first_name
-                   if message.reply_to_message else message.from_user.first_name)
+                   
+    target_name = (message.reply_to_message.from_user.
+
+    target_name = (message.reply
+
+    target_name = (
+if message.reply_to_message else message.from_user.first_name)
     level = random.randint(0, 100)
     if level < 20:    emoji, desc = "😇", "Майже святий. Підозріло."
     elif level < 40:  emoji, desc = "😊", "Нормальний юзер. Рідкість."
@@ -647,18 +923,24 @@ def toxicity_level(message):
     elif level < 80:  emoji, desc = "😤", "Досить токсичний! Обережно!"
     else:             emoji, desc = "☢️", "НЕБЕЗПЕЧНИЙ РІВЕНЬ ТОКСИЧНОСТІ!!!"
     bar = "█" * (level // 10) + "░" * (10 - level // 10)
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         f"{emoji} <b>Токсичність {target_name}:</b>\n\n"
         f"[{bar}] {level}%\n\n<i>{desc}</i>",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!любов'))
 def love_percent(message):
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай на повідомлення юзера! !любов"); return
+        sent = bot.reply_to(message, "Реплай на повідомлення юзера! !любов")
+        auto_delete(sent, 15)
+        return
     name1  = message.from_user.first_name
     name2  = message.reply_to_message.from_user.first_name
-    seed   = abs(hash(f"{min(name1, name2)}{max(name1, name2)}")) % 101
+    seed   = 
+    name1  = message.from_user.first_name
+    name2
+abs(hash(f"{min(name1, name2)}{max(name1, name2)}")) % 101
     level  = seed
     if level < 20:    emoji, desc = "💔", "Нічого спільного. Забудь."
     elif level < 40:  emoji, desc = "💛", "Дружба — і не більше."
@@ -666,10 +948,17 @@ def love_percent(message):
     elif level < 80:  emoji, desc = "❤️", "Є іскра! Діяти потрібно!"
     else:             emoji, desc = "💘", "ІДЕАЛЬНА ПАРА!! Одружуйтесь вже!"
     bar = "█" * (level // 10) + "░" * (10 - level // 10)
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.
+    sent = bot.
+id,
         f"💘 <b>{name1}</b> + <b>{name2}</b>\n\n"
-        f"[{bar}] {level}%\n\n{emoji} <i>{desc}</i>",
+        
+        f
+f"[{bar}] {level}%\n\n{emoji} <i>{desc}</i>",
         parse_mode="HTML")
+    auto_delete(sent, 
+    auto
+30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!фортуна')
 def roulette(message):
@@ -684,10 +973,22 @@ def roulette(message):
         ("🎉 +5 монет. Хоч щось.", "coins", 5),
     ]
     o   = random.choice(outcomes)
-    uid = message.from_user.id
-    bot.send_message(message.chat.id,
+    uid = message.from_user.
+    ]
+    o   = random.choice(outcomes)
+    uid
+
+    ]
+    o   = random.choice(outcomes)
+id
+    sent = bot.send_message(message.chat.id,
         f"🎰 <b>{message.from_user.first_name}</b> крутить колесо фортуни...\n\n{o[0]}",
-        parse_mode="HTML")
+        parse_mode=
+        
+"HTML")
+    auto_delete(sent, 
+    auto_delete(sent,
+30)
     if o[1] == "coins":
         add_coins(uid, o[2])
     elif o[1] == "mute":
@@ -700,17 +1001,31 @@ def roulette(message):
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!монетка')
 def coin_flip(message):
-    bot.reply_to(message,
-        f"🪙 Підкидаю...\n\n<b>{random.choice(['🦅 Орел!', '🔵 Решка!'])}</b>",
+    sent = bot.reply_to(message,
+        
+    sent
+f"🪙 Підкидаю...\n\n<b>{random.choice(['🦅 Орел!', '🔵 Решка!'])}</b>",
         parse_mode="HTML")
+    auto_delete(sent, 
+    auto_delete(sent, 
+
+    
+20)
 
 @bot.message_handler(func=lambda m: m.text and re.match(r'^!кості(\s+\d+)?$', m.text.strip().lower()))
 def roll_dice(message):
     parts = message.text.strip().split()
-    sides = int(parts[1]) if len(parts) > 1 else 6
-    sides = max(2, min(sides, 1000))
-    bot.reply_to(message,
+    sides = 
+    parts = message
+
+    parts
+int(parts[1]) if len(parts) > 1 else 6
+    sides = 
+    sides
+max(2, min(sides, 1000))
+    sent = bot.reply_to(message,
         f"🎲 Кубик d{sides}...\n\n<b>{random.randint(1, sides)}</b>", parse_mode="HTML")
+    auto_delete(sent, 20)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!пчд')
 def truth_or_dare(message):
@@ -727,11 +1042,14 @@ def truth_or_dare(message):
         "Скажи щось приємне адміну.",
     ]
     if random.random() > 0.5:
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"🤔 <b>ПРАВДА:</b>\n\n{random.choice(truths)}", parse_mode="HTML")
     else:
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"😈 <b>ДІЛО:</b>\n\n{random.choice(dares)}", parse_mode="HTML")
+    auto_delete(sent, 
+    auto_delete(sent
+60)
 
 # ===================================================================
 # 📊 СТАТИСТИКА
@@ -748,12 +1066,17 @@ def show_top(message):
         """, (message.chat.id, today))
         rows = cursor.fetchall()
     if not rows:
-        bot.reply_to(message, "Сьогодні тиша..."); return
+        sent = bot.reply_to(message, 
+        sent =
+"Сьогодні тиша...")
+        auto_delete(sent, 15)
+        return
     medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟']
     text   = "📊 <b>Топ балакунів сьогодні:</b>\n\n"
     for i, (name, count) in enumerate(rows):
         text += f"{medals[i]} <b>{name}</b> — {count} повідомлень\n"
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
+    sent = bot.send_message(message.chat.id, text, parse_mode="HTML")
+    auto_delete(sent, 60)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!я')
 def show_profile(message):
@@ -761,21 +1084,21 @@ def show_profile(message):
     with db_lock:
         cursor.execute("SELECT count,gender,warns,coins,rep,city FROM stats WHERE user_id=?", (uid,))
         row = cursor.fetchone()
-        cursor.execute("SELECT COUNT(*) FROM achievements WHERE user_id=?", (uid,))
+        cursor.execute(
+        row = cursor.fetchone()
+        cursor
+"SELECT COUNT(*) FROM achievements WHERE user_id=?", (uid,))
         ach_count = cursor.fetchone()[0]
-        
     if not row:
-        bot.reply_to(message, "Ти не в базі. Пиши більше!")
+        sent = bot.reply_to(message, "Ти не в базі. Пиши більше!")
+        auto_delete(sent, 15)
         return
-
     count, gender, warns, coins, rep, city = row
     rep_emoji = "⭐" if rep > 0 else ("💀" if rep < 0 else "😐")
     city_text = f"🏙️ Місто: <b>{city}</b>\n" if city else ""
-    
-    username = message.from_user.username
+    username  = message.from_user.username
     nick_text = f"🔖 Нікнейм: <b>@{username}</b>\n" if username else "🔖 Нікнейм: <b>не встановлено</b>\n"
-    
-    bot.send_message(
+    sent = bot.send_message(
         message.chat.id,
         f"👤 <b>Профіль {message.from_user.first_name}</b>\n\n"
         f"{nick_text}"
@@ -788,11 +1111,14 @@ def show_profile(message):
         f"🏅 Досягнень: <b>{ach_count}/{len(ACHIEVEMENTS)}</b>",
         parse_mode="HTML"
     )
+    auto_delete(sent, 60)
 
 @bot.message_handler(commands=['д_зведення'])
 def show_group_stats(message):
     if not is_admin(message.chat.id, message.from_user.id):
-        bot.reply_to(message, "Тільки для адмінів!"); return
+        sent = bot.reply_to(message, "Тільки для адмінів!")
+        auto_delete(sent, 15)
+        return
     with db_lock:
         cursor.execute("SELECT COUNT(*),SUM(count),SUM(coins) FROM stats")
         tu, tm, tc = cursor.fetchone()
@@ -802,7 +1128,7 @@ def show_group_stats(message):
         girls = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM achievements")
         ach   = cursor.fetchone()[0]
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         f"📈 <b>Статистика групи</b>\n\n"
         f"👥 Юзерів: <b>{tu}</b>\n"
         f"💬 Повідомлень: <b>{tm or 0}</b>\n"
@@ -810,109 +1136,148 @@ def show_group_stats(message):
         f"👦 Хлопців: <b>{boys}</b>  👧 Дівчат: <b>{girls}</b>\n"
         f"🏅 Досягнень видано: <b>{ach}</b>",
         parse_mode="HTML")
+    auto_delete(sent, 60)
 
 # ===================================================================
 # 💰 ЕКОНОМІКА
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!гаманець')
 def show_balance(message):
-    coins = get_coins(message.from_user.id)
-    bot.reply_to(message, f"🪙 Твій баланс: <b>{coins} монет</b>", parse_mode="HTML")
+    coins = get_coins(message.from_user.
+    coins = get_coins(message.id)
+    sent = bot.reply_to(message, f"🪙 Твій баланс: <b>{coins} монет</b>", parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!дати'))
 def transfer_coins(message):
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай + !дати [сума]"); return
+        sent = bot.reply_to(message, "Реплай + !дати [сума]")
+        auto_delete(sent, 15)
+        return
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        bot.reply_to(message, "Формат: !дати [сума] (реплай)"); return
+        sent = bot.reply_to(message, "Формат: !дати [сума] (реплай)")
+        auto_delete(sent, 15)
+        return
     amount   = int(parts[1])
     sender   = message.from_user
     receiver = message.reply_to_message.from_user
     if sender.id == receiver.id:
-        bot.reply_to(message, "Собі? 😄"); return
+        sent = bot.reply_to(message, "Собі? 😄")
+        auto_delete(sent, 15)
+        return
     if get_coins(sender.id) < amount:
-        bot.reply_to(message, "Не вистачає монет!"); return
+        sent = bot.reply_to(message, "Не вистачає монет!")
+        auto_delete(sent, 15)
+        return
     add_coins(sender.id, -amount)
     add_coins(receiver.id,  amount)
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         f"✅ <b>{sender.first_name}</b> → <b>{amount} 🪙</b> → <b>{receiver.first_name}</b>",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!ставка'))
 def casino(message):
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        bot.reply_to(message, "!ставка [сума]"); return
+        sent = bot.reply_to(message, "!ставка [сума]")
+        auto_delete(sent, 15)
+        return
     bet   = int(parts[1])
     uid   = message.from_user.id
     coins = get_coins(uid)
     if coins < bet or bet < 1:
-        bot.reply_to(message, f"Недостатньо монет! ({coins} 🪙)"); return
+        sent = bot.reply_to(message, f"Недостатньо монет! ({coins} 🪙)")
+        auto_delete(sent, 15)
+        return
     r = random.random()
     if r < 0.45:
         add_coins(uid, bet)
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"🎰 <b>ВИГРАШ!</b> +{bet} 🪙 | Баланс: {get_coins(uid)} 🪙", parse_mode="HTML")
     elif r < 0.50:
         win = bet * 4; add_coins(uid, win)
         give_achievement(uid, 'везунчик', message.chat.id)
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"💥 <b>ДЖЕКПОТ!</b> +{win} 🪙 (x5) | Баланс: {get_coins(uid)} 🪙", parse_mode="HTML")
     else:
         add_coins(uid, -bet)
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"😢 Програв {bet} 🪙 | Баланс: {get_coins(uid)} 🪙", parse_mode="HTML")
+    auto_delete(sent, 30)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!крамниця')
 def show_shop(message):
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         "🏪 <b>Крамниця Драго:</b>\n\n"
         "🎭 VIP — 500 🪙 → /д_купити vip\n"
         "🔇 Мут юзера 1 год — 200 🪙 → /д_купити mute\n"
         "🎁 Секретний мем — 50 🪙 → /д_купити meme\n\n"
         "Монети: +1 за кожне повідомлення + !бонус щодня!",
         parse_mode="HTML")
+    auto_delete(sent, 60)
 
 @bot.message_handler(commands=['д_купити'])
 def buy_item(message):
     parts = message.text.split()
     if len(parts) < 2:
-        bot.reply_to(message, "Що купляємо? /д_купити vip | meme | mute"); return
+        sent = bot.reply_to(message, "Що купляємо? /д_купити vip | meme | mute")
+        auto_delete(sent, 15)
+        return
     item  = parts[1].lower()
     uid   = message.from_user.id
     coins = get_coins(uid)
     if item == 'vip':
         if coins < 500:
-            bot.reply_to(message, f"Треба 500 🪙, у тебе {coins}"); return
+            sent = bot.reply_to(message, f"Треба 500 🪙, у тебе {coins}")
+            auto_delete(sent, 15)
+            return
         add_coins(uid, -500)
-        bot.reply_to(message, "✅ Купив VIP! Тепер ти офіційно крутіший 😎")
+        sent = bot.reply_to(message, "✅ Купив VIP! Тепер ти офіційно крутіший 😎")
+        auto_delete(sent, 30)
     elif item == 'meme':
         if coins < 50:
-            bot.reply_to(message, f"Треба 50 🪙, у тебе {coins}"); return
+            sent = bot.reply_to(message, f"Треба 50 🪙, у тебе {coins}")
+            auto_delete(sent, 
+            auto_delete(sent, 
+15)
+            return
         add_coins(uid, -50)
         try:
             resp = model.generate_content("Смішний мем-текст про Telegram чат. Коротко.")
-            bot.reply_to(message, f"🎁 {resp.text}")
-        except Exception:
-            bot.reply_to(message, "🎁 'Коли купив VIP але нічого не змінилось'")
+            sent = bot.reply_to(message, f"🎁 {resp.text}")
+        
+        
+except Exception:
+            sent = bot.reply_to(message, "🎁 'Коли купив VIP але нічого не змінилось'")
+        auto_delete(sent, 30)
     elif item == 'mute':
         if coins < 200:
-            bot.reply_to(message, f"Треба 200 🪙, у тебе {coins}"); return
+            sent = bot.reply_to(message, f"Треба 200 🪙, у тебе {coins}")
+            auto_delete(sent, 15)
+            return
         if not message.reply_to_message:
-            bot.reply_to(message, "Реплай на юзера!"); return
+            sent = bot.reply_to(message, "Реплай на юзера!")
+            auto_delete(sent, 15)
+            return
         target = message.reply_to_message.from_user
         try:
             add_coins(uid, -200)
             bot.restrict_chat_member(message.chat.id, target.id,
                 until_date=int(time.time()) + 3600,
-                permissions=types.ChatPermissions(can_send_messages=False))
-            bot.send_message(message.chat.id,
+                permissions=types.ChatPermissions(can_send_messages=
+                permissions=types.ChatPermissions(can_send_
+False))
+            sent = bot.send_message(message.chat.id,
                 f"🔇 <b>{message.from_user.first_name}</b> купив мут для "
                 f"<b>{target.first_name}</b> на 1 год!",
                 parse_mode="HTML")
+            auto_delete(sent, 30)
         except Exception as e:
-            bot.reply_to(message, f"Не зміг: {e}")
+            bot.reply_to(message, 
+            bot
+f"Не зміг: {e}")
 
 # ===================================================================
 # 🧠 ВІКТОРИНА
@@ -932,21 +1297,27 @@ def start_trivia(message):
         with db_lock:
             cursor.execute(
                 "INSERT OR REPLACE INTO trivia (chat_id,question,answer,active) VALUES(?,?,?,1)",
-                (message.chat.id, q, a))
+                (message.chat.
+                (
+id, q, a))
             conn.commit()
         bot.send_message(message.chat.id,
             f"🧠 <b>ВІКТОРИНА!</b>\n\n{q}\n\nПравильна відповідь = +50 🪙!\n"
             f"Скасувати: /д_стоп_загадка", parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Trivia: {e}")
-        bot.reply_to(message, "Не зміг придумати питання.")
+        logger.error(
+        
+f"Trivia: {e}")
+        sent = bot.reply_to(message, "Не зміг придумати питання.")
+        auto_delete(sent, 15)
 
 @bot.message_handler(commands=['д_стоп_загадка'])
 def stop_trivia(message):
     with db_lock:
         cursor.execute("UPDATE trivia SET active=0 WHERE chat_id=?", (message.chat.id,))
         conn.commit()
-    bot.reply_to(message, "Вікторину скасовано.")
+    sent = bot.reply_to(message, "Вікторину скасовано.")
+    auto_delete(sent, 15)
 
 def check_trivia_answer(message):
     with db_lock:
@@ -974,7 +1345,9 @@ def check_trivia_answer(message):
 def set_reminder(message):
     parts = message.text.split(' ', 2)
     if len(parts) < 3:
-        bot.reply_to(message, "Формат: /д_памятка 30хв Зустріч"); return
+        sent = bot.reply_to(message, "Формат: /д_памятка 30хв Зустріч")
+        auto_delete(sent, 15)
+        return
     time_str = parts[1].lower(); text_r = parts[2]
     seconds  = 0
     if 'хв' in time_str or 'min' in time_str:
@@ -984,15 +1357,18 @@ def set_reminder(message):
     elif 'с' in time_str:
         seconds = int(re.sub(r'[^\d]', '', time_str) or 0)
     if seconds < 1:
-        bot.reply_to(message, "Не зрозумів час. Приклад: 30хв, 2год, 60с"); return
+        sent = bot.reply_to(message, "Не зрозумів час. Приклад: 30хв, 2год, 60с")
+        auto_delete(sent, 15)
+        return
     with db_lock:
         cursor.execute(
             "INSERT INTO reminders (user_id,chat_id,remind_at,text) VALUES(?,?,?,?)",
             (message.from_user.id, message.chat.id, int(time.time()) + seconds, text_r))
         conn.commit()
-    bot.reply_to(message,
+    sent = bot.reply_to(message,
         f"✅ Нагадаю через <b>{str(timedelta(seconds=seconds))}</b>:\n<i>{text_r}</i>",
         parse_mode="HTML")
+    auto_delete(sent, 30)
 
 def reminder_worker():
     while True:
@@ -1022,7 +1398,9 @@ def reminder_worker():
 def translate_text(message):
     parts = message.text.split(' ', 2)
     if len(parts) < 3 and not message.reply_to_message:
-        bot.reply_to(message, "/д_перекласти [мова] [текст] або реплай"); return
+        sent = bot.reply_to(message, "/д_перекласти [мова] [текст] або реплай")
+        auto_delete(sent, 15)
+        return
     if message.reply_to_message and len(parts) < 3:
         lang = parts[1] if len(parts) > 1 else 'англійська'
         text_ = message.reply_to_message.text or ""
@@ -1030,20 +1408,28 @@ def translate_text(message):
         lang = parts[1]; text_ = parts[2]
     try:
         resp = model.generate_content(f"Переклади на {lang}. ТІЛЬКИ переклад: {text_}")
-        bot.reply_to(message, f"🌍 <b>({lang}):</b>\n{resp.text}", parse_mode="HTML")
+        sent = bot.reply_to(message, f"🌍 <b>({lang}):</b>\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception:
         bot.reply_to(message, "Помилка перекладу.")
 
 @bot.message_handler(commands=['д_стиснути'])
 def summarize_text(message):
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай на повідомлення!"); return
+        sent = bot.reply_to(message, "Реплай на повідомлення!")
+        auto_delete(sent, 
+        
+15)
+        return
     text_ = message.reply_to_message.text or message.reply_to_message.caption or ""
     if not text_:
-        bot.reply_to(message, "Немає тексту."); return
+        sent = bot.reply_to(message, "Немає тексту.")
+        auto_delete(sent, 15)
+        return
     try:
         resp = model.generate_content(f"Стисни до 2-3 речень українською: {text_}")
-        bot.reply_to(message, f"📝 <b>Коротко:</b>\n{resp.text}", parse_mode="HTML")
+        sent = bot.reply_to(message, f"📝 <b>Коротко:</b>\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception:
         bot.reply_to(message, "Помилка.")
 
@@ -1051,56 +1437,93 @@ def summarize_text(message):
 def wikipedia_search(message):
     query = message.text[5:].strip()
     if not query:
-        bot.reply_to(message, "!вікі Місяць"); return
+        sent = bot.reply_to(message, "!вікі Місяць")
+        auto_delete(sent, 15)
+        return
     try:
         data = requests.get(
             f"https://uk.wikipedia.org/api/rest_v1/page/summary/{requests.utils.quote(query)}",
             timeout=10).json()
         if 'extract' not in data:
-            bot.reply_to(message, f"Нічого про '{query}'."); return
+            sent = bot.reply_to(message, f"Нічого про '{query}'.")
+            auto_delete(sent, 15)
+            return
         extract  = data['extract'][:800] + ('...' if len(data['extract']) > 800 else '')
-        page_url = data.get('content_urls', {}).get('desktop', {}).get('page', '')
-        bot.send_message(message.chat.id,
+        page_url = data.get(
+        page_url = data
+'content_urls', {}).get('desktop', {}).get('page', '')
+        sent = bot.send_message(message.chat.id,
             f"📖 <b>{data.get('title', query)}</b>\n\n{extract}\n\n<a href='{page_url}'>Повністю</a>",
             parse_mode="HTML", disable_web_page_preview=True)
+        auto_delete(sent, 90)
     except Exception as e:
         logger.error(f"Wiki: {e}")
-        bot.reply_to(message, "Помилка Wikipedia.")
+        bot.reply_to(message, 
+        bot
+"Помилка Wikipedia.")
 
 @bot.message_handler(func=lambda m: m.text and re.match(r'^!курс\s+\w+$', m.text.strip().lower()))
 def currency_rate(message):
-    currency = message.text.split()[1].upper()
+    currency = message.text.split()[
+    currency = message.text.split
+1].upper()
     try:
         data = requests.get("https://api.exchangerate-api.com/v4/latest/UAH", timeout=10).json()
         if currency not in data.get('rates', {}):
-            bot.reply_to(message, f"Не знайшов '{currency}'."); return
+            sent = bot.reply_to(message, f"Не знайшов '{currency}'.")
+            auto_delete(sent, 15)
+            return
         rate = data['rates'][currency]
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send_message(message.chat.
+id,
             f"💱 <b>{currency}/UAH</b>\n\n1 {currency} = <b>{1/rate:.2f} грн</b>",
             parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception as e:
         logger.error(f"Currency: {e}")
         bot.reply_to(message, "Помилка курсу.")
 
 @bot.message_handler(func=lambda m: m.text and re.match(r'^!монета\s+\w+$', m.text.strip().lower()))
 def crypto_rate(message):
-    coin    = message.text.split()[1].upper()
+    coin    = message.text.split()[
+    coin    = message.text.split()[
+1].upper()
     ids_map = {
-        'BTC':'bitcoin','ETH':'ethereum','BNB':'binancecoin','SOL':'solana',
+        
+    ids
+'BTC':'bitcoin','ETH':'ethereum','BNB':'binancecoin','SOL':'solana',
         'XRP':'ripple','ADA':'cardano','DOGE':'dogecoin','TON':'the-open-network',
         'TRX':'tron','MATIC':'matic-network'
     }
     coin_id = ids_map.get(coin, coin.lower())
-    try:
+    
+    }
+    coin_id = ids_map.get
+
+    }
+    coin_
+try:
         data = requests.get(
             f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd,uah",
             timeout=10).json()
         if coin_id not in data:
-            bot.reply_to(message, f"Не знайшов '{coin}'."); return
-        usd = data[coin_id].get('usd', '?')
+            sent = bot.reply_to(message, 
+            
+f"Не знайшов '{coin}'.")
+            auto_delete(sent, 15)
+            return
+        usd = data[coin_id].get(
+        usd = data[coin_id].
+
+        usd =
+'usd', '?')
         uah = data[coin_id].get('uah', '?')
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"₿ <b>{coin}</b>\n💵 ${usd:,.2f}\n💴 {uah:,.0f} грн", parse_mode="HTML")
+        auto_delete(sent, 
+        auto_delete(sent,
+60)
     except Exception as e:
         logger.error(f"Crypto: {e}")
         bot.reply_to(message, "Помилка крипто.")
@@ -1112,28 +1535,41 @@ def crypto_rate(message):
 def random_fact(message):
     try:
         resp = model.generate_content("Один цікавий факт. 2-3 речення, стиль Драго.")
-        bot.send_message(message.chat.id, f"💡 {resp.text}")
+        sent = bot.send_message(message.chat.id, f"💡 {resp.text}")
+        auto_delete(sent, 30)
     except Exception:
-        bot.reply_to(message, "Мозок завис.")
+        sent = bot.reply_to(message, "Мозок завис.")
+        auto_delete(sent, 15)
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() in ['!смішно', '!жарт'])
 def tell_joke(message):
     try:
         resp = model.generate_content("Короткий смішний анекдот українською. Тільки анекдот.")
-        bot.send_message(message.chat.id, f"🃏 {resp.text}")
+        sent = bot.send_message(message.chat.id, f"🃏 {resp.text}")
+        auto_delete(sent, 30)
     except Exception:
-        bot.reply_to(message, "Жарти скінчились 😅")
+        sent = bot.reply_to(message, "Жарти скінчились 😅")
+        auto_delete(sent, 15)
 
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith('!зірки'))
 def horoscope(message):
     sign = message.text.lower().split()[1] if len(message.text.split()) > 1 else ""
     if sign not in ZODIAC_SIGNS:
-        bot.reply_to(message, f"Знаки: {', '.join(ZODIAC_SIGNS.keys())}"); return
+        sent = bot.reply_to(message, 
+        
+f"Знаки: {', '.join(ZODIAC_SIGNS.keys())}")
+        auto_delete(sent, 
+        auto_
+20)
+        return
     try:
         resp = model.generate_content(
             f"Гороскоп для {sign} на сьогодні. Стиль Драго, 3-4 речення.")
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send
+id,
             f"♈ <b>Гороскоп {sign.capitalize()}:</b>\n\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception:
         bot.reply_to(message, "Зірки мовчать.")
 
@@ -1144,21 +1580,40 @@ def horoscope(message):
 def generate_image(message):
     prompt = message.text.split(' ', 1)[1].strip() if len(message.text.split()) > 1 else ''
     if not prompt:
-        bot.reply_to(message, "⚠️ /д_малюй [опис]"); return
+        sent = bot.reply_to(message, "⚠️ /д_малюй [опис]")
+        auto_delete(sent, 15)
+        return
     msg = bot.reply_to(message, "⏳ Малюю... до 2 хвилин.")
     try:
-        url = (f"https://image.pollinations.ai/p/{requests.utils.quote(prompt)}"
+        url = (
+        url = (f
+
+        url = (
+f"https://image.pollinations.ai/p/{requests.utils.quote(prompt)}"
                f"?width=1024&height=1024&seed={random.randint(1,999999)}&model=flux&nologo=true")
         r = requests.get(url, timeout=120)
         if r.status_code == 200 and len(r.content) >= 10000:
-            img = Image.open(io.BytesIO(r.content)).convert("RGB")
-            bio = io.BytesIO(); bio.name = 'art.jpg'
+            img = Image.
+            img
+open(io.BytesIO(r.content)).convert("RGB")
+            bio = io.BytesIO(); bio.name = 
+            bio = io.BytesIO(); bio.name
+
+            bio = io.BytesIO(); bio
+'art.jpg'
             img.save(bio, 'JPEG', quality=95); bio.seek(0)
             bot.send_photo(message.chat.id, bio,
-                           caption=f"🔥 <b>{prompt}</b>",
+                           caption=
+                           
+f"🔥 <b>{prompt}</b>",
                            parse_mode="HTML",
                            reply_to_message_id=message.message_id)
-            bot.delete_message(message.chat.id, msg.message_id)
+            bot.delete_message(message.chat.
+                           reply_to_message_id=message.message_id)
+            bot.delete_message(message.chat.
+
+                           reply_to_message_id=message.
+id, msg.message_id)
         else:
             raise Exception(f"HTTP {r.status_code}")
     except Exception as e:
@@ -1176,11 +1631,19 @@ def handle_voice(message):
         fi   = bot.get_file(message.voice.file_id)
         data = bot.download_file(fi.file_path)
         resp = model.generate_content([
-            "Послухай голосове і відповідж як Драго:",
+            
+        fi   = bot.get_file(message.voice.file_id)
+        data = bot.download_file(fi.file_
+
+        fi
+"Послухай голосове і відповідж як Драго:",
             {"data": data, "mime_type": "audio/ogg"}
         ])
         bot.reply_to(message, resp.text)
-    except Exception as e:
+    
+        ])
+        bot.reply_to(message, resp.
+except Exception as e:
         logger.error(f"Voice: {e}")
         bot.reply_to(message, "Не зміг розпізнати.")
 
@@ -1198,10 +1661,14 @@ def handle_photo(message):
         bot.send_chat_action(message.chat.id, 'typing')
         fi   = bot.get_file(message.photo[-1].file_id)
         data = bot.download_file(fi.file_path)
-        p    = caption if caption else "Опиши що на фото детально і дотепно в стилі Драго."
+        p    = caption 
+        data = bot.download_
+if caption else "Опиши що на фото детально і дотепно в стилі Драго."
         resp = model.generate_content([p, {"data": data, "mime_type": "image/jpeg"}])
         bot.reply_to(message, resp.text)
-    except Exception as e:
+    
+        bot.reply_to(message, resp
+except Exception as e:
         logger.error(f"Photo: {e}")
         bot.reply_to(message, "Не зміг розглянути фото.")
 
@@ -1210,30 +1677,50 @@ def handle_photo(message):
 # ===================================================================
 @bot.message_handler(commands=['д_слова'])
 def start_word_game(message):
-    game_state[message.chat.id] = {"last_letter": None, "used_words": []}
-    bot.reply_to(message, "🎲 Гра в слова! Пиши перше слово.")
+    game_state[message.chat.
+    game_state
+
+    game
+id] = {"last_letter": None, "used_words": []}
+    sent = bot.reply_to(message, "🎲 Гра в слова! Пиши перше слово.")
+    auto_delete(sent, 20)
 
 @bot.message_handler(commands=['д_стоп'])
 def stop_word_game(message):
     if message.chat.id in game_state:
         del game_state[message.chat.id]
-        bot.reply_to(message, "Гру зупинено 👋")
+        sent = bot.reply_to(message, "Гру зупинено 👋")
+        auto_delete(sent, 15)
     else:
-        bot.reply_to(message, "Гра не запущена.")
+        sent = bot.reply_to(message, 
+        sent = bot
+"Гра не запущена.")
+        auto_delete(sent, 15)
 
 def handle_word_game(message):
     word  = message.text.lower().strip()
-    state = game_state[message.chat.id]
+    state = game_state[message.chat.
+    word  
+
+    word
+id]
     if not word.replace(" ", "").isalpha() or len(word) < 2:
         return
     if state["last_letter"] and word[0] != state["last_letter"]:
-        bot.reply_to(message, f"Не-а! Має починатись на '{state['last_letter'].upper()}'."); return
+        sent = bot.reply_to(message, f"Не-а! Має починатись на '{state['last_letter'].upper()}'.")
+        auto_delete(sent, 15)
+        return
     if word in state["used_words"]:
-        bot.reply_to(message, "Слово вже було! 😎"); return
+        sent = bot.reply_to(message, "Слово вже було! 😎")
+        auto_delete(sent, 15)
+        return
     state["used_words"].append(word)
     nl = word[-1] if word[-1] not in ['ь','и','й','ї'] else word[-2]
-    state["last_letter"] = nl
-    bot.reply_to(message, f"✅ Прийнято! Наступне на '{nl.upper()}'.")
+    state[
+    state
+"last_letter"] = nl
+    sent = bot.reply_to(message, f"✅ Прийнято! Наступне на '{nl.upper()}'.")
+    auto_delete(sent, 20)
 
 # ===================================================================
 # 👋 ВХІД / ВИХІД
@@ -1243,13 +1730,21 @@ def handle_member_updates(message: types.ChatMemberUpdated):
     new_s = message.new_chat_member.status
     old_s = message.old_chat_member.status
     user  = message.new_chat_member.user
-    if new_s in ['member','administrator','restricted'] and not user.is_bot:
+    
+    new_s = message.new_chat_member.status
+    old_s = message.old_
+
+    new_s = message.new_chat_member.status
+    old
+if new_s in ['member','administrator','restricted'] and not user.is_bot:
         with db_lock:
             cursor.execute("INSERT OR IGNORE INTO stats (user_id, name) VALUES (?, ?)",
                            (user.id, user.first_name))
             conn.commit()
         bot.send_message(message.chat.id,
-            f"Вітаємо, <b>{user.first_name}</b>! 🤍\n"
+            
+            
+f"Вітаємо, <b>{user.first_name}</b>! 🤍\n"
             f"Тобі нараховано 100 стартових монет 🪙\n\n"
             f"<code>!стать хлопець</code> або <code>!стать дівчина</code> — вказати стать\n"
             f"<code>!місто Київ</code> — вказати місто для погоди\n"
@@ -1258,7 +1753,13 @@ def handle_member_updates(message: types.ChatMemberUpdated):
     elif old_s in ['member','administrator','restricted'] and new_s in ['left','kicked']:
         name = message.old_chat_member.user.first_name
         byes = [
-            f"Ну і пофіг, <b>{name}</b> пішов. 👋",
+            
+        name = message.old_chat_member.user.first_name
+        byes = [
+
+        name = message.old_chat_member.user.first_name
+        byes
+f"Ну і пофіг, <b>{name}</b> пішов. 👋",
             f"<b>{name}</b> злиняв. Менше народу — більше кисню. 🚪",
             f"<b>{name}</b> не витримав нашого рівня інтелекту. 🧠",
         ]
@@ -1271,53 +1772,75 @@ def handle_member_updates(message: types.ChatMemberUpdated):
 def warn_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
-    with db_lock:
+    
+    target = message.reply_to_
+
+    target
+with db_lock:
         cursor.execute("UPDATE stats SET warns=warns+1 WHERE user_id=?", (target.id,))
         cursor.execute("SELECT warns FROM stats WHERE user_id=?", (target.id,))
         row = cursor.fetchone(); conn.commit()
     warns = row[0] if row else 1
     if warns >= 3:
-        give_achievement(target.id, 'токсик', message.chat.id)
+        give_achievement(target.
+        
+id, 'токсик', message.chat.id)
         try:
             bot.restrict_chat_member(message.chat.id, target.id,
                 until_date=int(time.time()) + 3600,
-                permissions=types.ChatPermissions(can_send_messages=False))
-            bot.send_message(message.chat.id,
+                permissions=types.ChatPermissions(can_send_messages=
+                permissions=types.ChatPerm
+False))
+            sent = bot.send_message(message.chat.id,
                 f"⛔ <b>{target.first_name}</b> — 3 варни → мут 1 год!", parse_mode="HTML")
+            auto_delete(sent, 30)
         except Exception as e:
             bot.send_message(message.chat.id, f"Не зміг замутити: {e}")
     else:
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"⚠️ <b>{target.first_name}</b> — варн {warns}/3", parse_mode="HTML")
+        auto_delete(sent, 30)
 
 @bot.message_handler(commands=['д_пробачаю'])
 def unwarn_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
     with db_lock:
         cursor.execute("UPDATE stats SET warns=MAX(0,warns-1) WHERE user_id=?", (target.id,))
         conn.commit()
-    bot.send_message(message.chat.id,
+    sent = bot.send_message(message.chat.id,
         f"✅ Знято варн з <b>{target.first_name}</b>.", parse_mode="HTML")
+    auto_delete(sent, 20)
 
 @bot.message_handler(commands=['д_тиша'])
 def mute_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target  = message.reply_to_message.from_user
     parts   = message.text.split()
-    minutes = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 30
+    minutes = 
+    target  = message.reply_to_
+int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 30
     try:
         bot.restrict_chat_member(message.chat.id, target.id,
-            until_date=int(time.time()) + minutes * 60,
+            until_date=
+            until_
+int(time.time()) + minutes * 60,
             permissions=types.ChatPermissions(can_send_messages=False))
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"🔇 <b>{target.first_name}</b> замовкни на {minutes} хв.", parse_mode="HTML")
+        auto_delete(sent, 20)
     except Exception as e:
         bot.reply_to(message, f"Помилка: {e}")
 
@@ -1325,16 +1848,24 @@ def mute_user(message):
 def unmute_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
-    try:
+    
+    target = message.reply_to_message
+try:
         bot.restrict_chat_member(message.chat.id, target.id,
             permissions=types.ChatPermissions(
-                can_send_messages=True, can_send_media_messages=True,
+                can_send_messages=
+            permissions=types.ChatPermissions(
+                can_send_messages=
+True, can_send_media_messages=True,
                 can_send_polls=True, can_send_other_messages=True,
                 can_add_web_page_previews=True))
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"🔊 <b>{target.first_name}</b> тепер може говорити!", parse_mode="HTML")
+        auto_delete(sent, 20)
     except Exception as e:
         bot.reply_to(message, f"Помилка: {e}")
 
@@ -1342,27 +1873,43 @@ def unmute_user(message):
 def ban_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
-    try:
+    
+    target = message.reply_to_message.
+
+    target = message
+try:
         bot.ban_chat_member(message.chat.id, target.id)
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send_message(message.chat.
+id,
             f"🚫 <b>{target.first_name}</b> забанений! Адьос!", parse_mode="HTML")
+        auto_delete(sent, 20)
     except Exception as e:
-        bot.reply_to(message, f"Помилка: {e}")
+        bot.reply_to(message, 
+        bot.reply_to(message, f
+f"Помилка: {e}")
 
 @bot.message_handler(commands=['д_пнути'])
 def kick_user(message):
     if not is_admin(message.chat.id, message.from_user.id): return
     if not message.reply_to_message:
-        bot.reply_to(message, "Реплай!"); return
+        sent = bot.reply_to(message, "Реплай!")
+        auto_delete(sent, 15)
+        return
     target = message.reply_to_message.from_user
     try:
         bot.ban_chat_member(message.chat.id, target.id)
-        time.sleep(0.5)
+        time.sleep(
+        time.
+0.5)
         bot.unban_chat_member(message.chat.id, target.id)
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"👟 <b>{target.first_name}</b> — пнутий! До побачення!", parse_mode="HTML")
+        auto_delete(sent, 20)
     except Exception as e:
         bot.reply_to(message, f"Помилка: {e}")
 
@@ -1374,7 +1921,9 @@ def analyze_user(message):
     target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
     try:
         with db_lock:
-            cursor.execute("SELECT count,gender,warns,coins,rep FROM stats WHERE user_id=?",
+            cursor.execute(
+            cursor
+"SELECT count,gender,warns,coins,rep FROM stats WHERE user_id=?",
                            (target.id,))
             row = cursor.fetchone()
         count, gender, warns, coins, rep = row if row else (0,'?',0,0,0)
@@ -1383,15 +1932,20 @@ def analyze_user(message):
             f"Ім'я: {target.first_name}, Стать: {gender}, "
             f"Повідомлень: {count}, Варни: {warns}, Монети: {coins}, Реп: {rep}\n"
             f"3-4 речення, іронічно.")
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.
+        sent = bot.send_message(
+id,
             f"🧠 <b>Аналіз {target.first_name}:</b>\n\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception as e:
         logger.error(f"Analyze: {e}")
 
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '!атмосфера')
 def analyze_mood(message):
     try:
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime(
+        today
+'%Y-%m-%d')
         with db_lock:
             cursor.execute("""
                 SELECT s.name,ds.count FROM daily_stats ds
@@ -1400,13 +1954,20 @@ def analyze_mood(message):
                 ORDER BY ds.count DESC LIMIT 5
             """, (message.chat.id, today))
             rows = cursor.fetchall()
-        if not rows:
-            bot.reply_to(message, "Немає даних."); return
-        names = ", ".join([r[0] for r in rows])
+        
+            rows = cursor.fetchall
+if not rows:
+            sent = bot.reply_to(message, "Немає даних.")
+            auto_delete(sent, 15)
+            return
+        names = 
+        names
+", ".join([r[0] for r in rows])
         resp  = model.generate_content(
             f"Оціни настрій чату де активні: {names}. Коротко, стиль Драго.")
-        bot.send_message(message.chat.id,
+        sent = bot.send_message(message.chat.id,
             f"🎭 <b>Атмосфера чату:</b>\n\n{resp.text}", parse_mode="HTML")
+        auto_delete(sent, 60)
     except Exception as e:
         logger.error(f"Mood: {e}")
 
@@ -1421,7 +1982,9 @@ def send_meme(message):
             if memes:
                 with open(os.path.join(meme_dir, random.choice(memes)), 'rb') as ph:
                     bot.send_photo(message.chat.id, ph)
-            else:
+            
+            
+else:
                 bot.send_message(message.chat.id, "Папка з мемами порожня!")
         else:
             bot.send_message(message.chat.id, "Не знайшов папку з мемами.")
@@ -1433,7 +1996,7 @@ def send_meme(message):
 # ===================================================================
 @bot.message_handler(commands=['допомога', 'start', 'help'])
 def show_help(message):
-    bot.send_message(message.chat.id, """🤖 <b>ДРАГО — ВСІ КОМАНДИ</b>
+    sent = bot.send_message(message.chat.id, """🤖 <b>ДРАГО — ВСІ КОМАНДИ</b>
 
 <b>👤 Профіль:</b>
 • <code>!стать хлопець/дівчина</code> — вказати стать
@@ -1500,6 +2063,7 @@ def show_help(message):
 • <code>/д_дд</code> <code>/д_пробачаю</code>
 • <code>/д_тиша [хв]</code> <code>/д_говори</code>
 • <code>/д_вигнати</code> <code>/д_пнути</code>""", parse_mode="HTML")
+    auto_delete(sent, 120)
 
 # ===================================================================
 # 🎛️ ЦЕНТРАЛЬНИЙ ДИСПЕТЧЕР
@@ -1507,7 +2071,9 @@ def show_help(message):
 @bot.message_handler(content_types=['text'])
 def main_handler(message):
     text      = message.text
-    chat_id   = message.chat.id
+    chat_id   = message.chat.
+    
+id
     chat_type = message.chat.type
     user_id   = message.from_user.id
     name      = message.from_user.first_name
@@ -1524,7 +2090,9 @@ def main_handler(message):
                 bot.send_message(chat_id,
                     f"⚡ <b>{name}</b>, флуд → мут 5 хв!", parse_mode="HTML")
             except Exception as e:
-                logger.error(f"Antispam: {e}")
+                logger.error(
+                
+f"Antispam: {e}")
             return
 
     # Антимат
@@ -1537,7 +2105,9 @@ def main_handler(message):
     for keyword, responses in AUTO_REACTIONS.items():
         if keyword in text_lower and random.random() < 0.30:
             bot.send_message(chat_id, random.choice(responses))
-            break
+            
+            bot
+break
 
     # Рап-батл
     if chat_id in rap_pending:
@@ -1563,8 +2133,12 @@ def main_handler(message):
                 bot.send_message(chat_id,
                     f"⚖️ <b>ВЕРДИКТ ДРАГО:</b>\n\n{resp.text}", parse_mode="HTML")
             except Exception:
-                winner = random.choice([battle['challenger_name'], battle['opponent_name']])
-                bot.send_message(chat_id, f"⚖️ Переможець: <b>{winner}</b>!", parse_mode="HTML")
+                winner = random.choice([battle[
+                winner = random.choice([battle
+'challenger_name'], battle['opponent_name']])
+                bot.send_message(chat_id, 
+                bot.send_message(chat_id,
+f"⚖️ Переможець: <b>{winner}</b>!", parse_mode="HTML")
             rap_pending.pop(chat_id)
             return
 
@@ -1583,7 +2157,9 @@ def main_handler(message):
         row = cursor.fetchone()
     if row and row[0] == 'не вказано':
         g = analyze_gender(text)
-        if g in ['Хлопець', 'Дівчина']:
+        
+        g = analyze_gender(text
+if g in ['Хлопець', 'Дівчина']:
             with db_lock:
                 cursor.execute("UPDATE stats SET gender=? WHERE user_id=?", (g, user_id))
                 conn.commit()
@@ -1595,11 +2171,17 @@ def main_handler(message):
     # Діалог з Драго
     is_mentioned = False
     if chat_type in ['group', 'supergroup']:
-        triggers   = ['драго', 'джарвіс']
+        triggers   = [
+        triggers
+'драго', 'джарвіс']
         word_found = any(w in text_lower for w in triggers)
         if (word_found or
-            f"@{bot.get_me().username}" in text or
-            (message.reply_to_message and
+            
+            f
+f"@{bot.get_me().username}" in text or
+            (message.reply_to_message 
+            (message
+and
              message.reply_to_message.from_user.id == bot.get_me().id)):
             is_mentioned = True
             for w in triggers:
@@ -1615,22 +2197,32 @@ def main_handler(message):
     try:
         bot.send_chat_action(chat_id, 'typing')
         status_msg  = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
-        # ✅ ВИПРАВЛЕНО: передаємо user_id щоб кожен юзер мав свою розмову
         gemini_chat = get_gemini_chat(chat_id, user_id)
         response    = gemini_chat.send_message(text)
-        try:
+        
+        gemini_chat = get_gemini_chat(chat
+
+        gemini_chat = get
+try:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id,
-                                  text=response.text, parse_mode="Markdown")
+                                  text=response.text, parse_mode=
+            bot.edit_message_text(chat
+"Markdown")
         except Exception:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id,
                                   text=response.text)
-    except genai.types.generation_types.BlockedPromptException:
+    
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id,
+                                  text=response.text)
+except genai.types.generation_types.BlockedPromptException:
         if status_msg:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id,
                                   text="Цей запит заблоковано Google. 🤐")
     except Exception as e:
         logger.error(f"Dialog: {e}")
-        err = "Сервери прилягли, спробуй пізніше."
+        err = 
+        err =
+"Сервери прилягли, спробуй пізніше."
         if "ResourceExhausted" in str(e) or "quota" in str(e).lower():
             err = "Пригальмуй! Google каже почекати хвилину..."
         if status_msg:
@@ -1642,7 +2234,9 @@ def main_handler(message):
 # 🚀 ЗАПУСК
 # ===================================================================
 threading.Thread(target=run_dummy_server, daemon=True).start()
-threading.Thread(target=reminder_worker,  daemon=True).start()
+threading.Thread(target=reminder_worker,  daemon=
+threading.Thread(target=reminder_worker
+True).start()
 
 if __name__ == "__main__":
     logger.info("DRAGO BOT ЗАПУЩЕНИЙ!")
