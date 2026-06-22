@@ -286,7 +286,7 @@ def handle_text(message):
 
 
 # ===================================================================
-# 👋 ПРИВІТАННЯ ТА ПРОЩАННЯ УЧАСНИКІВ
+# 👋 ПРИВІТАННЯ ТА ВИБІР СТАТІ (ОНОВЛЕНО)
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
@@ -300,26 +300,40 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Створюємо кнопки
+        # Кнопки бачитиме ТІЛЬКИ той, хто зайшов (selective=True)
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
         markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
 
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись! "
-            "І ще одне: обери свою стать, щоб Драго знав, як до тебе звертатися:"
+            "Обери свою стать, щоб Драго знав, як до тебе звертатися:"
         )
         
-        # ВАЖЛИВО: reply_to_message_id тут неможливо вказати прямо, 
-        # бо це подія входу, а не повідомлення. 
-        # Але selective=True у ReplyKeyboardMarkup зробить так, 
-        # що клавіатура буде активною ТІЛЬКИ для того, хто зайшов.
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
 
-    # 2. ОБРОБКА ВИХОДУ
+ # 2. ОБРОБКА ВИХОДУ
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
         # ... твій код виходу ...
 
+# ===================================================================
+# 💾 ЗБЕРЕЖЕННЯ СТАТІ ТА ВИДАЛЕННЯ КНОПОК
+# ===================================================================
+@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
+def save_gender_auto(message):
+    global cursor, conn
+    
+    gender = message.text.split()[0]
+    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
+    conn.commit()
+    
+    # Видаляємо кнопки лише для того, хто натиснув (selective=True)
+    remove_markup = types.ReplyKeyboardRemove(selective=True)
+    
+    bot.reply_to(message, f"Записав! Тепер ти — {gender.lower()}. Драго все знає. 😎", 
+                 reply_markup=remove_markup)
+
+   
 
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
