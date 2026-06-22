@@ -290,51 +290,35 @@ def handle_text(message):
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    global cursor, conn # ВАЖЛИВО: дозволяє бачити глобальну базу даних
-    
-    print(f"DEBUG: Подія в чаті {message.chat.title}, статус: {message.new_chat_member.status}")
+    global cursor, conn
     
     # 1. ОБРОБКА ВХОДУ
     if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
         user_id = message.new_chat_member.user.id
         name = message.new_chat_member.user.first_name
         
-        # Запис у БД
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+        # Створюємо кнопки
+        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
         markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
 
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись! "
-            "Ввечері збираємось у Добрий Друг — долучайся 🫶🏼\n\n"
             "І ще одне: обери свою стать, щоб Драго знав, як до тебе звертатися:"
         )
+        
+        # ВАЖЛИВО: reply_to_message_id тут неможливо вказати прямо, 
+        # бо це подія входу, а не повідомлення. 
+        # Але selective=True у ReplyKeyboardMarkup зробить так, 
+        # що клавіатура буде активною ТІЛЬКИ для того, хто зайшов.
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
 
     # 2. ОБРОБКА ВИХОДУ
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
-        name = message.old_chat_member.user.first_name
-        
-        goodbye_texts = [
-            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
-            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
-            f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
-            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
-        ]
-        bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
-def save_gender_auto(message):
-    global cursor, conn # ВАЖЛИВО: для доступу до БД
-    
-    gender = message.text.split()[0]
-    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
-    conn.commit()
-    
-    bot.reply_to(message, f"Записав! Тепер ти — {gender.lower()}. Драго все знає. 😎", reply_markup=types.ReplyKeyboardRemove())
+        # ... твій код виходу ...
 
 
 # ===================================================================
