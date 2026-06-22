@@ -38,13 +38,13 @@ GEMINI_API_KEY = 'AIzaSyC_7U44ek_eaN0u6GV4FqL-m1N9OcpvVJM'
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Налаштування конфігурації генерації (максимум токенів для повних відповідей)
+# Налаштування конфігурації генерації
 generation_config = {
-    "max_output_tokens": 2048,  # коротко і ясно
+    "max_output_tokens": 2048,
     "temperature": 0.85,
 }
 
-# 🛠️ ЗНІМАЄМО ФІЛЬТРИ ЦЕНЗУРИ GOOGLE (Щоб пропускав мати)
+# 🛠️ ЗНІМАЄМО ФІЛЬТРИ ЦЕНЗУРИ GOOGLE
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -56,7 +56,7 @@ safety_settings = [
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
     generation_config=generation_config,
-    safety_settings=safety_settings,  # Тепер фільтри підключені!
+    safety_settings=safety_settings,
     system_instruction=(
         "Ти — зухвалий, надзвичайно розумний та дотепний ШІ-помічник на ім'я Драго. "
         "Спілкуйся виключно українською мовою. Використовуй молодіжний сленг, міцні слівця, "
@@ -67,18 +67,16 @@ model = genai.GenerativeModel(
     )
 )
 
-# 🧠 СЛОВНИК ДЛЯ ГЛИБОКОЇ ПАМ'ЯТІ (Тільки для тексту)
+# 🧠 СЛОВНИК ДЛЯ ГЛИБОКОЇ ПАМ'ЯТІ
 bot_chats = {}
 
 def get_gemini_chat(chat_id):
-    """Отримує або створює унікальну сесію чату з пам'яттю для конкретного чату"""
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
     return bot_chats[chat_id]
 
 # Функція для запуска фейкового веб-сервера
 def run_dummy_server():
-    # Render автоматично передає порт у змінну оточення PORT
     port = int(os.environ.get("PORT", 8080))
     server_address = ("", port)
     httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
@@ -108,62 +106,42 @@ def send_meme(message):
         print(f"Помилка мему: {e}")
 
 
-import io
-import random
-import requests
-from PIL import Image  # Переконайся, що Pillow є в requirements.txt
-
 # ===================================================================
-# 🖼️ КОМАНДА /generate (ОЧІКУВАННЯ ГЕНЕРАЦІЇ + ВІДПРАВКА ГОТОВОГО ФОТО)
+# 🖼️ 2. КОМАНДА /generate
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_wait_and_send(message):
-    # Відрізаємо команду "/generate " (10 символів)
     prompt = message.text[10:].strip()
 
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини, бро! Наприклад: /generate cyberpunk warrior wolf")
         return
 
-    # Попереджаємо юзера, що треба почекати, поки ШІ малює
     status_msg = bot.reply_to(message, "⏳ Драго починає малювати... Це може зайняти від 30 секунд до 2 хвилин. Будь ласка, зачекай.")
 
     try:
-        # 1. Кодуємо текст промпту для безпечного URL
         encoded_prompt = requests.utils.quote(prompt)
-        
-        # 2. Беремо топову модель Flux (вона малює довше, але якість — бомба)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux&nologo=true"
 
-        # 3. БОТ ЧЕКАЄ: Ставимо timeout=120 (це рівно 2 хвилини)
-        # Бот буде висіти і чекати, поки сервер повністю згенерує і віддасть усі байти
         response = requests.get(image_url, timeout=120)
         
         if response.status_code == 200:
-            # Перевіряємо, чи нам не підсунули текст помилки замість картинки
             if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
                 raise Exception("Сервер ШІ перевантажений або повернув помилку ліміту.")
 
-            # Оновлюємо статус у чаті, що байти отримано і ми їх обробляємо
             try:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=status_msg.message_id,
-                    text="⚡ Картинку згенеровано! Обробляю формат для Telegram..."
-                )
+                bot.edit_message_text(chat_id=message.chat.id, message_id=status_msg.message_id, text="⚡ Картинку згенеровано! Обробляю формат для Telegram...")
             except Exception:
                 pass
 
-            # 4. ОБРОБКА ЧЕРЕЗ PILLOW (перетворюємо прогресивний JPEG у звичайний, щоб Telegram не падав)
             img = Image.open(io.BytesIO(response.content))
             img = img.convert("RGB")
             
             bio = io.BytesIO()
             bio.name = 'drago_art.jpg'
             img.save(bio, 'JPEG', progressive=False, quality=95)
-            bio.seek(0)  # Скидаємо покажчик на початок файлу
+            bio.seek(0)
 
-            # 5. НАДСИЛАЄМО ГОТОВЕ ФОТО (воно розгорнеться відразу в чаті)
             bot.send_photo(
                 chat_id=message.chat.id,
                 photo=bio,
@@ -172,7 +150,6 @@ def generate_image_wait_and_send(message):
                 reply_to_message_id=message.message_id
             )
             
-            # Видаляємо статус-повідомлення
             try:
                 bot.delete_message(message.chat.id, status_msg.message_id)
             except Exception:
@@ -185,16 +162,13 @@ def generate_image_wait_and_send(message):
         print(f"Помилка генерації: {e}")
         error_text = str(e)[:100]
         try:
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=status_msg.message_id,
-                text=f"❌ Не зміг отримати готову картинку.\nПомилка: <code>{error_text}</code>\n\nСпробуй повторити запит ще раз за хвилинку, бро.",
-                parse_mode="HTML"
-            )
+            bot.edit_message_text(chat_id=message.chat.id, message_id=status_msg.message_id, text=f"❌ Не зміг отримати готову картинку.\nПомилка: <code>{error_text}</code>", parse_mode="HTML")
         except Exception:
             bot.reply_to(message, "❌ Сервер малювання тимчасово ліг. Спробуй пізніше.")
+
+
 # ===================================================================
-# 🎙️ 4. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
+# 🎙️ 3. СЛУХ (ОБРОБКА ГОЛОСОВИХ ПОВІДОМЛЕНЬ)
 # ===================================================================
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
@@ -229,14 +203,127 @@ def handle_voice(message):
 
 
 # ===================================================================
-# 💬 5. РОЗУМНІ ТЕКСТОВІ ДІАЛОГИ (Повинні бути в самому кінці!)
+# 👋 4. ОБРОБКА ВХОДУ ТА ВИХОДУ УЧАСНИКІВ (БЕЗ ДУБЛІКАТІВ)
+# ===================================================================
+@bot.chat_member_handler()
+def handle_member_updates(message: types.ChatMemberUpdated):
+    global cursor, conn
+    
+    # Обробка входу
+    if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
+        user_id = message.new_chat_member.user.id
+        name = message.new_chat_member.user.first_name
+        
+        cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
+        conn.commit()
+
+        welcome_text = (
+            f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
+            "Драго цікавиться, хто ти — хлопець чи дівчина? Просто напиши щось про себе або привітайся, і я вгадаю за стилем!"
+        )
+        bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
+
+    # Обробка виходу
+    elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
+        name = message.old_chat_member.user.first_name
+        
+        goodbye_texts = [
+            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
+            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
+            f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
+            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
+        ]
+        bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
+
+
+# ===================================================================
+# 🎮 5. КЕРУВАННЯ ГРОЮ "СЛОВА" (КОМАНДИ)
+# ===================================================================
+game_state = {}
+
+@bot.message_handler(commands=['game'])
+def start_word_game(message):
+    game_state[message.chat.id] = {"last_letter": None, "used_words": []}
+    bot.reply_to(message, "🎲 Гра в слова розпочата, бро! Пиши перше слово. Правила знаєш: остання літера = початок наступного слова.")
+
+@bot.message_handler(commands=['stop'])
+def stop_word_game(message):
+    if message.chat.id in game_state:
+        del game_state[message.chat.id]
+        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати. 👋")
+    else:
+        bot.reply_to(message, "Гра і так не була запущена.")
+
+# Допоміжна функція обробки логіки слів (БЕЗ ДЕКОРАТОРА!)
+def handle_word_game(message):
+    chat_id = message.chat.id
+    word = message.text.lower().strip()
+    state = game_state[chat_id]
+    
+    if not message.text.replace(" ", "").isalpha():
+        return # ігноруємо, якщо там є цифри чи знаки
+        
+    if len(word) < 2:
+        bot.reply_to(message, "Бро, слово має бути мінімум з 2 літер!")
+        return
+
+    if state["last_letter"] and word[0] != state["last_letter"]:
+        bot.reply_to(message, f"Не-а! Слово має починатися на літеру '{state['last_letter'].upper()}'.")
+        return
+
+    if word in state["used_words"]:
+        bot.reply_to(message, "Це слово вже було, не тупи! 😎")
+        return
+
+    state["used_words"].append(word)
+    next_letter = word[-1]
+    
+    if next_letter in ['ь', 'и', 'й', 'ї']:
+        next_letter = word[-2]
+    
+    state["last_letter"] = next_letter
+    bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
+
+
+# ===================================================================
+# 🧠 6. ФУНКЦІЯ АНАЛІЗУ СТАТІ
+# ===================================================================
+def analyze_gender(text):
+    try:
+        prompt = f"Проаналізуй цей текст і визнач стать користувача (Хлопець, Дівчина або Незрозуміло). Відповідай ТІЛЬКИ одним словом: {text}"
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception:
+        return "Незрозуміло"
+
+
+# ===================================================================
+# 🎛️ 7. ЦЕНТРАЛЬНИЙ ДИСПЕТЧЕР ТЕКСТУ (ОДИН НА ВЕСЬ ФАЙЛ)
 # ===================================================================
 @bot.message_handler(content_types=['text'])
-def handle_text(message):
+def main_handler(message):
     text = message.text
     chat_id = message.chat.id
     chat_type = message.chat.type
+    user_id = message.from_user.id
 
+    # ПРІОРИТЕТ 1: Якщо запущена гра в слова
+    if chat_id in game_state:
+        handle_word_game(message)
+        return
+
+    # ПРІОРИТЕТ 2: Перевірка та вгадування статі (якщо ще "не вказано")
+    cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    
+    if result and result[0] == 'не вказано':
+        gender_guess = analyze_gender(text)
+        if gender_guess in ['Хлопець', 'Дівчина']:
+            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender_guess, user_id))
+            conn.commit()
+            bot.send_message(chat_id, f"Драго проаналізував твій стиль і вирішив, що ти — {gender_guess.lower()}. Вгадав? 😎")
+
+    # ПРІОРИТЕТ 3: Стандартний діалог з Драго (згадки / тригери)
     is_mentioned = False
     if chat_type in ['group', 'supergroup']:
         trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
@@ -284,139 +371,15 @@ def handle_text(message):
         else:
             bot.reply_to(message, error_text)
 
-# ===================================================================
-# 👋 ОБРОБКА ВХОДУ ТА ВИХОДУ УЧАСНИКІВ
-# ===================================================================
-@bot.chat_member_handler()
-def handle_member_updates(message: types.ChatMemberUpdated):
-    global cursor, conn
-    
-    # 1. ОБРОБКА ВХОДУ
-    if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
-        user_id = message.new_chat_member.user.id
-        name = message.new_chat_member.user.first_name
-        
-        cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
-        conn.commit()
-
-        welcome_text = (
-            f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
-            "Розкажи трохи про себе, будемо раді познайомитись!"
-        )
-        bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
-
-    # 2. ОБРОБКА ВИХОДУ
-    elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
-        name = message.old_chat_member.user.first_name
-        
-        goodbye_texts = [
-            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
-            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
-            f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
-            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
-        ]
-        
-        bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
-
-   
-# ===================================================================
-# 🧠 АНАЛІЗ СТАТІ ТА СТИЛЮ (ЗАМІСТЬ КНОПОК)
-# ===================================================================
-def analyze_gender(text):
-    # Просимо Gemini коротко визначити стать
-    prompt = f"Проаналізуй цей текст і визнач стать користувача (Хлопець, Дівчина або Незрозуміло). Відповідай ТІЛЬКИ одним словом: {text}"
-    response = model.generate_content(prompt)
-    return response.text.strip()
-
-@bot.chat_member_handler()
-def handle_member_updates(message: types.ChatMemberUpdated):
-    if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
-        name = message.new_chat_member.user.first_name
-        bot.send_message(message.chat.id, f"Вітаємо в чаті, <b>{name}</b>! 🤍\n\nДраго цікавиться, хто ти — хлопець чи дівчина? Просто напиши щось про себе або привітайся, і я вгадаю!", parse_mode="HTML")
-
-# Оновлений обробник тексту
-@bot.message_handler(content_types=['text'])
-def handle_text(message):
-    user_id = message.from_user.id
-    
-    # 1. Перевіряємо в БД, чи ми вже знаємо стать
-    cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    
-    # Якщо стать не визначена ("не вказано"), пробуємо вгадати
-    if result and result[0] == 'не вказано':
-        gender_guess = analyze_gender(message.text)
-        if gender_guess in ['Хлопець', 'Дівчина']:
-            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender_guess, user_id))
-            conn.commit()
-            bot.send_message(message.chat.id, f"Драго проаналізував твій стиль і вирішив, що ти — {gender_guess.lower()}. Вгадав? 😎")
-    
-    # ... далі йде твоя стандартна логіка діалогу з Драго ...
-    # (залиш решту функції handle_text як була)
-
-
-# ===================================================================
-# 🎮 ПОВНА ЛОГІКА ГРИ "СЛОВА"
-# ===================================================================
-game_state = {}
-
-@bot.message_handler(commands=['game'])
-def start_word_game(message):
-    game_state[message.chat.id] = {"last_letter": None, "used_words": []}
-    bot.reply_to(message, "🎲 Гра в слова розпочата, бро! Пиши перше слово. Правила знаєш: остання літера = початок наступного слова.")
-
-@bot.message_handler(commands=['stop'])
-def stop_word_game(message):
-    if message.chat.id in game_state:
-        del game_state[message.chat.id]
-        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати. 👋")
-    else:
-        bot.reply_to(message, "Гра і так не була запущена.")
-
-@bot.message_handler(func=lambda m: m.chat.id in game_state and m.text.isalpha())
-def handle_word_game(message):
-    chat_id = message.chat.id
-    word = message.text.lower()
-    state = game_state[chat_id]
-    
-    # 1. Мінімальна довжина
-    if len(word) < 2:
-        bot.reply_to(message, "Бро, слово має бути мінімум з 2 літер!")
-        return
-
-    # 2. Перевірка літери (крім першого слова)
-    if state["last_letter"] and word[0] != state["last_letter"]:
-        bot.reply_to(message, f"Не-а! Слово має починатися на літеру '{state['last_letter'].upper()}'.")
-        return
-
-    # 3. Перевірка на повтори
-    if word in state["used_words"]:
-        bot.reply_to(message, "Це слово вже було, не тупи! 😎")
-        return
-
-    # 4. Запис слова
-    state["used_words"].append(word)
-    
-    # 5. Визначаємо наступну літеру
-    next_letter = word[-1]
-    
-    # Якщо остання літера - проблемна, беремо передостанню
-    if next_letter in ['ь', 'и', 'й', 'ї']:
-        next_letter = word[-2]
-    
-    state["last_letter"] = next_letter
-    bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
-
 
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
 # ===================================================================
-# Запускаємо сервер в окремому потоці, щоб він не заважав боту
 threading.Thread(target=run_dummy_server, daemon=True).start()
 
 if __name__ == "__main__":
     print("=========================================")
     print(" DRAGO BOT УСПІШНО ЗАПУЩЕНИЙ НА TIER 1! ")
-    print(" Код повністю оптимізовано під тексти! ")
+    print("  АРХІТЕКТУРУ ПОВНІСТЮ ОПТИМІЗОВАНО!   ")
     print("=========================================")
     bot.infinity_polling(allowed_updates=['message', 'chat_member', 'my_chat_member'])
