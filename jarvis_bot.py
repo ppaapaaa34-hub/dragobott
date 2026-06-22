@@ -286,7 +286,7 @@ def handle_text(message):
 
 
 # ===================================================================
-# 👋 ПРИВІТАННЯ ТА ВИБІР СТАТІ (ОНОВЛЕНИЙ І СТАБІЛЬНИЙ)
+# 👋 ПРИВІТАННЯ (БЕЗ КНОПОК)
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
@@ -300,18 +300,12 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Привітання
+        # Просто привітання без кнопок
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
-            "Розкажи трохи про себе, будемо раді познайомитись! "
+            "Розкажи трохи про себе, будемо раді познайомитись!"
         )
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
-        
-        # Кнопки (окреме повідомлення для стабільності)
-        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
-        markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
-        
-        bot.send_message(message.chat.id, "Обери свою стать, щоб Драго знав, як до тебе звертатися:", reply_markup=markup)
 
     # 2. ОБРОБКА ВИХОДУ
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
@@ -328,24 +322,39 @@ def handle_member_updates(message: types.ChatMemberUpdated):
 
    
 # ===================================================================
-# 💾 ОБРОБКА ВИБОРУ СТАТІ (ЩОБ БОТ ЗАПАМ'ЯТАВ ТЕБЕ)
+# 🧠 АНАЛІЗ СТАТІ ТА СТИЛЮ (ЗАМІСТЬ КНОПОК)
 # ===================================================================
-@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
-def save_gender_auto(message):
-    global cursor, conn
+def analyze_gender(text):
+    # Просимо Gemini коротко визначити стать
+    prompt = f"Проаналізуй цей текст і визнач стать користувача (Хлопець, Дівчина або Незрозуміло). Відповідай ТІЛЬКИ одним словом: {text}"
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
+@bot.chat_member_handler()
+def handle_member_updates(message: types.ChatMemberUpdated):
+    if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
+        name = message.new_chat_member.user.first_name
+        bot.send_message(message.chat.id, f"Вітаємо в чаті, <b>{name}</b>! 🤍\n\nДраго цікавиться, хто ти — хлопець чи дівчина? Просто напиши щось про себе або привітайся, і я вгадаю!", parse_mode="HTML")
+
+# Оновлений обробник тексту
+@bot.message_handler(content_types=['text'])
+def handle_text(message):
+    user_id = message.from_user.id
     
-    # Витягуємо тільки слово (без емодзі)
-    gender = message.text.split()[0]
+    # 1. Перевіряємо в БД, чи ми вже знаємо стать
+    cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
     
-    # Оновлюємо базу даних
-    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
-    conn.commit()
+    # Якщо стать не визначена ("не вказано"), пробуємо вгадати
+    if result and result[0] == 'не вказано':
+        gender_guess = analyze_gender(message.text)
+        if gender_guess in ['Хлопець', 'Дівчина']:
+            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender_guess, user_id))
+            conn.commit()
+            bot.send_message(message.chat.id, f"Драго проаналізував твій стиль і вирішив, що ти — {gender_guess.lower()}. Вгадав? 😎")
     
-    # Видаляємо кнопки після вибору
-    remove_markup = types.ReplyKeyboardRemove(selective=True)
-    
-    bot.reply_to(message, f"Записав! Тепер ти — {gender.lower()}. Драго все знає. 😎", 
-                 reply_markup=remove_markup)
+    # ... далі йде твоя стандартна логіка діалогу з Драго ...
+    # (залиш решту функції handle_text як була)
     
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
