@@ -300,54 +300,31 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Кнопки бачитиме ТІЛЬКИ той, хто зайшов (selective=True)
-        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
-        markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
-
+        # Повідомлення 1: Привітання
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись! "
-            "Обери свою стать, щоб Драго знав, як до тебе звертатися:"
         )
+        bot.send_message(message.chat.id, welcome_text, parse_mode="HTML")
         
-        bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
+        # Повідомлення 2: Кнопки
+        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, selective=True)
+        markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
+        
+        bot.send_message(message.chat.id, "Обери свою стать, щоб Драго знав, як до тебе звертатися:", reply_markup=markup)
 
- # 2. ОБРОБКА ВИХОДУ (перевіряємо old_chat_member, бо новий статус завжди left/kicked)
-
+    # 2. ОБРОБКА ВИХОДУ
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
-
         name = message.old_chat_member.user.first_name
-
         
-
         goodbye_texts = [
-
             f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
-
             f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
-
             f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
-
             f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
-
         ]
-
-# ===================================================================
-# 💾 ЗБЕРЕЖЕННЯ СТАТІ ТА ВИДАЛЕННЯ КНОПОК
-# ===================================================================
-@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
-def save_gender_auto(message):
-    global cursor, conn
-    
-    gender = message.text.split()[0]
-    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
-    conn.commit()
-    
-    # Видаляємо кнопки лише для того, хто натиснув (selective=True)
-    remove_markup = types.ReplyKeyboardRemove(selective=True)
-    
-    bot.reply_to(message, f"Записав! Тепер ти — {gender.lower()}. Драго все знає. 😎", 
-                 reply_markup=remove_markup)
+        
+        bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
 
    
 
