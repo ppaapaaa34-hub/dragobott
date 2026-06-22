@@ -147,16 +147,18 @@ model = genai.GenerativeModel(
     generation_config=generation_config,
     safety_settings=safety_settings,
     system_instruction=(
-        
-    generation_config=generation_config,
-    safety_settings=safety_settings
-"Ти — зухвалий, надзвичайно розумний та дотепний ШІ-помічник на ім'я Драго. "
+        "Ти — зухвалий, надзвичайно розумний та дотепний ШІ-помічник на ім'я Драго. "
         "Спілкуйся виключно українською мовою. Використовуй молодіжний сленг, "
         "іноді нецензурну лексику для емоційності. Будь живим, неформальним, "
         "злегка іронізуй, підколюй юзера, але завжди допомагай. "
         "Завжди закінчуй думки! Пиши коротко і ясно!"
     )
 )
+
+bot_chats   = {}
+flood_data  = defaultdict(list)
+game_state  = {}
+rap_pending = {}
 
 bot_chats   = {}
 flood_data  = defaultdict(list)
