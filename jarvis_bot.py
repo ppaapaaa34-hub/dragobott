@@ -355,7 +355,52 @@ def handle_text(message):
     
     # ... далі йде твоя стандартна логіка діалогу з Драго ...
     # (залиш решту функції handle_text як була)
+
+
+# ===================================================================
+# 🎮 ГРА "СЛОВА" (ВСТАВЛЯЙ ПЕРЕД ЗАПУСКОМ БОТА)
+# ===================================================================
+game_state = {}
+
+@bot.message_handler(commands=['game'])
+def start_word_game(message):
+    game_state[message.chat.id] = {"last_letter": None, "used_words": []}
+    bot.reply_to(message, "🎲 Гра в слова розпочата, бро! Пиши перше слово. Правила знаєш: остання літера = початок наступного слова.")
+
+@bot.message_handler(func=lambda m: m.chat.id in game_state and m.text.isalpha())
+def handle_word_game(message):
+    chat_id = message.chat.id
+    word = message.text.lower()
+    state = game_state[chat_id]
     
+    # Мінімальна довжина слова
+    if len(word) < 2:
+        bot.reply_to(message, "Бро, слово має бути мінімум з 2 літер!")
+        return
+
+    # Перевірка літери
+    if state["last_letter"] and word[0] != state["last_letter"]:
+        bot.reply_to(message, f"Не-а! Слово має починатися на літеру '{state['last_letter'].upper()}'.")
+        return
+
+    # Перевірка на повтори
+    if word in state["used_words"]:
+        bot.reply_to(message, "Це слово вже було, не тупи! 😎")
+        return
+
+    # Запис слова
+    state["used_words"].append(word)
+    
+    # Визначаємо наступну літеру
+    next_letter = word[-1]
+    # Якщо остання літера - це "ь", "и", "й", "ї", беремо попередню
+    if next_letter in ['ь', 'и', 'й', 'ї']:
+        next_letter = word[-2]
+    
+    state["last_letter"] = next_letter
+    bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
+
+
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
 # ===================================================================
