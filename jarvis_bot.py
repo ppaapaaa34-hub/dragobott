@@ -224,14 +224,6 @@ def update_message_count(user_id, name, chat_id):
     check_achievements(user_id, chat_id)
 
 
-            (user_id, chat_id, today))
-        conn.commit()
-    check
-
-            (user_id, chat_id, today))
-        conn.commit()
-
-            (user_id, chat_id, today))
 def give_achievement(user_id, key, chat_id):
     with db_lock:
         cursor.execute("SELECT 1 FROM achievements WHERE user_id=? AND achievement=?", (user_id, key))
@@ -240,11 +232,10 @@ def give_achievement(user_id, key, chat_id):
         cursor.execute("INSERT INTO achievements (user_id, achievement, earned_at) VALUES(?,?,?)",
                        (user_id, key, int(time.time())))
         conn.commit()
+    
     emoji, title, desc = ACHIEVEMENTS[key]
     
-        conn.commit()
-    emoji, title
-try:
+    try:
         with db_lock:
             cursor.execute("SELECT name FROM stats WHERE user_id=?", (user_id,))
             row = cursor.fetchone()
