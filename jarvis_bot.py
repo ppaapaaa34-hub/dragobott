@@ -327,7 +327,26 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
 
    
-
+# ===================================================================
+# 💾 ОБРОБКА ВИБОРУ СТАТІ (ЩОБ БОТ ЗАПАМ'ЯТАВ ТЕБЕ)
+# ===================================================================
+@bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
+def save_gender_auto(message):
+    global cursor, conn
+    
+    # Витягуємо тільки слово (без емодзі)
+    gender = message.text.split()[0]
+    
+    # Оновлюємо базу даних
+    cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
+    conn.commit()
+    
+    # Видаляємо кнопки після вибору
+    remove_markup = types.ReplyKeyboardRemove(selective=True)
+    
+    bot.reply_to(message, f"Записав! Тепер ти — {gender.lower()}. Драго все знає. 😎", 
+                 reply_markup=remove_markup)
+    
 # ===================================================================
 # 🚀 ЗАПУСК СЕРВЕРА ТА БОТА
 # ===================================================================
