@@ -312,9 +312,25 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
 
- # 2. ОБРОБКА ВИХОДУ
+ # 2. ОБРОБКА ВИХОДУ (перевіряємо old_chat_member, бо новий статус завжди left/kicked)
+
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
-        # ... твій код виходу ...
+
+        name = message.old_chat_member.user.first_name
+
+        
+
+        goodbye_texts = [
+
+            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
+
+            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
+
+            f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
+
+            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
+
+        ]
 
 # ===================================================================
 # 💾 ЗБЕРЕЖЕННЯ СТАТІ ТА ВИДАЛЕННЯ КНОПОК
