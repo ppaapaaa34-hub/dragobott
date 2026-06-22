@@ -24,24 +24,18 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler('drago_bot.log', encoding='utf-8'),
         logging.StreamHandler()
-    ])
+    ]
+)
 logger = logging.getLogger(__name__)
 
+# ==============================================================================
+# 🗄️ БАЗА ДАНИХ
+# ==============================================================================
+conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
+cursor = conn.cursor()
+db_lock = threading.Lock()
 
-        logging.StreamHandler()
-# ===================================================================
-# 💾 БАЗА ДАНИХ
-# ===================================================================
-conn    = sqlite3.connect(
-conn    
-'drago_bot.db', check_same_thread=False)
-cursor  = conn.cursor()
-db_lock = threading.Lock()
-cursor.executescript(
-cursor  = conn.cursor()
-db_lock = threading.Lock()
-cursor
-"""
+cursor.executescript("""
 CREATE TABLE IF NOT EXISTS stats (
     user_id      INTEGER PRIMARY KEY,
     name         TEXT,
