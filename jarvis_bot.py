@@ -358,7 +358,7 @@ def handle_text(message):
 
 
 # ===================================================================
-# 🎮 ГРА "СЛОВА" (ВСТАВЛЯЙ ПЕРЕД ЗАПУСКОМ БОТА)
+# 🎮 ПОВНА ЛОГІКА ГРИ "СЛОВА"
 # ===================================================================
 game_state = {}
 
@@ -367,33 +367,42 @@ def start_word_game(message):
     game_state[message.chat.id] = {"last_letter": None, "used_words": []}
     bot.reply_to(message, "🎲 Гра в слова розпочата, бро! Пиши перше слово. Правила знаєш: остання літера = початок наступного слова.")
 
+@bot.message_handler(commands=['stop'])
+def stop_word_game(message):
+    if message.chat.id in game_state:
+        del game_state[message.chat.id]
+        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати. 👋")
+    else:
+        bot.reply_to(message, "Гра і так не була запущена.")
+
 @bot.message_handler(func=lambda m: m.chat.id in game_state and m.text.isalpha())
 def handle_word_game(message):
     chat_id = message.chat.id
     word = message.text.lower()
     state = game_state[chat_id]
     
-    # Мінімальна довжина слова
+    # 1. Мінімальна довжина
     if len(word) < 2:
         bot.reply_to(message, "Бро, слово має бути мінімум з 2 літер!")
         return
 
-    # Перевірка літери
+    # 2. Перевірка літери (крім першого слова)
     if state["last_letter"] and word[0] != state["last_letter"]:
         bot.reply_to(message, f"Не-а! Слово має починатися на літеру '{state['last_letter'].upper()}'.")
         return
 
-    # Перевірка на повтори
+    # 3. Перевірка на повтори
     if word in state["used_words"]:
         bot.reply_to(message, "Це слово вже було, не тупи! 😎")
         return
 
-    # Запис слова
+    # 4. Запис слова
     state["used_words"].append(word)
     
-    # Визначаємо наступну літеру
+    # 5. Визначаємо наступну літеру
     next_letter = word[-1]
-    # Якщо остання літера - це "ь", "и", "й", "ї", беремо попередню
+    
+    # Якщо остання літера - проблемна, беремо передостанню
     if next_letter in ['ь', 'и', 'й', 'ї']:
         next_letter = word[-2]
     
