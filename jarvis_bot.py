@@ -284,9 +284,8 @@ def handle_text(message):
         else:
             bot.reply_to(message, error_text)
 
-
 # ===================================================================
-# 👋 ПРИВІТАННЯ (БЕЗ КНОПОК)
+# 👋 ОБРОБКА ВХОДУ ТА ВИХОДУ УЧАСНИКІВ
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
@@ -300,7 +299,6 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Просто привітання без кнопок
         welcome_text = (
             f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\n\n"
             "Розкажи трохи про себе, будемо раді познайомитись!"
