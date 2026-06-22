@@ -763,18 +763,20 @@ def show_profile(message):
         row = cursor.fetchone()
         cursor.execute("SELECT COUNT(*) FROM achievements WHERE user_id=?", (uid,))
         ach_count = cursor.fetchone()[0]
+        
     if not row:
-        bot.reply_to(message, 
-        bot.reply_to(message,
-"Ти не в базі. Пиши більше!"); return
+        bot.reply_to(message, "Ти не в базі. Пиши більше!")
+        return
+
     count, gender, warns, coins, rep, city = row
-    rep_emoji    = "⭐" if rep > 0 else ("💀" if rep < 0 else "😐")
-    city_text    = f"🏙️ Місто: <b>{city}</b>\n" if city else ""
-    username     = message.from_user.username
-    nick_text    = 
-    username     = message.from_user.
-f"🔖 Нікнейм: <b>@{username}</b>\n" if username else "🔖 Нікнейм: <b>не встановлено</b>\n"
-    bot.send_message(message.chat.id,
+    rep_emoji = "⭐" if rep > 0 else ("💀" if rep < 0 else "😐")
+    city_text = f"🏙️ Місто: <b>{city}</b>\n" if city else ""
+    
+    username = message.from_user.username
+    nick_text = f"🔖 Нікнейм: <b>@{username}</b>\n" if username else "🔖 Нікнейм: <b>не встановлено</b>\n"
+    
+    bot.send_message(
+        message.chat.id,
         f"👤 <b>Профіль {message.from_user.first_name}</b>\n\n"
         f"{nick_text}"
         f"💬 Повідомлень: <b>{count}</b>\n"
@@ -784,7 +786,8 @@ f"🔖 Нікнейм: <b>@{username}</b>\n" if username else "🔖 Нікней
         f"{rep_emoji} Репутація: <b>{rep}</b>\n"
         f"⚠️ Варни: <b>{warns}/3</b>\n"
         f"🏅 Досягнень: <b>{ach_count}/{len(ACHIEVEMENTS)}</b>",
-        parse_mode="HTML")
+        parse_mode="HTML"
+    )
 
 @bot.message_handler(commands=['д_зведення'])
 def show_group_stats(message):
