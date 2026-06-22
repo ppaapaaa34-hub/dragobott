@@ -285,19 +285,22 @@ def handle_text(message):
         else:
             bot.reply_to(message, error_text)
 
+
 # ===================================================================
 # 👋 ПРИВІТАННЯ ТА ПРОЩАННЯ УЧАСНИКІВ
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    # ДІАГНОСТИКА: покаже в консолі статус, щоб ти бачив, що відбувається
+    global cursor, conn # ВАЖЛИВО: дозволяє бачити глобальну базу даних
+    
     print(f"DEBUG: Подія в чаті {message.chat.title}, статус: {message.new_chat_member.status}")
     
-    # 1. ОБРОБКА ВХОДУ (member, administrator, restricted)
+    # 1. ОБРОБКА ВХОДУ
     if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
         user_id = message.new_chat_member.user.id
         name = message.new_chat_member.user.first_name
         
+        # Запис у БД
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
@@ -312,7 +315,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         )
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
 
-    # 2. ОБРОБКА ВИХОДУ (перевіряємо old_chat_member, бо новий статус завжди left/kicked)
+    # 2. ОБРОБКА ВИХОДУ
     elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
         name = message.old_chat_member.user.first_name
         
@@ -322,11 +325,12 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             f"<b>{name}</b> покинув чат. Схоже, він не витримав нашого рівня інтелекту... 🧠",
             f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
         ]
-        
         bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
 
 @bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
 def save_gender_auto(message):
+    global cursor, conn # ВАЖЛИВО: для доступу до БД
+    
     gender = message.text.split()[0]
     cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (gender, message.from_user.id))
     conn.commit()
