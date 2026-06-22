@@ -271,9 +271,14 @@ def handle_text(message):
 # ===================================================================
 # 👋 ПРИВІТАННЯ НОВИХ УЧАСНИКІВ
 # ===================================================================
-@bot.chat_member_handler()
+ @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    # 1. ОБРОБКА ВХОДУ
+    # ДІАГНОСТИКА: цей принт покаже в консолі, чи бачить бот вхід
+    print(f"DEBUG: Статус нового учасника: {message.new_chat_member.status}")
+    
+    if message.new_chat_member.status in ['member', 'administrator', 'restricted']:
+        # ... твій код ...
+   # 1. ОБРОБКА ВХОДУ
     if message.new_chat_member.status in ['member', 'restricted'] and not message.new_chat_member.user.is_bot:
         user_id = message.new_chat_member.user.id
         name = message.new_chat_member.user.first_name
