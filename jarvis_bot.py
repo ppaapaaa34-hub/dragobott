@@ -269,25 +269,21 @@ def handle_text(message):
             bot.reply_to(message, error_text)
 
 # ===================================================================
-# 👋 ПРИВІТАННЯ НОВИХ УЧАСНИКІВ
+# 👋 ПРИВІТАННЯ ТА ПРОЩАННЯ УЧАСНИКІВ
 # ===================================================================
- @bot.chat_member_handler()
+@bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    # ДІАГНОСТИКА: цей принт покаже в консолі, чи бачить бот вхід
-    print(f"DEBUG: Статус нового учасника: {message.new_chat_member.status}")
+    # ДІАГНОСТИКА: покаже в консолі статус, щоб ти бачив, що відбувається
+    print(f"DEBUG: Подія в чаті {message.chat.title}, статус: {message.new_chat_member.status}")
     
-    if message.new_chat_member.status in ['member', 'administrator', 'restricted']:
-        # ... твій код ...
-   # 1. ОБРОБКА ВХОДУ
-    if message.new_chat_member.status in ['member', 'restricted'] and not message.new_chat_member.user.is_bot:
+    # 1. ОБРОБКА ВХОДУ (member, administrator, restricted)
+    if message.new_chat_member.status in ['member', 'administrator', 'restricted'] and not message.new_chat_member.user.is_bot:
         user_id = message.new_chat_member.user.id
         name = message.new_chat_member.user.first_name
         
-        # Додаємо юзера в БД
         cursor.execute("INSERT OR IGNORE INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, 'не вказано')", (user_id, name))
         conn.commit()
 
-        # Кнопки для вибору статі
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
         markup.add('Хлопець 🧔', 'Дівчина 👩', 'Інше 👽')
 
@@ -298,11 +294,11 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             "І ще одне: обери свою стать, щоб Драго знав, як до тебе звертатися:"
         )
         bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=markup)
-    # 2. ОБРОБКА ВИХОДУ
-    elif message.new_chat_member.status in ['left', 'kicked']:
+
+    # 2. ОБРОБКА ВИХОДУ (перевіряємо old_chat_member, бо новий статус завжди left/kicked)
+    elif message.old_chat_member.status in ['member', 'administrator', 'restricted'] and message.new_chat_member.status in ['left', 'kicked']:
         name = message.old_chat_member.user.first_name
         
-        # Іронічна відповідь Драго
         goodbye_texts = [
             f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
             f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
@@ -310,11 +306,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії. 🤡"
         ]
         
-        bot.send_message(
-            chat_id=message.chat.id, 
-            text=random.choice(goodbye_texts), 
-            parse_mode="HTML"
-        )
+        bot.send_message(message.chat.id, random.choice(goodbye_texts), parse_mode="HTML")
 
 @bot.message_handler(func=lambda m: m.text in ['Хлопець 🧔', 'Дівчина 👩', 'Інше 👽'])
 def save_gender_auto(message):
