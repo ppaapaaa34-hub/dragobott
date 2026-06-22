@@ -9,6 +9,23 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
 import google.generativeai as genai
 from PIL import Image
+import sqlite3
+
+# Підключаємося до БД (або створюємо її)
+conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Створюємо таблицю, якщо її немає
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS stats (
+    user_id INTEGER PRIMARY KEY,
+    name TEXT,
+    count INTEGER,
+    gender TEXT
+)
+""")
+conn.commit()
+
 
 # ==================== ТВОЇ ОФІЦІЙНІ НАЛАШТУВАННЯ ====================
 API_ID = 29566622
