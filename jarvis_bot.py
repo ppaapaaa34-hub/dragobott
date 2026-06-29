@@ -275,12 +275,13 @@ def handle_word_game(message):
 
 
 # ===================================================================
-# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - З ПРИЧИНОЮ ЗБОРУ
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - З ПРИЧИНОЮ ЗБОРУ (ФІКС)
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір']))
 def call_everyone(message):
     chat_id = message.chat.id
     chat_type = message.chat.type
+    user = message.from_user
 
     if chat_type not in ['group', 'supergroup']:
         bot.reply_to(message, "Чувак, який збір в приватних повідомленнях? Ти тут один. 👁️")
@@ -289,18 +290,20 @@ def call_everyone(message):
     try:
         status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
 
+        # Примусово додаємо ініціатора в базу, щоб вона ніколи не була зовсім порожньою
+        ensure_user_in_db(user)
+
         # Витягуємо причину збору
         original_text = message.text.strip()
         reason = ""
         
-        # Визначаємо, з якого саме тригера почалося повідомлення, і відрізаємо його
         for trigger in ['@all', '.all', '.збір', 'збір']:
             if original_text.lower().startswith(trigger):
                 reason = original_text[len(trigger):].strip()
                 break
 
-        # Отримуємо людей з твоєї БД
-        cursor.execute("SELECT user_id, name FROM stats WHERE count > 0")
+        # Вибираємо абсолютно ВСІХ користувачів чату
+        cursor.execute("SELECT user_id, name FROM stats")
         users = cursor.fetchall()
 
         if not users:
@@ -315,11 +318,11 @@ def call_everyone(message):
         for user_id, name in users:
             if user_id == bot.get_me().id:
                 continue
-            clean_name = name.replace("<", "&lt;").replace(">", "&gt;")
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Бро"
             mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a>')
 
         if not mentions:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшов кого кликати, бро.")
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшел кого кликати, бро.")
             return
 
         try:
@@ -327,15 +330,14 @@ def call_everyone(message):
         except Exception:
             pass
 
-        # Формуємо блок із причиною, якщо вона є
+        # Формуємо блок із причиною, якщо вона вказана
         if reason:
-            # Екрануємо символи < > у причині, щоб HTML не ламався
             clean_reason = reason.replace("<", "&lt;").replace(">", "&gt;")
             reason_text = f"📌 <b>Причина збору:</b> {clean_reason}"
         else:
             reason_text = "Драго наказує підняти свої дупи і зайти в чат!"
 
-        # Головний заклик
+        # Головний заклик у фірмовому стилі
         main_call = (
             "🚨 <b>ОБЩІЙ ЗБІР, БАНДІТИ!</b> 🚨\n"
             f"{reason_text}\n\n"
@@ -344,7 +346,7 @@ def call_everyone(message):
         
         bot.send_message(chat_id, main_call, parse_mode="HTML")
 
-        # Розбиваємо теги на пачки по 5 людей
+        # Розбиваємо теги на безпечні пачки по 5 людей
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
@@ -391,7 +393,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
 
 # ===================================================================
-# 💬 ЄДИНИЙ обробник тексту з гендерною пам'яттю
+# 💬 ЄДИНИЙ обробник тексту З МОДЕРНІЗОВАНИМ НАПОВНЕННЯМ БД
 # ===================================================================
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -399,6 +401,26 @@ def handle_text(message):
     chat_id = message.chat.id
     user = message.from_user
     chat_type = message.chat.type
+    
+    # 👑 КРОК 1: ОДРАЗУ заносимо будь-яку людину в базу при активності та оновлюємо дані
+    ensure_user_in_db(user)
+    gender = get_user_gender(user.id)
+
+    if gender == 'Невідомо':
+        guessed = analyze_gender_from_text(text)
+        if guessed in ['Хлопець', 'Дівчина']:
+            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (guessed, user.id))
+            conn.commit()
+            gender = guessed
+
+    # Оновлюємо лічильник та ім'я
+    cursor.execute(
+        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
+        (user.first_name, user.id)
+    )
+    conn.commit()
+
+    # КРОК 2: Перевірка згадувань Драго для відповіді через Gemini ШІ
     is_mentioned = False
 
     if chat_type in ['group', 'supergroup']:
@@ -418,24 +440,6 @@ def handle_text(message):
 
     if not is_mentioned:
         return
-
-    # Визначення/уточнення статі
-    ensure_user_in_db(user)
-    gender = get_user_gender(user.id)
-
-    if gender == 'Невідомо':
-        guessed = analyze_gender_from_text(text)
-        if guessed in ['Хлопець', 'Дівчина']:
-            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (guessed, user.id))
-            conn.commit()
-            gender = guessed
-
-    # Оновлюємо лічильник та ім'я
-    cursor.execute(
-        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-        (user.first_name, user.id)
-    )
-    conn.commit()
 
     # Гендерний контекст для Gemini
     gender_hint = ""
