@@ -274,6 +274,75 @@ def handle_word_game(message):
     bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
 
 # ===================================================================
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all)
+# ===================================================================
+@bot.message_handler(func=lambda m: m.text and m.text.strip().lower() in ['@all', '.all', '.збір', 'збір'])
+def call_everyone(message):
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+
+    # Обмеження: команда працює тільки в групах
+    if chat_type not in ['group', 'supergroup']:
+        bot.reply_to(message, "Чувак, який збір в приватних повідомленнях? Ти тут один. 👁️")
+        return
+
+    try:
+        # Відправляємо статус, що Драго готує рупор
+        status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
+
+        # Дістаємо всіх користувачів чату, які є в базі даних
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            # Беремо тих, у кого є нікнейм, або хоча б ім'я
+            cursor.execute("SELECT user_id, name FROM stats WHERE count > 0 OR gender != 'Невідомо'")
+            users = cursor.fetchall()
+
+        if not users:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text="❌ База даних пуста, нікого кликати. Нехай хоч хтось щось напише спочатку!"
+            )
+            return
+
+        # Формуємо текст згадувань (тегів)
+        mentions = []
+        for user_id, name in users:
+            # Ігноруємо самого бота, якщо він раптом є в базі
+            if user_id == bot.get_me().id:
+                continue
+            
+            # Екрануємо тег через HTML, щоб воно клікалось і прилітав нотифікейшн
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;")
+            mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a>')
+
+        # Telegram дозволяє в одному повідомленні нормально тегати багато людей,
+        # але краще розбити їх порціями (наприклад, по 10-15 людей у рядку), щоб не було каші.
+        chunk_size = 5
+        mention_lines = []
+        for i in range(0, len(mentions), chunk_size):
+            mention_lines.append(" ".join(mentions[i:i+chunk_size]))
+
+        all_mentions_text = "\n".join(mention_lines)
+
+        # Текст заклику у фірмовому стилі Драго
+        call_text = (
+            "🚨 <b>ОБЩІЙ ЗБІР, СУЧАРУСИ!</b> 🚨\n"
+            "Драго наказує підняти свої дупи і зайти в чат!\n\n"
+            f"{all_mentions_text}\n\n"
+            "<i>Живо відгукнулися, бо буду материтись! 🤬</i>"
+        )
+
+        # Видаляємо тимчасовий статус і штампуємо загальний збір
+        bot.delete_message(chat_id, status_msg.message_id)
+        bot.send_message(chat_id, call_text, parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка загального збору: {e}")
+        bot.reply_to(message, "❌ Рупор зламався, СБУ глушить сигнал. Спробуй ще раз.")
+
+
+# ===================================================================
 # 👋 ЄДИНИЙ обробник входу/виходу учасників
 # ===================================================================
 @bot.chat_member_handler()
