@@ -273,8 +273,9 @@ def handle_word_game(message):
     state["last_letter"] = next_letter
     bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
 
+
 # ===================================================================
-# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - ФІКС ЛІМІТІВ TELEGRAM
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - АДАПТОВАНО ПІД ТВОРЮ БД
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and m.text.strip().lower() in ['@all', '.all', '.збір', 'збір'])
 def call_everyone(message):
@@ -288,11 +289,9 @@ def call_everyone(message):
     try:
         status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            # Беремо лише активних учасників, щоб не спамити "мертвими" записами
-            cursor.execute("SELECT user_id, name FROM stats WHERE count > 0")
-            users = cursor.fetchall()
+        # Використовуємо твій глобальний cursor
+        cursor.execute("SELECT user_id, name FROM stats WHERE count > 0")
+        users = cursor.fetchall()
 
         if not users:
             bot.edit_message_text(
@@ -306,7 +305,6 @@ def call_everyone(message):
         for user_id, name in users:
             if user_id == bot.get_me().id:
                 continue
-            # Захист від кривих символів у базі
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;")
             mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a>')
 
@@ -314,33 +312,29 @@ def call_everyone(message):
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшов кого кликати, бро.")
             return
 
-        # Видаляємо статус "Шукаю живих", бо зараз почнеться спам-атака
         try:
             bot.delete_message(chat_id, status_msg.message_id)
         except Exception:
             pass
 
-        # Головний заклиDirect у фірмовому стилі Драго
+        # Головний заклик
         bot.send_message(
             chat_id, 
             "🚨 <b>ОБЩІЙ ЗБІР, СУЧАРУСИ!</b> 🚨\nДраго наказує підняти свої дупи і зайти в чат!\n\n<i>Живо відгукнулися! 🤬</i>", 
             parse_mode="HTML"
         )
 
-        # 👑 Фікс ліміту: розбиваємо список людей на пачки по 5 осіб
-        # Telegram з'їсть 5 прихованих посилань за раз без жодних блокувань
+        # Розбиваємо на пачки по 5 людей, щоб Telegram не блокував повідомлення
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
             mention_text = " На зв'язок: " + ", ".join(chunk)
-            
-            # Відправляємо пачку
             bot.send_message(chat_id, mention_text, parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка загального збору: {e}")
         try:
-            bot.send_message(chat_id, f"❌ Рупор знову згорів. Деталі для кодера: <code>{str(e)[:50]}</code>", parse_mode="HTML")
+            bot.send_message(chat_id, f"❌ Рупор знову згорів. Деталі: <code>{str(e)[:50]}</code>", parse_mode="HTML")
         except Exception:
             pass
 
