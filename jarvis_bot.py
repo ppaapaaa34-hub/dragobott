@@ -235,43 +235,147 @@ def handle_voice(message):
         bot.reply_to(message, "Не зміг розпарсити твоє голосове.")
 
 # ===================================================================
-# 🎮 ГРА В СЛОВА
+# 🎮 ГРА В СЛОВА (ДРАГО ГРАЄ ПРОТИ ЧАТУ)
 # ===================================================================
 game_state = {}
 
 @bot.message_handler(commands=['game'])
 def start_word_game(message):
     game_state[message.chat.id] = {"last_letter": None, "used_words": []}
-    bot.reply_to(message, "🎲 Гра в слова розпочата! Пиши перше слово.")
+    bot.reply_to(message, "🎲 Гра в слова розпочата! Я приймаю виклик. Пиши перше слово, покажи на що здатні твої дві звивини! 👇")
 
 @bot.message_handler(commands=['stop'])
 def stop_word_game(message):
     if message.chat.id in game_state:
         del game_state[message.chat.id]
-        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати. 👋")
+        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати від вашої тупості. 👋")
     else:
-        bot.reply_to(message, "Гра і так не була запущена.")
+        bot.reply_to(message, "Гра і так не була запущена, геній. Ти щось переплутав. 🤡")
 
-@bot.message_handler(func=lambda m: m.chat.id in game_state and m.text and m.text.isalpha())
+# Обробник ловить повідомлення, якщо гра активна і це не команда (не починається з /)
+@bot.message_handler(func=lambda m: m.chat.id in game_state and m.text and not m.text.startswith('/'))
 def handle_word_game(message):
     chat_id = message.chat.id
-    word = message.text.lower()
+    user = message.from_user
+    
+    # 👑 ФІКС БД: Записуємо гравця в базу та оновлюємо лічильник повідомлень
+    ensure_user_in_db(user)
+    cursor.execute(
+        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
+        (user.first_name, user.id)
+    )
+    conn.commit()
+
+    # Очищаємо слово від пробілів та перевіряємо, чи це одне слово (враховуємо український апостроф)
+    raw_word = message.text.strip()
+    word = raw_word.lower()
+    clean_check = word.replace("'", "").replace("’", "").replace("-", "")
+
+    if len(raw_word.split()) != 1 or not clean_check.isalpha():
+        bot.reply_to(message, "Чувак, граємо в слова! Надішли мені ОДНЕ єдине слово без цифр, смайлів чи спаму! 🤦‍♂️")
+        return
+
     state = game_state[chat_id]
+
+    # Перевірка мінімальної довжини
     if len(word) < 2:
-        bot.reply_to(message, "Слово має бути мінімум з 2 літер!")
+        bot.reply_to(message, "Яке ще 'а' чи 'я'? Слово має бути мінімум з 2 літер! Не читери. 🤖")
         return
+
+    # Перевірка першої літери (якщо це не перший хід)
     if state["last_letter"] and word[0] != state["last_letter"]:
-        bot.reply_to(message, f"Не-а! Слово має починатися на літеру '{state['last_letter'].upper()}'.")
+        bot.reply_to(message, f"Не-а! Твоє слово має починатися на літеру <b>'{state['last_letter'].upper()}'</b>. Читай правила, бро! 🧐", parse_mode="HTML")
         return
+
+    # Перевірка на повтори
     if word in state["used_words"]:
-        bot.reply_to(message, "Це слово вже було, не тупи! 😎")
+        bot.reply_to(message, f"Це слово (<b>{word}</b>) вже було! У тебе що, пам'ять як у акваріумної рибки? 😎", parse_mode="HTML")
         return
+
+    # Слово юзера успішне — додаємо в список використаних
     state["used_words"].append(word)
-    next_letter = word[-1]
-    if next_letter in ['ь', 'и', 'й', 'ї']:
-        next_letter = word[-2]
-    state["last_letter"] = next_letter
-    bot.reply_to(message, f"Прийнято! Наступне слово на літеру '{next_letter.upper()}'.")
+
+    # Визначаємо літеру, на яку має відповісти Драго
+    drago_letter = word[-1]
+    if drago_letter in ['ь', 'и', 'й', 'ї']:
+        drago_letter = word[-2] if len(word) > 1 else word[-1]
+
+    # Звертаємося до ШІ Gemini, щоб Драго зробив свій хід
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        
+        gender = get_user_gender(user.id)
+        gender_hint = "бро" if gender == 'Хлопець' else "подруга" if gender == 'Дівчина' else "чувак"
+
+        # Формуємо чіткий промпт для ШІ з правилами гри
+        prompt = (
+            f"АКТИВНА ГРА В СЛОВА! Твій хід, Драго.\n"
+            f"Користувач ({gender_hint}) назвав слово: '{word}'.\n"
+            f"Тобі потрібно назвати ОДНЕ РЕАЛЬНЕ українське слово (іменник у початковій формі), яке починається на літеру '{drago_letter.upper()}'.\n"
+            f"Це слово КАТЕГОРИЧНО НЕ ПОВИННО БУТИ серед використаних: {state['used_words']}.\n\n"
+            f"Дай відповідь СУВОРO у такому форматі (два рядки):\n"
+            f"СЛОВО: [твоє єдине вибране слово]\n"
+            f"КОМЕНТАР: [твій токсичний, смішний або зухвалий коментар у стилі Драго, де ти висміюєш слово юзера, хвастаєшся своїм і тримаєш марку розбійника]\n"
+        )
+
+        response = model.generate_content(prompt)
+        resp_text = response.text.strip()
+
+        drago_word = ""
+        drago_comment = ""
+
+        # Парсимо відповідь від ШІ
+        for line in resp_text.split('\n'):
+            if line.upper().startswith("СЛОВО:"):
+                drago_word = line.split(":", 1)[1].strip().lower()
+            elif line.upper().startswith("КОМЕНТАР:"):
+                drago_comment = line.split(":", 1)[1].strip()
+
+        # Захисний механізм, якщо ШІ збився з формату
+        if not drago_word:
+            lines = [l for l in resp_text.split('\n') if l.strip()]
+            if lines:
+                drago_word = lines[0].replace("СЛОВО:", "").replace("*", "").strip().lower().split()[0]
+                drago_comment = resp_text
+
+        # Залишаємо у слові Драго тільки літери
+        drago_word = ''.join(c for c in drago_word if c.isalpha() or c in ["'", "’", "-"])
+
+        # Якщо ШІ видав повну діч або порожнечу — вмикаємо екстрений фолбек
+        if not drago_word or drago_word in state["used_words"] or drago_word[0] != drago_letter:
+            fallbacks = {
+                "а": "автобус", "б": "банан", "в": "вертоліт", "г": "гусь", "д": "диван",
+                "е": "екватор", "є": "єнот", "ж": "жаба", "з": "зебра", "и": "индик",
+                "і": "ілюзія", "к": "кабан", "л": "лимон", "м": "мавпа", "н": "носоріг",
+                "о": "огірок", "п": "папуга", "р": "ракета", "с": "слон", "т": "тигр",
+                "у": "уран", "ф": "фламінго", "х": "хом'як", "ц": "цап", "ч": "черепаха",
+                "ш": "шапка", "щ": "щука", "ю": "юшка", "я": "яблуко"
+            }
+            drago_word = fallbacks.get(drago_letter, "кореш")
+            drago_comment = "Твоє слово настільки заплутало мої транзистори, що я ледь викрутився! Надіюсь, твій лоб не сильно спітнів."
+
+        # Додаємо хід Драго у використані слова
+        state["used_words"].append(drago_word)
+
+        # Рахуємо наступну літеру для юзера (хід повертається до чату)
+        next_letter = drago_word[-1]
+        if next_letter in ['ь', 'и', 'й', 'ї']:
+            next_letter = drago_word[-2] if len(drago_word) > 1 else drago_word[-1]
+
+        state["last_letter"] = next_letter
+
+        # Формуємо красиву відповідь
+        reply = (
+            f"🤖 <b>Драго каже:</b> {drago_comment}\n\n"
+            f"📌 Твоє слово: <i>{word}</i>\n"
+            f"🔥 Мій удар: <b>{drago_word.upper()}</b>\n\n"
+            f"👉 Твій хід! Назви слово на літеру: <b>{next_letter.upper()}</b>"
+        )
+        bot.reply_to(message, reply, parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка в грі в слова: {e}")
+        bot.reply_to(message, "💥 У мене процесор трохи закипів від твого слова. Спробуй ще раз інше слово або перезапусти гру через /game!")
 
 
 # ===================================================================
