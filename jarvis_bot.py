@@ -275,9 +275,9 @@ def handle_word_game(message):
 
 
 # ===================================================================
-# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - АДАПТОВАНО ПІД ТВОРЮ БД
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all) - З ПРИЧИНОЮ ЗБОРУ
 # ===================================================================
-@bot.message_handler(func=lambda m: m.text and m.text.strip().lower() in ['@all', '.all', '.збір', 'збір'])
+@bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір']))
 def call_everyone(message):
     chat_id = message.chat.id
     chat_type = message.chat.type
@@ -289,7 +289,17 @@ def call_everyone(message):
     try:
         status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
 
-        # Використовуємо твій глобальний cursor
+        # Витягуємо причину збору
+        original_text = message.text.strip()
+        reason = ""
+        
+        # Визначаємо, з якого саме тригера почалося повідомлення, і відрізаємо його
+        for trigger in ['@all', '.all', '.збір', 'збір']:
+            if original_text.lower().startswith(trigger):
+                reason = original_text[len(trigger):].strip()
+                break
+
+        # Отримуємо людей з твоєї БД
         cursor.execute("SELECT user_id, name FROM stats WHERE count > 0")
         users = cursor.fetchall()
 
@@ -317,14 +327,24 @@ def call_everyone(message):
         except Exception:
             pass
 
-        # Головний заклик
-        bot.send_message(
-            chat_id, 
-            "🚨 <b>ОБЩІЙ ЗБІР, СУЧАРУСИ!</b> 🚨\nДраго наказує підняти свої дупи і зайти в чат!\n\n<i>Живо відгукнулися! 🤬</i>", 
-            parse_mode="HTML"
-        )
+        # Формуємо блок із причиною, якщо вона є
+        if reason:
+            # Екрануємо символи < > у причині, щоб HTML не ламався
+            clean_reason = reason.replace("<", "&lt;").replace(">", "&gt;")
+            reason_text = f"📌 <b>Причина збору:</b> {clean_reason}"
+        else:
+            reason_text = "Драго наказує підняти свої дупи і зайти в чат!"
 
-        # Розбиваємо на пачки по 5 людей, щоб Telegram не блокував повідомлення
+        # Головний заклик
+        main_call = (
+            "🚨 <b>ОБЩІЙ ЗБІР, БАНДІТИ!</b> 🚨\n"
+            f"{reason_text}\n\n"
+            "<i>Живо відгукнулися! 🤬</i>"
+        )
+        
+        bot.send_message(chat_id, main_call, parse_mode="HTML")
+
+        # Розбиваємо теги на пачки по 5 людей
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
