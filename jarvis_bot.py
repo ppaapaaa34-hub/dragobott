@@ -58,7 +58,7 @@ model = genai.GenerativeModel(
         "Пиши коротко і ясно!"
     )
 )
-
+ 
 # Пам'ять чатів
 bot_chats = {}
 
