@@ -22,7 +22,7 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
     gender TEXT
 )""")
 conn.commit()
-
+ 
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = 29566622
 API_HASH = 'd06e98b0540b86be0722e099c4c22355'
