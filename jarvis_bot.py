@@ -22,14 +22,14 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
     gender TEXT
 )""")
 conn.commit()
-
+ 
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = 29566622
 API_HASH = 'd06e98b0540b86be0722e099c4c22355'
 TELEGRAM_TOKEN = '8788139276:AAGKr6sFii4n9B1E5sysHSa-xMTgYsmUZfI'
 GEMINI_API_KEY = 'AIzaSyC_7U44ek_eaN0u6GV4FqL-m1N9OcpvVJM'
 # ======================================================
-
+ 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
