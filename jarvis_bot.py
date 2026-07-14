@@ -4,13 +4,14 @@ import requests
 import random
 import io
 import threading
+import asyncio
+import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
 from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import sqlite3
-from gtts import gTTS
 
 # Підключаємося до БД
 conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
@@ -25,10 +26,11 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
 conn.commit()
  
 # ==================== НАЛАШТУВАННЯ ====================
-API_ID = 29566622
-API_HASH = 'd06e98b0540b86be0722e099c4c22355'
-TELEGRAM_TOKEN = '8788139276:AAGKr6sFii4n9B1E5sysHSa-xMTgYsmUZfI'
-GEMINI_API_KEY = 'AIzaSyC_7U44ek_eaN0u6GV4FqL-m1N9OcpvVJM'
+# Встав сюди свої ключі або використовуй змінні оточення (рекомендовано)
+API_ID = int(os.environ.get('API_ID', 12345678))
+API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
 # ======================================================
  
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -39,7 +41,6 @@ generation_config = {
     "temperature": 0.85,
 }
 
-# Виправляємо BLOCK_NONE на дозволений для платних акаунтів BLOCK_ONLY_HIGH
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
@@ -76,23 +77,29 @@ def run_dummy_server():
 
 
 # ===================================================================
-# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (gTTS)
+# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
 # ===================================================================
 
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Перетворює текст на голосове повідомлення у форматі MP3 в пам'яті та надсилає його"""
+    """Перетворює текст на голосове повідомлення через Edge TTS (чоловічий голос) та надсилає його"""
     try:
-        # Генеруємо озвучку через gTTS українською мовою
-        tts = gTTS(text=text_to_speak, lang='uk', slow=False)
+        voice_file = f"drago_voice_{chat_id}.ogg"
         
-        # Створюємо віртуальний файл у пам'яті (без збереження на диск)
-        voice_file = io.BytesIO()
-        tts.write_to_fp(voice_file)
-        voice_file.seek(0)
-        voice_file.name = 'drago_voice.mp3'
+        # uk-UA-OstapNeural - це якісний чоловічий український голос
+        # rate="+15%" - прискорює мову, щоб прибрати зайві паузи
+        communicate = edge_tts.Communicate(text_to_speak, "uk-UA-OstapNeural", rate="+15%")
         
-        # Надсилаємо як голосове
-        bot.send_voice(chat_id, voice_file, reply_to_message_id=reply_to_id)
+        # Запускаємо асинхронну генерацію аудіо
+        asyncio.run(communicate.save(voice_file))
+        
+        # Відправляємо згенерований файл у Telegram
+        with open(voice_file, 'rb') as f:
+            bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
+            
+        # Видаляємо файл після відправки
+        if os.path.exists(voice_file):
+            os.remove(voice_file)
+            
     except Exception as e:
         print(f"Помилка озвучки TTS: {e}")
         # Якщо щось зламалося — просто дублюємо відповідь текстом
@@ -101,21 +108,19 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
-    """Обробник вхідних голосових: слухає та відповідає теж голосом"""
     chat_id = message.chat.id
     chat_type = message.chat.type
     if chat_type in ['group', 'supergroup']:
         if not (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id):
             return
     try:
-        bot.send_chat_action(chat_id, 'record_voice')  # Статус «Записує голосове...»
+        bot.send_chat_action(chat_id, 'record_voice')
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         audio_part = {"data": downloaded_file, "mime_type": "audio/ogg"}
         prompt = "Послухай це голосове повідомлення, зрозумій що сказав користувач і дай повну дотепну відповідь як Драго:"
         response = model.generate_content([prompt, audio_part])
         
-        # Відповідаємо ГОЛОСОМ на голосове повідомлення
         send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
         
     except Exception as e:
@@ -239,133 +244,6 @@ def generate_image_wait_and_send(message):
             )
         except Exception:
             bot.reply_to(message, "❌ Сервер малювання тимчасово ліг. Спробуй пізніше.")
-
-
-# ===================================================================
-# 🎮 ГРА В СЛОВА (ДРАГО ГРАЄ ПРОТИ ЧАТУ)
-# ===================================================================
-game_state = {}
-
-@bot.message_handler(commands=['game'])
-def start_word_game(message):
-    game_state[message.chat.id] = {"last_letter": None, "used_words": []}
-    bot.reply_to(message, "🎲 Гра в слова розпочата! Я приймаю виклик. Пиши перше слово, покажи на що здатні твої дві звивини! 👇")
-
-@bot.message_handler(commands=['stop'])
-def stop_word_game(message):
-    if message.chat.id in game_state:
-        del game_state[message.chat.id]
-        bot.reply_to(message, "Гру зупинено. Драго пішов відпочивати від вашої тупості. 👋")
-    else:
-        bot.reply_to(message, "Гра і так не была запущена, геній. Ти щось переплутав. 🤡")
-
-@bot.message_handler(func=lambda m: m.chat.id in game_state and m.text and not m.text.startswith('/'))
-def handle_word_game(message):
-    chat_id = message.chat.id
-    user = message.from_user
-    
-    ensure_user_in_db(user)
-    cursor.execute(
-        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-        (user.first_name, user.id)
-    )
-    conn.commit()
-
-    raw_word = message.text.strip()
-    word = raw_word.lower()
-    clean_check = word.replace("'", "").replace("’", "").replace("-", "")
-
-    if len(raw_word.split()) != 1 or not clean_check.isalpha():
-        bot.reply_to(message, "Чувак, граємо в слова! Надішли мені ОДНЕ єдине слово без цифр, смайлів чи спаму! 🤦‍♂️")
-        return
-
-    state = game_state[chat_id]
-
-    if len(word) < 2:
-        bot.reply_to(message, "Яке ще 'а' чи 'я'? Слово має бути мінімум з 2 літер! Не читери. 🤖")
-        return
-
-    if state["last_letter"] and word[0] != state["last_letter"]:
-        bot.reply_to(message, f"Не-а! Твоє слово має починатися на літеру <b>'{state['last_letter'].upper()}'</b>. Читай правила, бро! 🧐", parse_mode="HTML")
-        return
-
-    if word in state["used_words"]:
-        bot.reply_to(message, f"Це слово (<b>{word}</b>) вже було! У тебе що, пам'ять як у акваріумної рибки? 😎", parse_mode="HTML")
-        return
-
-    state["used_words"].append(word)
-
-    drago_letter = word[-1]
-    if drago_letter in ['ь', 'и', 'й', 'ї']:
-        drago_letter = word[-2] if len(word) > 1 else word[-1]
-
-    try:
-        bot.send_chat_action(chat_id, 'typing')
-        
-        gender = get_user_gender(user.id)
-        gender_hint = "бро" if gender == 'Хлопець' else "подруга" if gender == 'Дівчина' else "чувак"
-
-        prompt = (
-            f"АКТИВНА ГРА В СЛОВА! Твій хід, Драго.\n"
-            f"Користувач ({gender_hint}) назвав слово: '{word}'.\n"
-            f"Тобі потрібно назвати ОДНЕ РЕАЛЬНЕ українське слово (іменник у початковій формі), яке починається на літеру '{drago_letter.upper()}'.\n"
-            f"Це слово КАТЕГОРИЧНО НЕ ПОВИННО БУТИ серед використаних: {state['used_words']}.\n\n"
-            f"Дай відповідь СУВОРO у такому форматі (два рядки):\n"
-            f"СЛОВО: [твоє єдине вибране слово]\n"
-            f"КОМЕНТАР: [твій токсичний, смішний або зухвалий коментар у стилі Драго, де ти висміюєш слово юзера, хвастаєшся своїм і тримаєш марку розбійника]\n"
-        )
-
-        response = model.generate_content(prompt)
-        resp_text = response.text.strip()
-
-        drago_word = ""
-        drago_comment = ""
-
-        for line in resp_text.split('\n'):
-            if line.upper().startswith("СЛОВО:"):
-                drago_word = line.split(":", 1)[1].strip().lower()
-            elif line.upper().startswith("КОМЕНТАР:"):
-                drago_comment = line.split(":", 1)[1].strip()
-
-        if not drago_word:
-            lines = [l for l in resp_text.split('\n') if l.strip()]
-            if lines:
-                drago_word = lines[0].replace("СЛОВО:", "").replace("*", "").strip().lower().split()[0]
-                drago_comment = resp_text
-
-        drago_word = ''.join(c for c in drago_word if c.isalpha() or c in ["'", "’", "-"])
-
-        if not drago_word or drago_word in state["used_words"] or drago_word[0] != drago_letter:
-            fallbacks = {
-                "а": "автобус", "б": "банан", "в": "вертоліт", "г": "гусь", "д": "диван",
-                "е": "екватор", "є": "єнот", "ж": "жаба", "з": "зебра", "и": "индик",
-                "і": "ілюзія", "к": "кабан", "л": "лимон", "м": "мавпа", "н": "носоріг",
-                "о": "огірок", "п": "папуга", "р": "ракета", "с": "слон", "т": "тигр",
-                "у": "уран", "ф": "фламінго", "х": "хом'як", "ц": "цап", "ч": "черепаха",
-                "ш": "шапка", "щ": "щука", "ю": "юшка", "я": "яблуко"
-            }
-            drago_word = fallbacks.get(drago_letter, "кореш")
-            drago_comment = "Твоє слово настільки заплутало мої транзистори, що я ледь викрутився! Надіюсь, твій лоб не сильно спітнів."
-
-        state["used_words"].append(drago_word)
-
-        next_letter = drago_word[-1]
-        if next_letter in ['ь', 'и', 'й', 'ї']:
-            next_letter = drago_word[-2] if len(drago_word) > 1 else drago_word[-1]
-
-        state["last_letter"] = next_letter
-
-        reply = (
-            f"🤖 <b>Драго каже:</b> {drago_comment}\n\n"
-            f"📌 Твоє слово: <i>{word}</i>\n"
-            f"🔥 Мій удар: <b>{drago_word.upper()}</b>\n\n"
-            f"👉 Твій хід! Назви слово на літеру: <b>{next_letter.upper()}</b>"
-        )
-        bot.reply_to(message, reply, parse_mode="HTML")
-
-    except Exception as e:
-        print(f"Помилка в грі в слова: {e}")
-        bot.reply_to(message, "💥 У мене процесор трохи закипів від твого слова. Спробуй ще раз інше слово або перезапусти гру через /game!")
 
 
 # ===================================================================
@@ -636,7 +514,7 @@ def handle_photo(message):
 
 
 # ===================================================================
-# 👋 Обробник входу/виходу учасників (Виправлений обрив)
+# 👋 Обробник входу/виходу учасників
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
@@ -668,7 +546,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
 
 
 # ===================================================================
-# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ (З СИСТЕМОЮ TTS)
+# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -726,17 +604,17 @@ def handle_text(message):
     status_msg = None
     try:
         if wants_voice:
-            bot.send_chat_action(chat_id, 'record_voice')  # Статус "записує голосове..."
+            bot.send_chat_action(chat_id, 'record_voice')
             status_msg = bot.reply_to(message, "Драго записує голосове повідомлення... 🎤")
         else:
-            bot.send_chat_action(chat_id, 'typing')  # Статус "друкує..."
+            bot.send_chat_action(chat_id, 'typing')
             status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
 
         chat = get_gemini_chat(chat_id)
         full_prompt = f"{gender_hint}{text}"
         response = chat.send_message(full_prompt)
 
-        # Очищаємо текст від Маркдауну для чистої мови gTTS
+        # Очищаємо текст від Маркдауну для чистої мови TTS
         clean_text_for_speech = response.text.replace("*", "").replace("_", "").replace("`", "")
 
         if wants_voice:
@@ -764,15 +642,12 @@ def handle_text(message):
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
 if __name__ == "__main__":
-    # Вмикаємо обробник оновлень членів чату
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    # Запуск сервера для Render у фоновому потоці
     server_thread = threading.Thread(target=run_dummy_server, daemon=True)
     server_thread.start()
     print("🚀 Dummy-сервер успішно запущено.")
 
-    # Безкінечний цикл роботи бота
     print("🔥 Драго вийшов на полювання і готовий до роботи!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member'])
