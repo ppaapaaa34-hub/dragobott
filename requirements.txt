@@ -2,5 +2,4 @@ pyTelegramBotAPI
 google-generativeai
 Pillow
 requests
-pip install gTTS
 gTTS
