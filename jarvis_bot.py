@@ -2,8 +2,6 @@ import os
 import base64
 import requests
 import random
-from gtts 
-import gTTS
 import io
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
@@ -12,6 +10,7 @@ from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import sqlite3
+from gtts import gTTS  # <--- Виправлений імпорт gTTS
 
 # Підключаємося до БД
 conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
@@ -74,6 +73,55 @@ def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     httpd = HTTPServer(("", port), SimpleHTTPRequestHandler)
     httpd.serve_forever()
+
+
+# ===================================================================
+# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (gTTS)
+# ===================================================================
+
+def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
+    """Перетворює текст на голосове повідомлення у форматі MP3 в пам'яті та надсилає його"""
+    try:
+        # Генеруємо озвучку через gTTS українською мовою
+        tts = gTTS(text=text_to_speak, lang='uk', slow=False)
+        
+        # Створюємо віртуальний файл у пам'яті (без збереження на диск)
+        voice_file = io.BytesIO()
+        tts.write_to_fp(voice_file)
+        voice_file.seek(0)
+        voice_file.name = 'drago_voice.mp3'
+        
+        # Надсилаємо як голосове
+        bot.send_voice(chat_id, voice_file, reply_to_message_id=reply_to_id)
+    except Exception as e:
+        print(f"Помилка озвучки TTS: {e}")
+        # Якщо щось зламалося — просто дублюємо відповідь текстом
+        bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+
+
+@bot.message_handler(content_types=['voice'])
+def handle_voice(message):
+    """Обробник вхідних голосових: слухає та відповідає теж голосом"""
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    if chat_type in ['group', 'supergroup']:
+        if not (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id):
+            return
+    try:
+        bot.send_chat_action(chat_id, 'record_voice')  # Статус «Записує голосове...»
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        audio_part = {"data": downloaded_file, "mime_type": "audio/ogg"}
+        prompt = "Послухай це голосове повідомлення, зрозумій що сказав користувач і дай повну дотепну відповідь як Драго:"
+        response = model.generate_content([prompt, audio_part])
+        
+        # Відповідаємо ГОЛОСОМ на голосове повідомлення
+        send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
+        
+    except Exception as e:
+        print(f"Помилка голосового: {e}")
+        bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
+
 
 # ===================================================================
 # 🧠 ГЕНДЕРНА СИСТЕМА
