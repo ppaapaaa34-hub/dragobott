@@ -132,26 +132,6 @@ def ensure_user_in_db(user) -> str:
         conn.commit()
     return get_user_gender(user_id)
 
-# ===================================================================
-# 🎭 КОМАНДА .мем
-# ===================================================================
-@bot.message_handler(func=lambda m: m.text and m.text.strip().lower() == '.мем')
-def send_meme(message):
-    try:
-        bot.delete_message(message.chat.id, message.message_id)
-        meme_dir = r"D:\DragoBot\memes"
-        if os.path.exists(meme_dir):
-            memes = [f for f in os.listdir(meme_dir) if f.endswith(('.png', '.jpg', '.jpeg', '.gif'))]
-            if memes:
-                random_meme = random.choice(memes)
-                with open(os.path.join(meme_dir, random_meme), 'rb') as photo:
-                    bot.send_photo(message.chat.id, photo)
-            else:
-                bot.send_message(message.chat.id, "Бро, папка з мемами порожня!")
-        else:
-            bot.send_message(message.chat.id, "Не знайшов папку з мемами за шляхом D:\\DragoBot\\memes")
-    except Exception as e:
-        print(f"Помилка мему: {e}")
 
 # ===================================================================
 # 🖼️ КОМАНДА /generate
