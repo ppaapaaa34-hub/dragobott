@@ -2,6 +2,8 @@ import os
 import base64
 import requests
 import random
+from gtts 
+import gTTS
 import io
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
