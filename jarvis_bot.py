@@ -730,7 +730,7 @@ def handle_text(message):
             status_msg = bot.reply_to(message, "Драго записує голосове повідомлення... 🎤")
         else:
             bot.send_chat_action(chat_id, 'typing')  # Статус "друкує..."
-            status_msg = bot.reply_to(message, "Драго думає... ⚡")
+            status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
 
         chat = get_gemini_chat(chat_id)
         full_prompt = f"{gender_hint}{text}"
