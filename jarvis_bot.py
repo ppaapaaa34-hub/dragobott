@@ -497,6 +497,70 @@ def show_chat_activity(message):
 
 
 # ===================================================================
+# 💤 КОМАНДА ДЛЯ ПОШУКУ ТА ТЕГАННЯ НЕАКТИВНИХ (/sleepers або /сонні)
+# ===================================================================
+@bot.message_handler(commands=['sleepers', 'сонні'])
+def tag_inactive_users(message):
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    user = message.from_user
+
+    if chat_type not in ['group', 'supergroup']:
+        bot.reply_to(message, "Ей, бро, які сонні мухи в приватці? Тут тільки ти і я. 👁️")
+        return
+
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+
+        # Шукаємо людей, у яких лічильник повідомлень менше 5 (або взагалі 0)
+        # Сортуємо від найменшої активності до більшої
+        cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
+        rows = cursor.fetchall()
+
+        # Видаляємо самого бота зі списку, якщо він раптом там є
+        rows = [row for row in rows if row[0] != bot.get_me().id]
+
+        if not rows:
+            bot.reply_to(message, "🔥 Ого! Схоже, у цьому чаті всі активні звірі! Жодного сонного лінивця не знайдено. Поважаю. 😎")
+            return
+
+        # Списочок для тегання
+        mentions = []
+        for user_id, name, count in rows:
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Чуваче"
+            # Формуємо клікабельне посилання, яке примусово тегне людину в Telegram
+            mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a> (активність: {count} пов.)')
+
+        # Готуємо кілька варіантів «привітань» від Драго
+        punchlines = [
+            "Ей, ви там що, позасинали у своїх норах? Ану живо в чат! 🪵",
+            "Якого біса ви мовчите? Я стежу за вами, привиди! 👁️👻",
+            "У вас пальці повідсихали чи що? Ану черкніть хоч слово! 🤬",
+            "Дивлюся на вашу активність і плакати хочеться. Прокидаємося! 💤"
+        ]
+
+        random_punch = random.choice(punchlines)
+
+        # Формуємо красивий вивід
+        response_text = (
+            f"📢 <b>ДРАГО ВИХОДИТЬ НА ПОЛЮВАННЯ НА СОННИХ МУХ!</b> 💤\n"
+            f"<i>{random_punch}</i>\n\n"
+            "⚠️ <b>Список підозрілих тихушників:</b>\n"
+        )
+
+        for idx, mention in enumerate(mentions, 1):
+            response_text += f"{idx}. {mention}\n"
+
+        response_text += "\n☠️ <i>Якщо не почнете писати — Драго особисто вас забанить (жартую, але це не точно).</i>"
+
+        bot.send_message(chat_id, response_text, parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка пошуку сонних: {e}")
+        bot.reply_to(message, "❌ Не зміг розбудити лінивців, щось пішло не так із базою даних.")
+
+
+# ===================================================================
 # 👋 ЄДИНИЙ обробник входу/виходу учасників
 # ===================================================================
 @bot.chat_member_handler()
