@@ -445,6 +445,56 @@ def call_everyone(message):
         except Exception:
             pass
 
+# ===================================================================
+# 📊 КОМАНДА СТАТИСТИКИ АКТИВНОСТІ (/top або /stats)
+# ===================================================================
+@bot.message_handler(commands=['top', 'stats'])
+def show_chat_activity(message):
+    chat_id = message.chat.id
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        
+        # Витягуємо топ-10 користувачів за кількістю повідомлень
+        cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
+        rows = cursor.fetchall()
+
+        if not rows:
+            bot.reply_to(message, "📊 Таблиця активності порожня. Ви що, взагалі нічого не пишете? Ну ви й сонні мухи... 🥱")
+            return
+
+        # Рахуємо загальну суму повідомлень у базі для красивої статистики
+        cursor.execute("SELECT SUM(count) FROM stats")
+        total_messages = cursor.fetchone()[0] or 0
+
+        # Формуємо шапку повідомлення
+        response_lines = [
+            "🏆 <b>ТОП-10 АКТИВНИХ БАНДИТІВ ЧАТУ</b> 🏆",
+            f"📈 <i>Всього в базі зафіксовано повідомлень: <b>{total_messages}</b></i>\n",
+        ]
+
+        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+        for idx, (name, count, gender) in enumerate(rows):
+            medal = medals[idx] if idx < len(medals) else "🔹"
+            
+            # Екрануємо символи тегів, щоб Telegram не сварився на імена
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+            
+            # Додаємо гендерний маркер для фану
+            suffix = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
+            
+            response_lines.append(f"{medal} {clean_name} {suffix} — <b>{count}</b> пов.")
+
+        # Додаємо фірмовий коментар від Драго в кінці
+        response_lines.append("\n☠️ <i>Ті, кого немає в списку — підніміть дупи і почніть писати, бо видалю нафіг!</i>")
+
+        full_response = "\n".join(response_lines)
+        bot.reply_to(message, full_response, parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка виведення топу: {e}")
+        bot.reply_to(message, "❌ Не зміг підрахувати ваші звивини (помилка бази даних). Спробуй пізніше.")
+
 
 # ===================================================================
 # 👋 ЄДИНИЙ обробник входу/виходу учасників
