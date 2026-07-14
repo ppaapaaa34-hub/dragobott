@@ -4,9 +4,9 @@ import requests
 import random
 import io
 import threading
-from telebot import telebot, types
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
+from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import sqlite3
@@ -38,11 +38,12 @@ generation_config = {
     "temperature": 0.85,
 }
 
+# Виправляємо BLOCK_NONE на дозволений для платних акаунтів BLOCK_ONLY_HIGH
 safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
 ]
 
 model = genai.GenerativeModel(
@@ -55,7 +56,7 @@ model = genai.GenerativeModel(
         "іноді нецензурну лексику (мати) для емоційності, якщо це доречно. "
         "Будь живим, неформальним розмовником, злегка іронізуй, підколюй юзера, але завжди допомагай. "
         "Обов'язково закінчуй свої думки, не обривай речення на пів слові! "
-        "Пиши коротко і ясно!."
+        "Пиши коротко і ясно!"
     )
 )
  
@@ -430,7 +431,7 @@ def call_everyone(message):
         
         bot.send_message(chat_id, main_call, parse_mode="HTML")
 
-        # Розбиваємо теги на безпечні пачки по 5 людей
+        # Rozбиваємо теги на безпечні пачки по 5 людей
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
@@ -581,6 +582,6 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 if __name__ == "__main__":
     print("=========================================")
     print(" DRAGO BOT УСПІШНО ЗАПУЩЕНИЙ НА TIER 1! ")
-    print(" Гендерна пам'ять активована!           ")
+    print(" Гендерна пам'ять активована!            ")
     print("=========================================")
     bot.infinity_polling(allowed_updates=['message', 'chat_member', 'my_chat_member'])
