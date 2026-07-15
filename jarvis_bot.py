@@ -954,4 +954,4 @@ if __name__ == "__main__":
     print("🚀 Dummy-сервер успішно запущено.")
 
     print("🔥 Драго вийшов на полювання і готовий до роботи!")
-    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member'])
+    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
