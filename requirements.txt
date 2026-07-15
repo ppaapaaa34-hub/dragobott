@@ -2,6 +2,6 @@ pyTelegramBotAPI
 google-generativeai
 Pillow
 requests
-gTTS
-edge-tts
 yt-dlp
+edge-tts
+ffmpeg-python
