@@ -26,7 +26,6 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
 conn.commit()
  
 # ==================== НАЛАШТУВАННЯ ====================
-# Встав сюди свої ключі або використовуй змінні оточення (рекомендовано)
 API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
@@ -65,6 +64,10 @@ model = genai.GenerativeModel(
 # Пам'ять чатів
 bot_chats = {}
 
+# Пам'ять для МЕМНИХ НОВИН
+RECENT_MESSAGES = []
+MAX_HISTORY_LIMIT = 30
+
 def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
@@ -79,32 +82,21 @@ def run_dummy_server():
 # ===================================================================
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
 # ===================================================================
-
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Перетворює текст на голосове повідомлення через Edge TTS (чоловічий голос) та надсилає його"""
     try:
         voice_file = f"drago_voice_{chat_id}.ogg"
-        
-        # uk-UA-OstapNeural - це якісний чоловічий український голос
-        # rate="+15%" - прискорює мову, щоб прибрати зайві паузи
         communicate = edge_tts.Communicate(text_to_speak, "uk-UA-OstapNeural", rate="+15%")
-        
-        # Запускаємо асинхронну генерацію аудіо
         asyncio.run(communicate.save(voice_file))
         
-        # Відправляємо згенерований файл у Telegram
         with open(voice_file, 'rb') as f:
             bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
             
-        # Видаляємо файл після відправки
         if os.path.exists(voice_file):
             os.remove(voice_file)
             
     except Exception as e:
         print(f"Помилка озвучки TTS: {e}")
-        # Якщо щось зламалося — просто дублюємо відповідь текстом
         bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
-
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
@@ -322,12 +314,170 @@ def call_everyone(message):
             pass
 
 # ===================================================================
+# 👑 РОЗШИРЕНА АДМІН-ПАНЕЛЬ ТІЛЬКИ ДЛЯ ТВОРЦЯ 
+# ===================================================================
+
+# ТУТ ВПИШИ СВІЙ TELEGRAM ID
+ADMIN_ID = 5512316636
+
+@bot.message_handler(commands=['admin', 'адмін'])
+def admin_panel(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "🛑 Куди лізеш? Ця панель створена тільки для Артура.")
+        return
+        
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_stats = types.InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")
+    btn_broadcast = types.InlineKeyboardButton("📢 Розсилка", callback_data="admin_broadcast")
+    btn_backup = types.InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup")
+    btn_reset = types.InlineKeyboardButton("🧹 Скинути ТОП", callback_data="admin_reset")
+    btn_dm = types.InlineKeyboardButton("💬 Написати в ПП", callback_data="admin_dm")
+    
+    # Розставляємо кнопки сіткою
+    markup.add(btn_stats, btn_broadcast)
+    markup.add(btn_backup, btn_dm)
+    markup.add(btn_reset)
+    
+    bot.reply_to(
+        message, 
+        "👑 <b>Вітаю в центрі управління, Артуре!</b>\nВибирай, що будемо робити з базою та юзерами:", 
+        reply_markup=markup, 
+        parse_mode="HTML"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def handle_admin_callbacks(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "🛑 Доступ заборонено!")
+        return
+
+    # 1. СТАТИСТИКА
+    if call.data == "admin_stats":
+        cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
+        result = cursor.fetchone()
+        users_count = result[0] or 0
+        total_msgs = result[1] or 0
+        
+        text = (
+            "📊 *Глобальна статистика Драго:*\n\n"
+            f"👤 Юзерів у базі: {users_count}\n"
+            f"💬 Всього повідомлень: {total_msgs}"
+        )
+        bot.answer_callback_query(call.id, "Статистика завантажена")
+        bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+
+    # 2. РОЗСИЛКА
+    elif call.data == "admin_broadcast":
+        msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки всім юзерам з БД.\nДля скасування напиши `скасування`.", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_broadcast)
+
+    # 3. БЕКАП БАЗИ ДАНИХ
+    elif call.data == "admin_backup":
+        try:
+            bot.answer_callback_query(call.id, "Формую бекап...")
+            with open('drago_bot.db', 'rb') as db_file:
+                bot.send_document(call.message.chat.id, db_file, caption="💾 Твій свіжий бекап бази даних (`drago_bot.db`).")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка бекапу: {e}")
+
+    # 4. НАПИСАТИ В ПП КОНКРЕТНОМУ ЮЗЕРУ
+    elif call.data == "admin_dm":
+        msg = bot.send_message(
+            call.message.chat.id, 
+            "💬 Надішли ID юзера і текст повідомлення через пробіл.\nПриклад: `123456789 Привіт, як справи?`\nДля скасування напиши `скасування`.", 
+            parse_mode="Markdown"
+        )
+        bot.register_next_step_handler(msg, process_dm)
+
+    # 5. ОБНУЛЕННЯ СТАТИСТИКИ
+    elif call.data == "admin_reset":
+        # Робимо подвійне підтвердження через кнопки
+        markup = types.InlineKeyboardMarkup()
+        btn_yes = types.InlineKeyboardButton("⚠️ ТАК, ОБНУЛИТИ", callback_data="admin_confirm_reset")
+        btn_no = types.InlineKeyboardButton("❌ СКАСУВАТИ", callback_data="admin_cancel_reset")
+        markup.add(btn_yes, btn_no)
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="⚠️ Ти впевнений, що хочеш скинути лічильник повідомлень для ВСІХ юзерів? Це обнулить ТОП чату.",
+            reply_markup=markup
+        )
+
+    # 5.1 Підтвердження обнулення
+    elif call.data == "admin_confirm_reset":
+        cursor.execute("UPDATE stats SET count = 0")
+        conn.commit()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="🧹 Статистику успішно обнулено! Всі лічильники скинуто на 0."
+        )
+
+    # 5.2 Скасування обнулення
+    elif call.data == "admin_cancel_reset":
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="✅ Скидання статистики скасовано."
+        )
+
+# --- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ АДМІНКИ ---
+
+def process_broadcast(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']:
+        bot.reply_to(message, "🛑 Розсилку скасовано.")
+        return
+
+    bot.reply_to(message, "⏳ Починаю розсилку...")
+    cursor.execute("SELECT DISTINCT user_id FROM stats")
+    users = cursor.fetchall()
+    
+    success, failed = 0, 0
+    for user in users:
+        user_id = user[0]
+        if user_id == bot.get_me().id:
+            continue
+        try:
+            bot.send_message(user_id, f"📢 <b>Повідомлення від Творця:</b>\n\n{message.text}", parse_mode="HTML")
+            success += 1
+        except Exception:
+            failed += 1
+            
+    bot.send_message(message.chat.id, f"✅ <b>Розсилка завершена!</b>\nДоставлено: {success}\nПомилки/Блоки: {failed}", parse_mode="HTML")
+
+def process_dm(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']:
+        bot.reply_to(message, "🛑 Надсилання скасовано.")
+        return
+
+    try:
+        # Розбиваємо текст на ID та саме повідомлення
+        parts = message.text.split(" ", 1)
+        if len(parts) < 2:
+            raise ValueError("Немає тексту повідомлення")
+            
+        target_id = int(parts[0])
+        text_to_send = parts[1]
+        
+        bot.send_message(target_id, f"💬 <b>Особисте повідомлення:</b>\n\n{text_to_send}", parse_mode="HTML")
+        bot.reply_to(message, f"✅ Повідомлення успішно відправлено юзеру {target_id}!")
+    except ValueError:
+        bot.reply_to(message, "❌ Помилка формату. Потрібно ввести: `ID текст`.\nСпробуй ще раз через кнопку в адмінці.", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Не вдалося відправити. Помилка: {e}")
+
+
+
+# ===================================================================
 # 🎵 КОМАНДА ПОШУКУ ТА ЗАВАНТАЖЕННЯ МУЗИКИ (/song або /music)
 # ===================================================================
 @bot.message_handler(commands=['song', 'music', 'музика'])
 def search_and_send_music(message):
     chat_id = message.chat.id
-    # Отримуємо назву треку після команди
     query = message.text[len(message.text.split()[0]):].strip()
     
     if not query:
@@ -336,13 +486,11 @@ def search_and_send_music(message):
         
     status_msg = bot.reply_to(message, f"🔍 Драго нишпорить по засіках YouTube у пошуках: <i>{query}</i>...", parse_mode="HTML")
     
-    # Імпортуємо локально, щоб не навантажувати старт бота
     import yt_dlp
     
-    # Налаштування для завантаження тільки аудіо в найкращій якості
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Зберігаємо в папку downloads
+        'outtmpl': 'downloads/%(title)s.%(ext)s',  
         'noplaylist': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -353,9 +501,8 @@ def search_and_send_music(message):
     }
     
     try:
-        bot.send_chat_action(chat_id, 'upload_voice')  # Показуємо статус завантаження аудіо
+        bot.send_chat_action(chat_id, 'upload_voice')
         
-        # Шукаємо через yt-dlp з префіксом ytsearch (шукає перший ліпший результат)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch1:{query}", download=True)
             if not info or 'entries' not in info or len(info['entries']) == 0:
@@ -366,12 +513,9 @@ def search_and_send_music(message):
             duration = video_info.get('duration', 0)
             performer = video_info.get('uploader', 'Драго Музика')
             
-            # Формуємо шлях до завантаженого mp3
             filename = ydl.prepare_filename(video_info)
-            # Оскільки ми конвертували в mp3, розширення файлу зміниться
             mp3_filename = os.path.splitext(filename)[0] + '.mp3'
             
-            # Відправляємо як аудіофайл (із гарним плеєром)
             if os.path.exists(mp3_filename):
                 with open(mp3_filename, 'rb') as audio:
                     bot.send_audio(
@@ -383,12 +527,10 @@ def search_and_send_music(message):
                         reply_to_message_id=message.message_id,
                         caption="🔥 Тримай свій трек від Драго!"
                     )
-                # Видаляємо тимчасовий файл
                 os.remove(mp3_filename)
             else:
                 raise Exception("Файл не знайшовся після конвертації")
                 
-            # Видаляємо статус-повідомлення пошуку
             try:
                 bot.delete_message(chat_id, status_msg.message_id)
             except Exception:
@@ -525,6 +667,67 @@ def show_friend_menu(message):
         print(f"Помилка при виклику меню: {e}")
         bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
 
+# ===================================================================
+# 📰 МЕМНІ НОВИНИ ВІД ДРАГО НА БАЗІ GEMINI (/news)
+# ===================================================================
+@bot.message_handler(commands=['news', 'новини'])
+def generate_chat_news(message):
+    chat_id = message.chat.id
+    
+    if len(RECENT_MESSAGES) < 5:
+        bot.reply_to(
+            message, 
+            "🤫 *Драго ще не назбирав достатньо компромату!* Поактивнічайте трохи в чаті, і я зроблю вам гарячий випуск новин.",
+            parse_mode="Markdown"
+        )
+        return
+        
+    status_msg = bot.reply_to(message, "🔥 <i>Драго дістає брудну білизну чату та пише свіжий випуск новин...</i>", parse_mode="HTML")
+    bot.send_chat_action(chat_id, 'typing')
+    
+    formatted_history = "\n".join([f"- {msg['user']}: {msg['text']}" for msg in RECENT_MESSAGES])
+    
+    prompt = f"""
+    Ти — Драго, зухвалий, саркастичний, харизматичний бот-бандит, який веде кримінальний чат.
+    Твоє завдання — написати короткий, суперсмішний випуск "жовтої преси" або "мемних новин" на основі останніх повідомлень у чаті.
+    Будь іронічним, використовуй молодіжний сленг, трохи підколюй учасників (але без відвертої злоби чи жорстокої токсичності).
+    Вигадай абсурдні сенсації, теорії змови або "кримінальні розслідування" на основі того, про що вони писали.
+    
+    Ось історія останніх повідомлень у чаті:
+    {formatted_history}
+    
+    Напиши короткий випуск новин (3-4 пункти) українською мовою. Обов'язково використовуй емодзі та виділяй імена.
+    В кінці додай фірмову бандитську фразу від Драго.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        news_text = response.text
+        
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ <b>СПЕЦВИПУСК ДРАГО-NEWS</b> ⚡️\n\n{news_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            # На випадок, якщо Markdown зіпсує форматування
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ СПЕЦВИПУСК ДРАГО-NEWS ⚡️\n\n{news_text}"
+            )
+            
+    except Exception as e:
+        print(f"Помилка генерації новин через Gemini: {e}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="❌ *Чорт, зв'язок обірвався!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй трохи пізніше!",
+            parse_mode="Markdown"
+        )
+
 
 # ===================================================================
 # 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото через Gemini)
@@ -638,6 +841,18 @@ def handle_text(message):
     chat_id = message.chat.id
     user = message.from_user
     chat_type = message.chat.type
+    
+    # --- ЗАПИС ДЛЯ НОВИН ---
+    # Записуємо повідомлення, якщо це не команда
+    if text and not text.startswith('/'):
+        user_name = user.first_name or "Анонім"
+        RECENT_MESSAGES.append({
+            "user": user_name,
+            "text": text
+        })
+        if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
+            RECENT_MESSAGES.pop(0)
+    # -----------------------
     
     ensure_user_in_db(user)
     gender = get_user_gender(user.id)
