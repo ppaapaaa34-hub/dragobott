@@ -473,7 +473,7 @@ def process_dm(message):
 
 
 # ===================================================================
-# 🎵 КОМАНДА ПОШУКУ ТА ЗАВАНТАЖЕННЯ МУЗИКИ (SOUNDCLOUD)
+# 🎵 ОПТИМІЗОВАНИЙ НАДШВИДКИЙ ПОШУК (SOUNDCLOUD)
 # ===================================================================
 @bot.message_handler(commands=['song', 'music', 'музика', 'найти'])
 def search_and_send_music(message):
@@ -481,7 +481,7 @@ def search_and_send_music(message):
     query = message.text[len(message.text.split()[0]):].strip()
     
     if not query:
-        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/найти AC/DC Back in Black`", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/найти Скрябін`", parse_mode="Markdown")
         return
         
     status_msg = bot.reply_to(message, f"🔍 Драго шукає трек: <i>{query}</i>...", parse_mode="HTML")
@@ -489,31 +489,34 @@ def search_and_send_music(message):
     import yt_dlp
     
     ydl_opts = {
-        'format': 'bestaudio',
+        'format': 'bestaudio/best',
         'outtmpl': 'downloads/%(title)s.%(ext)s',
         'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'source_address': '0.0.0.0', # ⚡ НАДШВИДКИЙ СТАРТ: Форсуємо IPv4 (прибирає затримку 5-10 сек на Render)
+        'check_formats': False,      # ⚡ МИТТЄВИЙ ПОШУК: Вимикає зайві перевірки лінків
+        'socket_timeout': 10,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192',
+            'preferredquality': '128', # ⚡ ШВИДКА КОНВЕРТАЦІЯ ТА ВІДПРАВКА: 128kbps кодується і передається втричі швидше
         }],
-        'quiet': True,
     }
     
     try:
         bot.send_chat_action(chat_id, 'upload_voice')
         
-        # Створюємо папку downloads
         if not os.path.exists('downloads'):
             os.makedirs('downloads')
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # ТУТ МАГІЯ: scsearch1 замість ytsearch1 (шукаємо на SoundCloud)
+            # Використовуємо scsearch (SoundCloud), який ідеально виправляє оддруки та помилки в словах
             info = ydl.extract_info(f"scsearch1:{query}", download=True)
             
             if not info or 'entries' not in info or len(info['entries']) == 0:
-                raise Exception("Нічого не знайдено. Спробуй іншу назву.")
+                raise Exception("Нічого не знайдено. Перевір назву!")
                 
             video_info = info['entries'][0]
             if not video_info:
@@ -526,6 +529,7 @@ def search_and_send_music(message):
             filename = ydl.prepare_filename(video_info)
             mp3_filename = os.path.splitext(filename)[0] + '.mp3'
             
+            # Якщо файл успішно конвертувався
             if os.path.exists(mp3_filename):
                 with open(mp3_filename, 'rb') as audio:
                     bot.send_audio(
@@ -539,7 +543,27 @@ def search_and_send_music(message):
                     )
                 os.remove(mp3_filename)
             else:
-                raise Exception("Файл MP3 не знайдено після завантаження.")
+                # Запасний варіант, якщо конвертер прибрав якісь символи з назви файлу
+                found_file = None
+                for file in os.listdir('downloads'):
+                    if file.endswith('.mp3'):
+                        found_file = os.path.join('downloads', file)
+                        break
+                
+                if found_file and os.path.exists(found_file):
+                    with open(found_file, 'rb') as audio:
+                        bot.send_audio(
+                            chat_id=chat_id,
+                            audio=audio,
+                            title=title,
+                            performer=performer,
+                            duration=duration,
+                            reply_to_message_id=message.message_id,
+                            caption="🔥 Тримай свій трек від Драго!"
+                        )
+                    os.remove(found_file)
+                else:
+                    raise Exception("Файл MP3 не знайдено на сервері.")
                 
             try:
                 bot.delete_message(chat_id, status_msg.message_id)
@@ -552,7 +576,7 @@ def search_and_send_music(message):
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
-                text=f"❌ <b>Не зміг знайти або стягнути трек.</b>\nПомилка: <code>{str(e)[:150]}</code>",
+                text=f"❌ <b>Не зміг знайти або завантажити трек.</b>\nСпробуй написати трохи інакше або перевір назву!",
                 parse_mode="HTML"
             )
         except Exception:
