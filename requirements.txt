@@ -4,3 +4,4 @@ Pillow
 requests
 gTTS
 edge-tts
+yt-dlp
