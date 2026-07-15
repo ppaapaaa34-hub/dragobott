@@ -314,161 +314,255 @@ def call_everyone(message):
             pass
 
 # ===================================================================
-# 👑 РОЗШИРЕНА АДМІН-ПАНЕЛЬ ТІЛЬКИ ДЛЯ ТВОРЦЯ 
+# 👑 СУПЕР-АДМІН ПАНЕЛЬ V2.0
 # ===================================================================
 
-# ТУТ ВПИШИ СВІЙ TELEGRAM ID
 ADMIN_ID = 5512316636
+DB_NAME = 'drago_bot.db'
+
+# Створюємо таблицю для банів, якщо її ще немає
+def init_admin_db():
+    try:
+        cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id INTEGER PRIMARY KEY)")
+        conn.commit()
+    except Exception as e:
+        print(f"Помилка ініціалізації таблиці банів: {e}")
+
+init_admin_db()
+
+def is_admin(user_id):
+    return int(user_id) == int(ADMIN_ID)
+
+# --- ГЕНЕРАТОРИ МЕНЮ ---
+
+def get_main_admin_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+        types.InlineKeyboardButton("✉️ Розсилка та ПП", callback_data="admin_menu_mail")
+    )
+    markup.add(types.InlineKeyboardButton("👥 Користувачі та Модерація", callback_data="admin_menu_users"))
+    markup.add(types.InlineKeyboardButton("💾 Управління БД", callback_data="admin_menu_db"))
+    return markup
+
+def get_mail_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📢 Загальна розсилка", callback_data="admin_broadcast"),
+        types.InlineKeyboardButton("💬 Написати в ПП", callback_data="admin_dm")
+    )
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
+    return markup
+
+def get_users_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🔎 Інфо про юзера", callback_data="admin_user_info"),
+        types.InlineKeyboardButton("🚫 Забанити", callback_data="admin_ban")
+    )
+    markup.add(types.InlineKeyboardButton("✅ Розбанити", callback_data="admin_unban"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
+    return markup
+
+def get_db_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup"),
+        types.InlineKeyboardButton("🧹 Скинути ТОП", callback_data="admin_reset")
+    )
+    markup.add(types.InlineKeyboardButton("🛠 Виконати SQL запит", callback_data="admin_sql"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
+    return markup
+
+# --- ОБРОБНИК КОМАНДИ ---
 
 @bot.message_handler(commands=['admin', 'адмін'])
 def admin_panel(message):
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "🛑 Куди лізеш? Ця панель створена тільки для Артура.")
-        return
+    if not is_admin(message.from_user.id):
+        return bot.reply_to(message, "🛑 Куди лізеш? Ця панель створена тільки для Артура.")
         
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_stats = types.InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")
-    btn_broadcast = types.InlineKeyboardButton("📢 Розсилка", callback_data="admin_broadcast")
-    btn_backup = types.InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup")
-    btn_reset = types.InlineKeyboardButton("🧹 Скинути ТОП", callback_data="admin_reset")
-    btn_dm = types.InlineKeyboardButton("💬 Написати в ПП", callback_data="admin_dm")
-    
-    # Розставляємо кнопки сіткою
-    markup.add(btn_stats, btn_broadcast)
-    markup.add(btn_backup, btn_dm)
-    markup.add(btn_reset)
-    
     bot.reply_to(
         message, 
-        "👑 <b>Вітаю в центрі управління, Артуре!</b>\nВибирай, що будемо робити з базою та юзерами:", 
-        reply_markup=markup, 
+        "👑 <b>Головне меню управління:</b>\nОбери потрібний розділ:", 
+        reply_markup=get_main_admin_keyboard(), 
         parse_mode="HTML"
     )
 
+# --- ОБРОБНИК КНОПОК ---
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "🛑 Доступ заборонено!")
-        return
+    if not is_admin(call.from_user.id):
+        return bot.answer_callback_query(call.id, "🛑 Доступ заборонено!", show_alert=True)
 
-    # 1. СТАТИСТИКА
-    if call.data == "admin_stats":
-        cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
-        result = cursor.fetchone()
-        users_count = result[0] or 0
-        total_msgs = result[1] or 0
-        
-        text = (
-            "📊 *Глобальна статистика Драго:*\n\n"
-            f"👤 Юзерів у базі: {users_count}\n"
-            f"💬 Всього повідомлень: {total_msgs}"
-        )
-        bot.answer_callback_query(call.id, "Статистика завантажена")
-        bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+    action = call.data
 
-    # 2. РОЗСИЛКА
-    elif call.data == "admin_broadcast":
-        msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки всім юзерам з БД.\nДля скасування напиши `скасування`.", parse_mode="Markdown")
-        bot.register_next_step_handler(msg, process_broadcast)
+    # --- НАВІГАЦІЯ ---
+    if action == "admin_main":
+        bot.edit_message_text("👑 <b>Головне меню управління:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_main_admin_keyboard(), parse_mode="HTML")
+    elif action == "admin_menu_mail":
+        bot.edit_message_text("✉️ <b>Розсилки та повідомлення:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_mail_keyboard(), parse_mode="HTML")
+    elif action == "admin_menu_users":
+        bot.edit_message_text("👥 <b>Управління користувачами:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_users_keyboard(), parse_mode="HTML")
+    elif action == "admin_menu_db":
+        bot.edit_message_text("💾 <b>Управління базою даних:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard(), parse_mode="HTML")
 
-    # 3. БЕКАП БАЗИ ДАНИХ
-    elif call.data == "admin_backup":
+    # --- СТАТИСТИКА ---
+    elif action == "admin_stats":
         try:
-            bot.answer_callback_query(call.id, "Формую бекап...")
-            with open('drago_bot.db', 'rb') as db_file:
-                bot.send_document(call.message.chat.id, db_file, caption="💾 Твій свіжий бекап бази даних (`drago_bot.db`).")
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Помилка бекапу: {e}")
+            cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
+            result = cursor.fetchone()
+            users_count = result[0] or 0
+            total_msgs = result[1] or 0
+            
+            cursor.execute("SELECT COUNT(*) FROM banned_users")
+            banned_count = cursor.fetchone()[0] or 0
 
-    # 4. НАПИСАТИ В ПП КОНКРЕТНОМУ ЮЗЕРУ
-    elif call.data == "admin_dm":
-        msg = bot.send_message(
-            call.message.chat.id, 
-            "💬 Надішли ID юзера і текст повідомлення через пробіл.\nПриклад: `123456789 Привіт, як справи?`\nДля скасування напиши `скасування`.", 
-            parse_mode="Markdown"
-        )
+            db_size = os.path.getsize(DB_NAME) / (1024 * 1024) if os.path.exists(DB_NAME) else 0
+
+            text = (
+                "📊 *Розширена статистика:*\n\n"
+                f"👤 Юзерів у базі: `{users_count}`\n"
+                f"💬 Всього повідомлень: `{total_msgs}`\n"
+                f"🚫 Забанених юзерів: `{banned_count}`\n"
+                f"💾 Розмір БД: `{db_size:.2f} MB`"
+            )
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
+
+    # --- РОЗСИЛКИ ---
+    elif action == "admin_broadcast":
+        msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки (або `відміна`):", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_broadcast)
+    elif action == "admin_dm":
+        msg = bot.send_message(call.message.chat.id, "💬 Надішли `ID текст_повідомлення` (або `відміна`):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_dm)
 
-    # 5. ОБНУЛЕННЯ СТАТИСТИКИ
-    elif call.data == "admin_reset":
-        # Робимо подвійне підтвердження через кнопки
-        markup = types.InlineKeyboardMarkup()
-        btn_yes = types.InlineKeyboardButton("⚠️ ТАК, ОБНУЛИТИ", callback_data="admin_confirm_reset")
-        btn_no = types.InlineKeyboardButton("❌ СКАСУВАТИ", callback_data="admin_cancel_reset")
-        markup.add(btn_yes, btn_no)
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="⚠️ Ти впевнений, що хочеш скинути лічильник повідомлень для ВСІХ юзерів? Це обнулить ТОП чату.",
-            reply_markup=markup
-        )
+    # --- МОДЕРАЦІЯ ---
+    elif action == "admin_user_info":
+        msg = bot.send_message(call.message.chat.id, "🔎 Надішли ID юзера для перевірки (або `відміна`):")
+        bot.register_next_step_handler(msg, process_user_info)
+    elif action == "admin_ban":
+        msg = bot.send_message(call.message.chat.id, "🚫 Надішли ID юзера для БАНУ (або `відміна`):")
+        bot.register_next_step_handler(msg, process_ban_user)
+    elif action == "admin_unban":
+        msg = bot.send_message(call.message.chat.id, "✅ Надішли ID юзера для РОЗБАНУ (або `відміна`):")
+        bot.register_next_step_handler(msg, process_unban_user)
 
-    # 5.1 Підтвердження обнулення
-    elif call.data == "admin_confirm_reset":
+    # --- БД ФУНКЦІЇ ---
+    elif action == "admin_backup":
+        try:
+            with open(DB_NAME, 'rb') as db_file:
+                bot.send_document(call.message.chat.id, db_file, caption="💾 Твій свіжий бекап бази даних.")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка бекапу: {e}")
+    elif action == "admin_sql":
+        msg = bot.send_message(call.message.chat.id, "🛠 Введи RAW SQL запит (або `відміна`).\n*Обережно, це виконується напряму!*", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_raw_sql)
+    elif action == "admin_reset":
+        # Залишаємо вашу логіку подвійного підтвердження з попереднього коду
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("⚠️ ТАК, ОБНУЛИТИ", callback_data="admin_confirm_reset"),
+            types.InlineKeyboardButton("❌ СКАСУВАТИ", callback_data="admin_menu_db")
+        )
+        bot.edit_message_text("⚠️ Впевнений, що хочеш скинути лічильник повідомлень?", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    elif action == "admin_confirm_reset":
         cursor.execute("UPDATE stats SET count = 0")
         conn.commit()
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="🧹 Статистику успішно обнулено! Всі лічильники скинуто на 0."
-        )
+        bot.edit_message_text("🧹 Статистику успішно обнулено!", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard())
 
-    # 5.2 Скасування обнулення
-    elif call.data == "admin_cancel_reset":
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="✅ Скидання статистики скасовано."
-        )
-
-# --- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ АДМІНКИ ---
+# --- ДОПОМІЖНІ ФУНКЦІЇ ОБРОБКИ (NEXT_STEP_HANDLERS) ---
 
 def process_broadcast(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        bot.reply_to(message, "🛑 Розсилку скасовано.")
-        return
-
-    bot.reply_to(message, "⏳ Починаю розсилку...")
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
+    
     cursor.execute("SELECT DISTINCT user_id FROM stats")
     users = cursor.fetchall()
     
-    success, failed = 0, 0
-    for user in users:
-        user_id = user[0]
-        if user_id == bot.get_me().id:
-            continue
-        try:
-            bot.send_message(user_id, f"📢 <b>Повідомлення від Творця:</b>\n\n{message.text}", parse_mode="HTML")
-            success += 1
-        except Exception:
-            failed += 1
-            
-    bot.send_message(message.chat.id, f"✅ <b>Розсилка завершена!</b>\nДоставлено: {success}\nПомилки/Блоки: {failed}", parse_mode="HTML")
+    def run_broadcast():
+        success, failed = 0, 0
+        bot.send_message(message.chat.id, "⏳ Розсилка запущена...")
+        for user in users:
+            if user[0] == bot.get_me().id: continue
+            try:
+                bot.send_message(user[0], f"📢 <b>Повідомлення від Творця:</b>\n\n{message.text}", parse_mode="HTML")
+                success += 1
+                time.sleep(0.05)
+            except Exception:
+                failed += 1
+        bot.send_message(message.chat.id, f"✅ <b>Розсилка завершена!</b>\nДоставлено: {success}\nПомилок: {failed}", parse_mode="HTML")
+    
+    threading.Thread(target=run_broadcast, daemon=True).start()
 
 def process_dm(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        bot.reply_to(message, "🛑 Надсилання скасовано.")
-        return
-
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        # Розбиваємо текст на ID та саме повідомлення
-        parts = message.text.split(" ", 1)
-        if len(parts) < 2:
-            raise ValueError("Немає тексту повідомлення")
-            
-        target_id = int(parts[0])
-        text_to_send = parts[1]
-        
-        bot.send_message(target_id, f"💬 <b>Особисте повідомлення:</b>\n\n{text_to_send}", parse_mode="HTML")
-        bot.reply_to(message, f"✅ Повідомлення успішно відправлено юзеру {target_id}!")
-    except ValueError:
-        bot.reply_to(message, "❌ Помилка формату. Потрібно ввести: `ID текст`.\nСпробуй ще раз через кнопку в адмінці.", parse_mode="Markdown")
+        target_id, text = message.text.split(" ", 1)
+        bot.send_message(int(target_id), f"💬 <b>Особисте повідомлення:</b>\n\n{text}", parse_mode="HTML")
+        bot.reply_to(message, f"✅ Відправлено юзеру {target_id}!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Не вдалося відправити. Помилка: {e}")
+        bot.reply_to(message, f"❌ Помилка: {e}")
+
+def process_user_info(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
+    try:
+        uid = int(message.text.strip())
+        cursor.execute("SELECT count FROM stats WHERE user_id = ?", (uid,))
+        res = cursor.fetchone()
+        cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (uid,))
+        is_banned = bool(cursor.fetchone())
+        
+        if res:
+            status = "🔴 В БАНІ" if is_banned else "🟢 Активний"
+            bot.reply_to(message, f"👤 <b>ID:</b> {uid}\n💬 <b>Повідомлень:</b> {res[0]}\nСтатус: {status}", parse_mode="HTML")
+        else:
+            bot.reply_to(message, "🤷‍♂️ Юзера немає в базі `stats`.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка формату ID: {e}")
+
+def process_ban_user(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
+    try:
+        uid = int(message.text.strip())
+        cursor.execute("INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)", (uid,))
+        conn.commit()
+        bot.reply_to(message, f"🚫 Юзера <code>{uid}</code> заблоковано!", parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка: {e}")
+
+def process_unban_user(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
+    try:
+        uid = int(message.text.strip())
+        cursor.execute("DELETE FROM banned_users WHERE user_id = ?", (uid,))
+        conn.commit()
+        bot.reply_to(message, f"✅ Юзера <code>{uid}</code> розбанено!", parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка: {e}")
+
+def process_raw_sql(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
+    try:
+        cursor.execute(message.text)
+        conn.commit()
+        if message.text.upper().startswith("SELECT"):
+            res = cursor.fetchall()
+            # Форматуємо результат, щоб він помістився в повідомлення
+            res_text = str(res)[:4000] if res else "Порожній результат"
+            bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
+        else:
+            bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
+    except sqlite3.Error as e:
+        bot.reply_to(message, f"❌ Помилка SQL: {e}")
 
 
 
