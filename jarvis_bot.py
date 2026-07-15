@@ -18,13 +18,17 @@ import sqlite3
 conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
 cursor = conn.cursor()
 
-cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
-    user_id INTEGER PRIMARY KEY,
-    name TEXT,
-    count INTEGER,
-    gender TEXT
-)""")
-conn.commit()
+# 🔒 ДОДАЄМО ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ (захист від database is locked)
+db_lock = threading.Lock()
+
+with db_lock:
+    cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
+        user_id INTEGER PRIMARY KEY,
+        name TEXT,
+        count INTEGER,
+        gender TEXT
+    )""")
+    conn.commit()
  
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = int(os.environ.get('API_ID', 12345678))
@@ -69,9 +73,14 @@ bot_chats = {}
 RECENT_MESSAGES = []
 MAX_HISTORY_LIMIT = 30
 
+# 🧠 ОЧИЩЕННЯ ПАМ'ЯТІ GEMINI
 def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
+    else:
+        # Якщо історія перевалила за 30 повідомлень, обнуляємо її
+        if len(bot_chats[chat_id].history) > 30:
+            bot_chats[chat_id] = model.start_chat(history=[])
     return bot_chats[chat_id]
 
 def run_dummy_server():
@@ -79,6 +88,14 @@ def run_dummy_server():
     httpd = HTTPServer(("", port), SimpleHTTPRequestHandler)
     httpd.serve_forever()
 
+# 🚫 ПЕРЕВІРКА НА БАН
+def is_user_banned(user_id):
+    try:
+        with db_lock:
+            cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (user_id,))
+            return bool(cursor.fetchone())
+    except Exception:
+        return False
 
 # ===================================================================
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
@@ -101,6 +118,9 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     chat_id = message.chat.id
     chat_type = message.chat.type
     if chat_type in ['group', 'supergroup']:
@@ -163,23 +183,27 @@ def analyze_gender_from_text(text: str) -> str:
     return 'Невідомо'
 
 def get_user_gender(user_id: int) -> str:
-    cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
+    with db_lock:
+        cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
     return result[0] if result else 'Невідомо'
 
 def ensure_user_in_db(user) -> str:
     user_id = user.id
     name = user.first_name or "Без імені"
-    cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
+    with db_lock:
+        cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
     if row is None:
         gender = analyze_gender_from_user(user)
-        cursor.execute(
-            "INSERT INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, ?)",
-            (user_id, name, gender)
-        )
-        conn.commit()
-    return get_user_gender(user_id)
+        with db_lock:
+            cursor.execute(
+                "INSERT INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, ?)",
+                (user_id, name, gender)
+            )
+            conn.commit()
+        return get_user_gender(user_id)
+    return row[0]
 
 
 # ===================================================================
@@ -187,6 +211,9 @@ def ensure_user_in_db(user) -> str:
 # ===================================================================
 @bot.message_handler(commands=['generate'])
 def generate_image_wait_and_send(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     prompt = message.text[10:].strip()
     if not prompt:
         bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate cyberpunk warrior wolf")
@@ -244,6 +271,9 @@ def generate_image_wait_and_send(message):
 # ===================================================================
 @bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір']))
 def call_everyone(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     chat_id = message.chat.id
     chat_type = message.chat.type
     user = message.from_user
@@ -264,8 +294,9 @@ def call_everyone(message):
                 reason = original_text[len(trigger):].strip()
                 break
 
-        cursor.execute("SELECT user_id, name FROM stats")
-        users = cursor.fetchall()
+        with db_lock:
+            cursor.execute("SELECT user_id, name FROM stats")
+            users = cursor.fetchall()
 
         if not users:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних пуста, нікого кликати.")
@@ -321,11 +352,11 @@ def call_everyone(message):
 ADMIN_ID = 5512316636
 DB_NAME = 'drago_bot.db'
 
-# Створюємо таблицю для банів, якщо її ще немає
 def init_admin_db():
     try:
-        cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id INTEGER PRIMARY KEY)")
-        conn.commit()
+        with db_lock:
+            cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id INTEGER PRIMARY KEY)")
+            conn.commit()
     except Exception as e:
         print(f"Помилка ініціалізації таблиці банів: {e}")
 
@@ -335,7 +366,6 @@ def is_admin(user_id):
     return int(user_id) == int(ADMIN_ID)
 
 # --- ГЕНЕРАТОРИ МЕНЮ ---
-
 def get_main_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -375,8 +405,6 @@ def get_db_keyboard():
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
 
-# --- ОБРОБНИК КОМАНДИ ---
-
 @bot.message_handler(commands=['admin', 'адмін'])
 def admin_panel(message):
     if not is_admin(message.from_user.id):
@@ -389,8 +417,6 @@ def admin_panel(message):
         parse_mode="HTML"
     )
 
-# --- ОБРОБНИК КНОПОК ---
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
     if not is_admin(call.from_user.id):
@@ -398,7 +424,6 @@ def handle_admin_callbacks(call):
 
     action = call.data
 
-    # --- НАВІГАЦІЯ ---
     if action == "admin_main":
         bot.edit_message_text("👑 <b>Головне меню управління:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_main_admin_keyboard(), parse_mode="HTML")
     elif action == "admin_menu_mail":
@@ -408,16 +433,16 @@ def handle_admin_callbacks(call):
     elif action == "admin_menu_db":
         bot.edit_message_text("💾 <b>Управління базою даних:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard(), parse_mode="HTML")
 
-    # --- СТАТИСТИКА ---
     elif action == "admin_stats":
         try:
-            cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
-            result = cursor.fetchone()
-            users_count = result[0] or 0
-            total_msgs = result[1] or 0
-            
-            cursor.execute("SELECT COUNT(*) FROM banned_users")
-            banned_count = cursor.fetchone()[0] or 0
+            with db_lock:
+                cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
+                result = cursor.fetchone()
+                users_count = result[0] or 0
+                total_msgs = result[1] or 0
+                
+                cursor.execute("SELECT COUNT(*) FROM banned_users")
+                banned_count = cursor.fetchone()[0] or 0
 
             db_size = os.path.getsize(DB_NAME) / (1024 * 1024) if os.path.exists(DB_NAME) else 0
 
@@ -433,7 +458,6 @@ def handle_admin_callbacks(call):
         except Exception as e:
             bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
 
-    # --- РОЗСИЛКИ ---
     elif action == "admin_broadcast":
         msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки (або `відміна`):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_broadcast)
@@ -441,7 +465,6 @@ def handle_admin_callbacks(call):
         msg = bot.send_message(call.message.chat.id, "💬 Надішли `ID текст_повідомлення` (або `відміна`):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_dm)
 
-    # --- МОДЕРАЦІЯ ---
     elif action == "admin_user_info":
         msg = bot.send_message(call.message.chat.id, "🔎 Надішли ID юзера для перевірки (або `відміна`):")
         bot.register_next_step_handler(msg, process_user_info)
@@ -452,7 +475,6 @@ def handle_admin_callbacks(call):
         msg = bot.send_message(call.message.chat.id, "✅ Надішли ID юзера для РОЗБАНУ (або `відміна`):")
         bot.register_next_step_handler(msg, process_unban_user)
 
-    # --- БД ФУНКЦІЇ ---
     elif action == "admin_backup":
         try:
             with open(DB_NAME, 'rb') as db_file:
@@ -463,7 +485,6 @@ def handle_admin_callbacks(call):
         msg = bot.send_message(call.message.chat.id, "🛠 Введи RAW SQL запит (або `відміна`).\n*Обережно, це виконується напряму!*", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_raw_sql)
     elif action == "admin_reset":
-        # Залишаємо вашу логіку подвійного підтвердження з попереднього коду
         markup = types.InlineKeyboardMarkup()
         markup.add(
             types.InlineKeyboardButton("⚠️ ТАК, ОБНУЛИТИ", callback_data="admin_confirm_reset"),
@@ -471,18 +492,19 @@ def handle_admin_callbacks(call):
         )
         bot.edit_message_text("⚠️ Впевнений, що хочеш скинути лічильник повідомлень?", call.message.chat.id, call.message.message_id, reply_markup=markup)
     elif action == "admin_confirm_reset":
-        cursor.execute("UPDATE stats SET count = 0")
-        conn.commit()
+        with db_lock:
+            cursor.execute("UPDATE stats SET count = 0")
+            conn.commit()
         bot.edit_message_text("🧹 Статистику успішно обнулено!", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard())
 
 # --- ДОПОМІЖНІ ФУНКЦІЇ ОБРОБКИ (NEXT_STEP_HANDLERS) ---
-
 def process_broadcast(message):
     if not is_admin(message.from_user.id): return
     if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
     
-    cursor.execute("SELECT DISTINCT user_id FROM stats")
-    users = cursor.fetchall()
+    with db_lock:
+        cursor.execute("SELECT DISTINCT user_id FROM stats")
+        users = cursor.fetchall()
     
     def run_broadcast():
         success, failed = 0, 0
@@ -514,10 +536,11 @@ def process_user_info(message):
     if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
         uid = int(message.text.strip())
-        cursor.execute("SELECT count FROM stats WHERE user_id = ?", (uid,))
-        res = cursor.fetchone()
-        cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (uid,))
-        is_banned = bool(cursor.fetchone())
+        with db_lock:
+            cursor.execute("SELECT count FROM stats WHERE user_id = ?", (uid,))
+            res = cursor.fetchone()
+            cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (uid,))
+            is_banned = bool(cursor.fetchone())
         
         if res:
             status = "🔴 В БАНІ" if is_banned else "🟢 Активний"
@@ -532,8 +555,9 @@ def process_ban_user(message):
     if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
         uid = int(message.text.strip())
-        cursor.execute("INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)", (uid,))
-        conn.commit()
+        with db_lock:
+            cursor.execute("INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)", (uid,))
+            conn.commit()
         bot.reply_to(message, f"🚫 Юзера <code>{uid}</code> заблоковано!", parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка: {e}")
@@ -543,8 +567,9 @@ def process_unban_user(message):
     if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
         uid = int(message.text.strip())
-        cursor.execute("DELETE FROM banned_users WHERE user_id = ?", (uid,))
-        conn.commit()
+        with db_lock:
+            cursor.execute("DELETE FROM banned_users WHERE user_id = ?", (uid,))
+            conn.commit()
         bot.reply_to(message, f"✅ Юзера <code>{uid}</code> розбанено!", parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка: {e}")
@@ -553,18 +578,17 @@ def process_raw_sql(message):
     if not is_admin(message.from_user.id): return
     if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        cursor.execute(message.text)
-        conn.commit()
-        if message.text.upper().startswith("SELECT"):
-            res = cursor.fetchall()
-            # Форматуємо результат, щоб він помістився в повідомлення
-            res_text = str(res)[:4000] if res else "Порожній результат"
-            bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
+        with db_lock:
+            cursor.execute(message.text)
+            conn.commit()
+            if message.text.upper().startswith("SELECT"):
+                res = cursor.fetchall()
+                res_text = str(res)[:4000] if res else "Порожній результат"
+                bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
+            else:
+                bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
     except sqlite3.Error as e:
         bot.reply_to(message, f"❌ Помилка SQL: {e}")
-
 
 
 # ===================================================================
@@ -572,6 +596,9 @@ def process_raw_sql(message):
 # ===================================================================
 @bot.message_handler(commands=['song', 'music', 'музика', 'найти'])
 def search_and_send_music(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     chat_id = message.chat.id
     query = message.text[len(message.text.split()[0]):].strip()
     
@@ -589,14 +616,14 @@ def search_and_send_music(message):
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        'source_address': '0.0.0.0', # ⚡ НАДШВИДКИЙ СТАРТ: Форсуємо IPv4 (прибирає затримку 5-10 сек на Render)
-        'check_formats': False,      # ⚡ МИТТЄВИЙ ПОШУК: Вимикає зайві перевірки лінків
+        'source_address': '0.0.0.0', 
+        'check_formats': False,      
         'socket_timeout': 10,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '128', # ⚡ ШВИДКА КОНВЕРТАЦІЯ ТА ВІДПРАВКА: 128kbps кодується і передається втричі швидше
+            'preferredquality': '128', 
         }],
     }
     
@@ -607,7 +634,6 @@ def search_and_send_music(message):
             os.makedirs('downloads')
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Використовуємо scsearch (SoundCloud), який ідеально виправляє оддруки та помилки в словах
             info = ydl.extract_info(f"scsearch1:{query}", download=True)
             
             if not info or 'entries' not in info or len(info['entries']) == 0:
@@ -624,29 +650,10 @@ def search_and_send_music(message):
             filename = ydl.prepare_filename(video_info)
             mp3_filename = os.path.splitext(filename)[0] + '.mp3'
             
-            # Якщо файл успішно конвертувався
+            # 🧹 БЕЗПЕЧНЕ ВИДАЛЕННЯ ЧЕРЕЗ try...finally
             if os.path.exists(mp3_filename):
-                with open(mp3_filename, 'rb') as audio:
-                    bot.send_audio(
-                        chat_id=chat_id,
-                        audio=audio,
-                        title=title,
-                        performer=performer,
-                        duration=duration,
-                        reply_to_message_id=message.message_id,
-                        caption="🔥 Тримай свій трек від Драго!"
-                    )
-                os.remove(mp3_filename)
-            else:
-                # Запасний варіант, якщо конвертер прибрав якісь символи з назви файлу
-                found_file = None
-                for file in os.listdir('downloads'):
-                    if file.endswith('.mp3'):
-                        found_file = os.path.join('downloads', file)
-                        break
-                
-                if found_file and os.path.exists(found_file):
-                    with open(found_file, 'rb') as audio:
+                try:
+                    with open(mp3_filename, 'rb') as audio:
                         bot.send_audio(
                             chat_id=chat_id,
                             audio=audio,
@@ -656,7 +663,31 @@ def search_and_send_music(message):
                             reply_to_message_id=message.message_id,
                             caption="🔥 Тримай свій трек від Драго!"
                         )
-                    os.remove(found_file)
+                finally:
+                    if os.path.exists(mp3_filename):
+                        os.remove(mp3_filename)
+            else:
+                found_file = None
+                for file in os.listdir('downloads'):
+                    if file.endswith('.mp3'):
+                        found_file = os.path.join('downloads', file)
+                        break
+                
+                if found_file and os.path.exists(found_file):
+                    try:
+                        with open(found_file, 'rb') as audio:
+                            bot.send_audio(
+                                chat_id=chat_id,
+                                audio=audio,
+                                title=title,
+                                performer=performer,
+                                duration=duration,
+                                reply_to_message_id=message.message_id,
+                                caption="🔥 Тримай свій трек від Драго!"
+                            )
+                    finally:
+                        if os.path.exists(found_file):
+                            os.remove(found_file)
                 else:
                     raise Exception("Файл MP3 не знайдено на сервері.")
                 
@@ -686,15 +717,15 @@ def show_chat_activity(message):
     chat_id = message.chat.id
     try:
         bot.send_chat_action(chat_id, 'typing')
-        cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
-        rows = cursor.fetchall()
+        with db_lock:
+            cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
+            rows = cursor.fetchall()
+            cursor.execute("SELECT SUM(count) FROM stats")
+            total_messages = cursor.fetchone()[0] or 0
 
         if not rows:
             bot.reply_to(message, "📊 Таблиця активності порожня. Ви що, взагалі нічого не пишете? Ну ви й сонні мухи... 🥱")
             return
-
-        cursor.execute("SELECT SUM(count) FROM stats")
-        total_messages = cursor.fetchone()[0] or 0
 
         response_lines = [
             "🏆 <b>ТОП-10 АКТИВНИХ БАНДИТІВ ЧАТУ</b> 🏆",
@@ -732,8 +763,10 @@ def tag_inactive_users(message):
 
     try:
         bot.send_chat_action(chat_id, 'typing')
-        cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
-        rows = cursor.fetchall()
+        with db_lock:
+            cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
+            rows = cursor.fetchall()
+            
         rows = [row for row in rows if row[0] != bot.get_me().id]
 
         if not rows:
@@ -842,7 +875,6 @@ def generate_chat_news(message):
                 parse_mode="Markdown"
             )
         except Exception:
-            # На випадок, якщо Markdown зіпсує форматування
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
@@ -864,6 +896,9 @@ def generate_chat_news(message):
 # ===================================================================
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     chat_id = message.chat.id
     chat_type = message.chat.type
     user = message.from_user
@@ -872,11 +907,12 @@ def handle_photo(message):
     ensure_user_in_db(user)
     gender = get_user_gender(user.id)
     
-    cursor.execute(
-        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-        (user.first_name, user.id)
-    )
-    conn.commit()
+    with db_lock:
+        cursor.execute(
+            "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
+            (user.first_name, user.id)
+        )
+        conn.commit()
 
     is_mentioned = False
     if chat_type in ['group', 'supergroup']:
@@ -967,13 +1003,15 @@ def handle_member_updates(message: types.ChatMemberUpdated):
 # ===================================================================
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
+    if is_user_banned(message.from_user.id):
+        return
+
     text = message.text
     chat_id = message.chat.id
     user = message.from_user
     chat_type = message.chat.type
     
     # --- ЗАПИС ДЛЯ НОВИН ---
-    # Записуємо повідомлення, якщо це не команда
     if text and not text.startswith('/'):
         user_name = user.first_name or "Анонім"
         RECENT_MESSAGES.append({
@@ -990,15 +1028,17 @@ def handle_text(message):
     if gender == 'Never':
         guessed = analyze_gender_from_text(text)
         if guessed in ['Хлопець', 'Дівчина']:
-            cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (guessed, user.id))
-            conn.commit()
+            with db_lock:
+                cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (guessed, user.id))
+                conn.commit()
             gender = guessed
 
-    cursor.execute(
-        "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-        (user.first_name, user.id)
-    )
-    conn.commit()
+    with db_lock:
+        cursor.execute(
+            "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
+            (user.first_name, user.id)
+        )
+        conn.commit()
 
     is_mentioned = False
 
@@ -1020,7 +1060,6 @@ def handle_text(message):
     if not is_mentioned:
         return
 
-    # Перевірка, чи користувач хоче отримати відповідь ГОЛОСОМ
     voice_triggers = ['скажи', 'голосове', 'гс', 'озвуч', 'запиши', 'скажии']
     wants_voice = any(trigger in text.lower() for trigger in voice_triggers)
 
@@ -1043,7 +1082,6 @@ def handle_text(message):
         full_prompt = f"{gender_hint}{text}"
         response = chat.send_message(full_prompt)
 
-        # Очищаємо текст від Маркдауну для чистої мови TTS
         clean_text_for_speech = response.text.replace("*", "").replace("_", "").replace("`", "")
 
         if wants_voice:
