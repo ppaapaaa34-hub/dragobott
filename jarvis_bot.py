@@ -473,47 +473,60 @@ def process_dm(message):
 
 
 # ===================================================================
-# 🎵 КОМАНДА ПОШУКУ ТА ЗАВАНТАЖЕННЯ МУЗИКИ (/song або /music)
+# 🎵 КОМАНДА ПОШУКУ ТА ЗАВАНТАЖЕННЯ МУЗИКИ
 # ===================================================================
-@bot.message_handler(commands=['song', 'music', 'музика'])
+@bot.message_handler(commands=['song', 'music', 'музика', 'найти'])
 def search_and_send_music(message):
     chat_id = message.chat.id
     query = message.text[len(message.text.split()[0]):].strip()
     
     if not query:
-        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/song AC/DC Back in Black`", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/найти AC/DC Back in Black`", parse_mode="Markdown")
         return
         
     status_msg = bot.reply_to(message, f"🔍 Драго нишпорить по засіках YouTube у пошуках: <i>{query}</i>...", parse_mode="HTML")
     
     import yt_dlp
     
-  
     ydl_opts = {
         'format': 'bestaudio',
         'outtmpl': 'downloads/%(title)s.%(ext)s',
         'noplaylist': True,
-        'cookiefile': 'cookies.txt',
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        # Спроба обійти блокування YouTube за допомогою імітації мобільних клієнтів
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web_embedded']
+            }
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
         'quiet': True,
-        # Це додасть "гнучкості" при виборі форматів
-        'ignoreerrors': True,
     }
+    
+    # Використовуємо cookies.txt тільки якщо ти його реально завантажив поруч із ботом
+    if os.path.exists('cookies.txt'):
+        ydl_opts['cookiefile'] = 'cookies.txt'
     
     try:
         bot.send_chat_action(chat_id, 'upload_voice')
         
+        # Створюємо папку downloads, якщо її ще немає
+        if not os.path.exists('downloads'):
+            os.makedirs('downloads')
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch1:{query}", download=True)
             if not info or 'entries' not in info or len(info['entries']) == 0:
-                raise Exception("Нічого не знайдено")
+                raise Exception("YouTube не повернув результатів пошуку за цим запитом.")
                 
             video_info = info['entries'][0]
+            if not video_info:
+                raise Exception("Не вдалося зчитати дані знайденого відео.")
+                
             title = video_info.get('title', 'Unknown Track')
             duration = video_info.get('duration', 0)
             performer = video_info.get('uploader', 'Драго Музика')
@@ -521,6 +534,7 @@ def search_and_send_music(message):
             filename = ydl.prepare_filename(video_info)
             mp3_filename = os.path.splitext(filename)[0] + '.mp3'
             
+            # Якщо все конвертувалося успішно
             if os.path.exists(mp3_filename):
                 with open(mp3_filename, 'rb') as audio:
                     bot.send_audio(
@@ -534,7 +548,27 @@ def search_and_send_music(message):
                     )
                 os.remove(mp3_filename)
             else:
-                raise Exception("Файл не знайшовся після конвертації")
+                # Додаткова перевірка на випадок, якщо yt_dlp змінив якісь символи у назві
+                found_file = None
+                for file in os.listdir('downloads'):
+                    if file.endswith('.mp3') and title[:10] in file:
+                        found_file = os.path.join('downloads', file)
+                        break
+                
+                if found_file and os.path.exists(found_file):
+                    with open(found_file, 'rb') as audio:
+                        bot.send_audio(
+                            chat_id=chat_id,
+                            audio=audio,
+                            title=title,
+                            performer=performer,
+                            duration=duration,
+                            reply_to_message_id=message.message_id,
+                            caption="🔥 Тримай свій трек від Драго!"
+                        )
+                    os.remove(found_file)
+                else:
+                    raise Exception("Файл MP3 не знайдено на сервері після завантаження.")
                 
             try:
                 bot.delete_message(chat_id, status_msg.message_id)
@@ -544,14 +578,16 @@ def search_and_send_music(message):
     except Exception as e:
         print(f"Помилка пошуку музики: {e}")
         try:
+            # Обрізаємо задовгі системні трейсбеки, щоб влізли в повідомлення
+            err_msg = str(e)[:300]
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
-                text="❌ Бля, не зміг знайти або стягнути цей трек. Сервіс перевантажений або ти ввів якусь дичину. Спробуй ще раз, бро!"
+                text=f"❌ <b>Завантаження обірвалося!</b>\n\n⚠️ <b>Помилка:</b>\n<code>{err_msg}</code>\n\n👉 Скинь цю помилку мені в чат, і ми її вирішимо!",
+                parse_mode="HTML"
             )
-        except Exception:
-            pass
-
+        except Exception as ex:
+            print(f"Не вдалося оновити статус помилки: {ex}")
 
 # ===================================================================
 # 📊 КОМАНДА СТАТИСТИКИ АКТИВНОСТІ (/top або /stats)
