@@ -321,6 +321,90 @@ def call_everyone(message):
         except Exception:
             pass
 
+# ===================================================================
+# 🎵 КОМАНДА ПОШУКУ ТА ЗАВАНТАЖЕННЯ МУЗИКИ (/song або /music)
+# ===================================================================
+@bot.message_handler(commands=['song', 'music', 'музика'])
+def search_and_send_music(message):
+    chat_id = message.chat.id
+    # Отримуємо назву треку після команди
+    query = message.text[len(message.text.split()[0]):].strip()
+    
+    if not query:
+        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/song AC/DC Back in Black`", parse_mode="Markdown")
+        return
+        
+    status_msg = bot.reply_to(message, f"🔍 Драго нишпорить по засіках YouTube у пошуках: <i>{query}</i>...", parse_mode="HTML")
+    
+    # Імпортуємо локально, щоб не навантажувати старт бота
+    import yt_dlp
+    
+    # Налаштування для завантаження тільки аудіо в найкращій якості
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': 'downloads/%(title)s.%(ext)s',  # Зберігаємо в папку downloads
+        'noplaylist': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': True,
+    }
+    
+    try:
+        bot.send_chat_action(chat_id, 'upload_voice')  # Показуємо статус завантаження аудіо
+        
+        # Шукаємо через yt-dlp з префіксом ytsearch (шукає перший ліпший результат)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=True)
+            if not info or 'entries' not in info or len(info['entries']) == 0:
+                raise Exception("Нічого не знайдено")
+                
+            video_info = info['entries'][0]
+            title = video_info.get('title', 'Unknown Track')
+            duration = video_info.get('duration', 0)
+            performer = video_info.get('uploader', 'Драго Музика')
+            
+            # Формуємо шлях до завантаженого mp3
+            filename = ydl.prepare_filename(video_info)
+            # Оскільки ми конвертували в mp3, розширення файлу зміниться
+            mp3_filename = os.path.splitext(filename)[0] + '.mp3'
+            
+            # Відправляємо як аудіофайл (із гарним плеєром)
+            if os.path.exists(mp3_filename):
+                with open(mp3_filename, 'rb') as audio:
+                    bot.send_audio(
+                        chat_id=chat_id,
+                        audio=audio,
+                        title=title,
+                        performer=performer,
+                        duration=duration,
+                        reply_to_message_id=message.message_id,
+                        caption="🔥 Тримай свій трек від Драго!"
+                    )
+                # Видаляємо тимчасовий файл
+                os.remove(mp3_filename)
+            else:
+                raise Exception("Файл не знайшовся після конвертації")
+                
+            # Видаляємо статус-повідомлення пошуку
+            try:
+                bot.delete_message(chat_id, status_msg.message_id)
+            except Exception:
+                pass
+                
+    except Exception as e:
+        print(f"Помилка пошуку музики: {e}")
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text="❌ Бля, не зміг знайти або стягнути цей трек. Сервіс перевантажений або ти ввів якусь дичину. Спробуй ще раз, бро!"
+            )
+        except Exception:
+            pass
+
 
 # ===================================================================
 # 📊 КОМАНДА СТАТИСТИКИ АКТИВНОСТІ (/top або /stats)
