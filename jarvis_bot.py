@@ -23,21 +23,29 @@ def get_db_connection():
 # 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
 
-# Створення таблиці при запуску (виправлено помилку неіснуючих conn/cursor)
+# Створення таблиць при запуску
 try:
     with db_lock:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            # Таблиця статистики
             cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
                 user_id BIGINT PRIMARY KEY,
                 name TEXT,
                 count INTEGER,
                 gender TEXT
             )""")
+            # Таблиця шлюбів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
+                user1_id BIGINT,
+                user2_id BIGINT,
+                UNIQUE(user1_id),
+                UNIQUE(user2_id)
+            )""")
         conn.commit()
         conn.close()
 except Exception as e:
-    print(f"Помилка створення таблиці stats: {e}")
+    print(f"Помилка створення таблиць: {e}")
  
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = int(os.environ.get('API_ID', 12345678))
@@ -151,6 +159,192 @@ def handle_voice(message):
     except Exception as e:
         print(f"Помилка голосового: {e}")
         bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
+
+
+# ===================================================================
+# 💍 СИСТЕМА ОДРУЖЕННЯ / СТВОРЕННЯ БАНДИТСЬКОГО СОЮЗУ
+# ===================================================================
+@bot.message_handler(commands=['marry', 'одруження', 'шлюб'])
+def propose_marriage(message):
+    if is_user_banned(message.from_user.id): return
+    
+    if not message.reply_to_message:
+        bot.reply_to(message, "⚠️ Кому ти каблучку пхаєш? Зроби реплай на повідомлення того, з ким хочеш розписатися!")
+        return
+        
+    user1 = message.from_user
+    user2 = message.reply_to_message.from_user
+    
+    if user1.id == user2.id:
+        bot.reply_to(message, "🤡 Шиза косить ряди. Сам з собою одружуватися зібрався?")
+        return
+        
+    if user2.id == bot.get_me().id:
+        bot.reply_to(message, "🛑 Я капітан СБУ і на роботі романи не кручу. Відхилено.")
+        return
+
+    # Перевірка, чи хтось із них вже у шлюбі
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user1.id, user1.id))
+                if cursor.fetchone():
+                    bot.reply_to(message, "🚨 Ти вже маєш штамп у паспорті! Спочатку розлучись (/розлучення).")
+                    conn.close()
+                    return
+                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user2.id, user2.id))
+                if cursor.fetchone():
+                    bot.reply_to(message, "🚨 Ця людина вже зайнята! Шукай вільну жертву.")
+                    conn.close()
+                    return
+            conn.close()
+    except Exception as e:
+        print(f"Помилка БД при перевірці шлюбу: {e}")
+        return
+
+    # Створюємо кнопки
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_yes = types.InlineKeyboardButton("💍 ТАК, Я ЗГОДЕН(НА)", callback_data=f"marry_yes_{user1.id}_{user2.id}")
+    btn_no = types.InlineKeyboardButton("❌ НІ, ПІШОВ ТИ", callback_data=f"marry_no_{user1.id}_{user2.id}")
+    markup.add(btn_yes, btn_no)
+    
+    target_name = user2.first_name.replace('<', '&lt;').replace('>', '&gt;')
+    initiator_name = user1.first_name.replace('<', '&lt;').replace('>', '&gt;')
+    
+    bot.send_message(
+        message.chat.id, 
+        f"💒 <b>ОФІЦІЙНА ЗАЯВА В РАЦС СБУ!</b>\n\n"
+        f"Громадянин(ка) <b>{initiator_name}</b> робить пропозицію <b>{target_name}</b>!\n"
+        f"Що скажеш? Твоя відповідь вирішить вашу долю.", 
+        reply_markup=markup, 
+        parse_mode="HTML"
+    )
+
+# Обробка натискання кнопок шлюбу
+@bot.callback_query_handler(func=lambda call: call.data.startswith('marry_'))
+def handle_marriage_callbacks(call):
+    parts = call.data.split('_')
+    action = parts[1]
+    user1_id = int(parts[2])
+    user2_id = int(parts[3])
+    
+    # Захист: натиснути може ТІЛЬКИ той, кому зробили пропозицію
+    if call.from_user.id != user2_id:
+        bot.answer_callback_query(call.id, "🛑 Куди лізеш? Це не тобі пропозицію роблять!", show_alert=True)
+        return
+
+    if action == 'no':
+        bot.edit_message_text(
+            "💔 <b>ЖОРСТКА ВІДМОВА!</b>\nЗаява розірвана, серце розбите, каблучка здана в ломбард.", 
+            call.message.chat.id, 
+            call.message.message_id, 
+            parse_mode="HTML"
+        )
+        return
+        
+    if action == 'yes':
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    # Записуємо щасливу пару в базу
+                    cursor.execute("INSERT INTO marriages (user1_id, user2_id) VALUES (%s, %s)", (user1_id, user2_id))
+                conn.commit()
+                conn.close()
+                
+            bot.edit_message_text(
+                "🎉 <b>НОВИЙ БАНДИТСЬКИЙ СОЮЗ!</b> 🥂\n\n"
+                "Драго офіційно оголошує вас сім'єю!\n"
+                "Тепер ви — одне кримінальне угруповання. Гірко! 💋", 
+                call.message.chat.id, 
+                call.message.message_id, 
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            bot.answer_callback_query(call.id, f"Помилка БД (можливо хтось уже встиг розписатися): {e}", show_alert=True)
+
+# Команда для розлучення
+@bot.message_handler(commands=['divorce', 'розлучення'])
+def divorce_command(message):
+    if is_user_banned(message.from_user.id): return
+    
+    user_id = message.from_user.id
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                record = cursor.fetchone()
+                
+                if not record:
+                    bot.reply_to(message, "🤡 Ти й так самотній вовк! З ким ти розлучатися зібрався?")
+                    conn.close()
+                    return
+                
+                # Видаляємо запис про шлюб
+                cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+            conn.commit()
+            conn.close()
+            
+        bot.reply_to(
+            message, 
+            "✂️ <b>СІМ'Я РОЗПАЛАСЯ!</b>\nДраго порвав ваші паспорти. Ви офіційно вільні, спільні меми поділені, тарілки розбиті.", 
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка БД: {e}")
+
+
+# ===================================================================
+# 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
+# ===================================================================
+@bot.message_handler(commands=['marriages', 'пари', 'шлюби'])
+def show_all_marriages(message):
+    if is_user_banned(message.from_user.id): return
+
+    chat_id = message.chat.id
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Зв'язуємо таблицю шлюбів із таблицею статистики, щоб витягнути імена обох партнерів
+                cursor.execute("""
+                    SELECT s1.name, s2.name 
+                    FROM marriages m
+                    JOIN stats s1 ON m.user1_id = s1.user_id
+                    JOIN stats s2 ON m.user2_id = s2.user_id
+                """)
+                couples = cursor.fetchall()
+            conn.close()
+
+        # Якщо база пуста
+        if not couples:
+            bot.reply_to(
+                message, 
+                "🕸 <b>РАЦС пустує!</b>\nУ цьому чаті лише самотні вовки та незалежні левиці. Жодного союзу не зареєстровано.", 
+                parse_mode="HTML"
+            )
+            return
+
+        # Формуємо красивий список
+        response_lines = ["💍 <b>ОФІЦІЙНІ БАНДИТСЬКІ ПАРИ ЧАТУ:</b> 💍\n"]
+        
+        for idx, (name1, name2) in enumerate(couples, 1):
+            clean_name1 = name1.replace("<", "&lt;").replace(">", "&gt;") if name1 else "Хтось"
+            clean_name2 = name2.replace("<", "&lt;").replace(">", "&gt;") if name2 else "Хтось"
+            response_lines.append(f"{idx}. {clean_name1} 💘 {clean_name2}")
+
+        response_lines.append("\n<i>Хто ще без пари? Команда /шлюб чекає на вас!</i>")
+        
+        bot.reply_to(message, "\n".join(response_lines), parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка виведення списку шлюбів: {e}")
+        bot.reply_to(message, "❌ Щось архіви РАЦСу згоріли (помилка БД). Драго не може знайти документи.")
+
 
 
 # ===================================================================
