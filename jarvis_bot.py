@@ -297,12 +297,12 @@ def generate_sbu_dossier(message):
         response = model.generate_content(prompt)
         dossier_text = response.text
         
-        # Відправляємо готове досьє
+        # ВІДКОРИГОВАНО: Теги <b> замінено на зірочки * для режиму Markdown
         try:
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
-                text=f"📂 <b>ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}</b>\n\n{dossier_text}",
+                text=f"📂 *ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}*\n\n{dossier_text}",
                 parse_mode="Markdown"
             )
         except Exception:
@@ -319,7 +319,6 @@ def generate_sbu_dossier(message):
             text="❌ *Збій системи СБУ!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй пізніше.",
             parse_mode="Markdown"
         )
-
 
 
 # ===================================================================
