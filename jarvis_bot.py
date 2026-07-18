@@ -232,6 +232,97 @@ def ensure_user_in_db(user) -> str:
 
 
 # ===================================================================
+# 🕵️ КОМАНДА /dossier (Секретне досьє СБУ)
+# ===================================================================
+@bot.message_handler(commands=['dossier', 'досьє'])
+def generate_sbu_dossier(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    chat_id = message.chat.id
+    
+    # Перевіряємо, чи це реплай
+    if not message.reply_to_message:
+        bot.reply_to(message, "⚠️ Бро, команду треба писати у відповідь на повідомлення того, на кого збираємо компромат!")
+        return
+
+    target_user = message.reply_to_message.from_user
+    
+    # Бот не робить досьє на себе
+    if target_user.id == bot.get_me().id:
+        bot.reply_to(message, "🛑 На співробітників СБУ досьє засекречено. Відхилено.")
+        return
+
+    # Збираємо дані підозрюваного з бази
+    ensure_user_in_db(target_user)
+    gender = get_user_gender(target_user.id)
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT count FROM stats WHERE user_id = %s", (target_user.id,))
+                result = cursor.fetchone()
+                msg_count = result[0] if result else 0
+            conn.close()
+    except Exception as e:
+        print(f"Помилка БД в досьє: {e}")
+        msg_count = "Невідомо"
+
+    status_msg = bot.reply_to(message, "🕵️‍♂️ <i>Драго відкриває архіви СБУ... Збираю компромат...</i>", parse_mode="HTML")
+    bot.send_chat_action(chat_id, 'typing')
+
+    # Формуємо промпт для ШІ
+    target_name = target_user.first_name or "Анонім"
+    
+    prompt = f"""
+    Ти — Драго, зухвалий, саркастичний капітан СБУ і бот-бандит. 
+    Твоє завдання — скласти жартівливе, абсурдне "кримінальне досьє" на учасника чату.
+    
+    Дані підозрюваного:
+    - Ім'я: {target_name}
+    - Стать: {gender}
+    - Рівень балакучості (повідомлень у базі): {msg_count}
+    
+    Напиши досьє у вигляді офіційного, але дуже смішного рапорту. 
+    Обов'язково вигадай йому/їй кримінальну кличку (позивний).
+    Опиши, в яких абсурдних злочинах він/вона підозрюється (наприклад: крадіжка чужих мемів, 
+    зберігання заборонених стікерів, лінь, спам у нічний час, не поважає адміна тощо).
+    Додай пункти: "Особливі прикмети" та "Вирок від Драго".
+    Пиши українською мовою, використовуй пацанський сленг, міцні слівця, багато іронії та емодзі. 
+    """
+
+    try:
+        # Відправляємо запит до Gemini
+        response = model.generate_content(prompt)
+        dossier_text = response.text
+        
+        # Відправляємо готове досьє
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"📂 <b>ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}</b>\n\n{dossier_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"📂 ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}\n\n{dossier_text}"
+            )
+    except Exception as e:
+        print(f"Помилка генерації досьє: {e}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="❌ *Збій системи СБУ!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй пізніше.",
+            parse_mode="Markdown"
+        )
+
+
+
+# ===================================================================
 # 🖼️ КОМАНДА /generate
 # ===================================================================
 @bot.message_handler(commands=['generate'])
