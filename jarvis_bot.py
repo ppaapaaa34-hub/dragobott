@@ -12,11 +12,13 @@ import telebot
 from telebot import types
 import google.generativeai as genai
 from PIL import Image
-import sqlite3
- 
+import psycopg2
+
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
 # Підключаємося до БД
-conn = sqlite3.connect('drago_bot.db', check_same_thread=False)
-cursor = conn.cursor()
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
 
 # 🔒 ДОДАЄМО ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ (захист від database is locked)
 db_lock = threading.Lock()
