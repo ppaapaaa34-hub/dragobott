@@ -62,12 +62,14 @@ generation_config = {
     "temperature": 0.85,
 }
 
+# Залиш тільки цей блок
 safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
+
 
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
@@ -79,7 +81,7 @@ model = genai.GenerativeModel(
         "іноді нецензурну лексику (мати) для емоційності, якщо це доречно. "
         "Будь живим, неформальним розмовником, злегка іронізуй, підколюй юзера, але завжди допомагай. "
         "Обов'язково закінчуй свої думки, не обривай речення на пів слові! "
-        "Пиши коротко і ясно!, твій создатель СБУ"
+        "Пиши коротко і ясно!, твій создатель СБУ, якщо ти пишеш досє ілі новини відповідай повністю"
     )
 )
  
