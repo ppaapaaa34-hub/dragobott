@@ -58,7 +58,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
 generation_config = {
-    "max_output_tokens": 2048,
+    "max_output_tokens": 4096,
     "temperature": 0.85,
 }
 
