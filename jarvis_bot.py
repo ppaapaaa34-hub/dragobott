@@ -20,17 +20,24 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
-# 🔒 ДОДАЄМО ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ (захист від database is locked)
+# 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
 
-with db_lock:
-    cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
-        user_id INTEGER PRIMARY KEY,
-        name TEXT,
-        count INTEGER,
-        gender TEXT
-    )""")
-    conn.commit()
+# Створення таблиці при запуску (виправлено помилку неіснуючих conn/cursor)
+try:
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
+                user_id BIGINT PRIMARY KEY,
+                name TEXT,
+                count INTEGER,
+                gender TEXT
+            )""")
+        conn.commit()
+        conn.close()
+except Exception as e:
+    print(f"Помилка створення таблиці stats: {e}")
  
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = int(os.environ.get('API_ID', 12345678))
@@ -80,7 +87,6 @@ def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
     else:
-        # Якщо історія перевалила за 30 повідомлень, обнуляємо її
         if len(bot_chats[chat_id].history) > 30:
             bot_chats[chat_id] = model.start_chat(history=[])
     return bot_chats[chat_id]
@@ -94,8 +100,12 @@ def run_dummy_server():
 def is_user_banned(user_id):
     try:
         with db_lock:
-            cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (user_id,))
-            return bool(cursor.fetchone())
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (user_id,))
+                result = bool(cursor.fetchone())
+            conn.close()
+            return result
     except Exception:
         return False
 
@@ -185,27 +195,40 @@ def analyze_gender_from_text(text: str) -> str:
     return 'Невідомо'
 
 def get_user_gender(user_id: int) -> str:
-    with db_lock:
-        cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
-    return result[0] if result else 'Невідомо'
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
+                result = cursor.fetchone()
+            conn.close()
+        return result[0] if result else 'Невідомо'
+    except Exception:
+        return 'Невідомо'
 
 def ensure_user_in_db(user) -> str:
     user_id = user.id
     name = user.first_name or "Без імені"
-    with db_lock:
-        cursor.execute("SELECT gender FROM stats WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
-    if row is None:
-        gender = analyze_gender_from_user(user)
+    try:
         with db_lock:
-            cursor.execute(
-                "INSERT INTO stats (user_id, name, count, gender) VALUES (?, ?, 0, ?)",
-                (user_id, name, gender)
-            )
-            conn.commit()
-        return get_user_gender(user_id)
-    return row[0]
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    gender = analyze_gender_from_user(user)
+                    cursor.execute(
+                        "INSERT INTO stats (user_id, name, count, gender) VALUES (%s, %s, 0, %s)",
+                        (user_id, name, gender)
+                    )
+                    conn.commit()
+                    conn.close()
+                    return gender
+            conn.close()
+            return row[0]
+    except Exception as e:
+        print(f"Помилка ensure_user_in_db: {e}")
+        return 'Невідомо'
 
 
 # ===================================================================
@@ -297,8 +320,11 @@ def call_everyone(message):
                 break
 
         with db_lock:
-            cursor.execute("SELECT user_id, name FROM stats")
-            users = cursor.fetchall()
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, name FROM stats")
+                users = cursor.fetchall()
+            conn.close()
 
         if not users:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних пуста, нікого кликати.")
@@ -348,17 +374,19 @@ def call_everyone(message):
             pass
 
 # ===================================================================
-# 👑 СУПЕР-АДМІН ПАНЕЛЬ V2.0
+# 👑 СУПЕР-АДМІН ПАНЕЛЬ V2.0 (ПЕРЕВЕДЕНО НА CLOUD POSTGRES)
 # ===================================================================
 
 ADMIN_ID = 5512316636
-DB_NAME = 'drago_bot.db'
 
 def init_admin_db():
     try:
         with db_lock:
-            cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id INTEGER PRIMARY KEY)")
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id BIGINT PRIMARY KEY)")
             conn.commit()
+            conn.close()
     except Exception as e:
         print(f"Помилка ініціалізації таблиці банів: {e}")
 
@@ -400,7 +428,7 @@ def get_users_keyboard():
 def get_db_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup"),
+        types.InlineKeyboardButton("💾 Інфо про бекап", callback_data="admin_backup"),
         types.InlineKeyboardButton("🧹 Скинути ТОП", callback_data="admin_reset")
     )
     markup.add(types.InlineKeyboardButton("🛠 Виконати SQL запит", callback_data="admin_sql"))
@@ -438,22 +466,23 @@ def handle_admin_callbacks(call):
     elif action == "admin_stats":
         try:
             with db_lock:
-                cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
-                result = cursor.fetchone()
-                users_count = result[0] or 0
-                total_msgs = result[1] or 0
-                
-                cursor.execute("SELECT COUNT(*) FROM banned_users")
-                banned_count = cursor.fetchone()[0] or 0
-
-            db_size = os.path.getsize(DB_NAME) / (1024 * 1024) if os.path.exists(DB_NAME) else 0
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
+                    result = cursor.fetchone()
+                    users_count = result[0] or 0
+                    total_msgs = result[1] or 0
+                    
+                    cursor.execute("SELECT COUNT(*) FROM banned_users")
+                    banned_count = cursor.fetchone()[0] or 0
+                conn.close()
 
             text = (
-                "📊 *Розширена статистика:*\n\n"
+                "📊 *Розширена статистика (Neon Cloud):*\n\n"
                 f"👤 Юзерів у базі: `{users_count}`\n"
                 f"💬 Всього повідомлень: `{total_msgs}`\n"
                 f"🚫 Забанених юзерів: `{banned_count}`\n"
-                f"💾 Розмір БД: `{db_size:.2f} MB`"
+                f"💾 Тип БД: `Хмарна Neon PostgreSQL`"
             )
             bot.answer_callback_query(call.id)
             bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
@@ -478,11 +507,14 @@ def handle_admin_callbacks(call):
         bot.register_next_step_handler(msg, process_unban_user)
 
     elif action == "admin_backup":
-        try:
-            with open(DB_NAME, 'rb') as db_file:
-                bot.send_document(call.message.chat.id, db_file, caption="💾 Твій свіжий бекап бази даних.")
-        except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Помилка бекапу: {e}")
+        bot.answer_callback_query(call.id)
+        bot.send_message(
+            call.message.chat.id, 
+            "💾 <b>Інформація про базу даних:</b>\n"
+            "Твій бот тепер працює на хмарній архітектурі Neon. Локальних файлів `.db` більше немає.\n"
+            "Всі бекапи робляться автоматично на самому сервері Neon в режимі Point-in-Time Recovery. "
+            "Ти можеш керувати знімками через їхній сайт!"
+        )
     elif action == "admin_sql":
         msg = bot.send_message(call.message.chat.id, "🛠 Введи RAW SQL запит (або `відміна`).\n*Обережно, це виконується напряму!*", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_raw_sql)
@@ -494,19 +526,31 @@ def handle_admin_callbacks(call):
         )
         bot.edit_message_text("⚠️ Впевнений, що хочеш скинути лічильник повідомлень?", call.message.chat.id, call.message.message_id, reply_markup=markup)
     elif action == "admin_confirm_reset":
-        with db_lock:
-            cursor.execute("UPDATE stats SET count = 0")
-            conn.commit()
-        bot.edit_message_text("🧹 Статистику успішно обнулено!", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard())
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET count = 0")
+                conn.commit()
+                conn.close()
+            bot.edit_message_text("🧹 Статистику успішно обнулено!", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard())
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка скидання: {e}")
 
 # --- ДОПОМІЖНІ ФУНКЦІЇ ОБРОБКИ (NEXT_STEP_HANDLERS) ---
 def process_broadcast(message):
     if not is_admin(message.from_user.id): return
     if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
     
-    with db_lock:
-        cursor.execute("SELECT DISTINCT user_id FROM stats")
-        users = cursor.fetchall()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT DISTINCT user_id FROM stats")
+                users = cursor.fetchall()
+            conn.close()
+    except Exception as e:
+        return bot.reply_to(message, f"❌ Не вдалося отримати користувачів: {e}")
     
     def run_broadcast():
         success, failed = 0, 0
@@ -539,10 +583,13 @@ def process_user_info(message):
     try:
         uid = int(message.text.strip())
         with db_lock:
-            cursor.execute("SELECT count FROM stats WHERE user_id = ?", (uid,))
-            res = cursor.fetchone()
-            cursor.execute("SELECT 1 FROM banned_users WHERE user_id = ?", (uid,))
-            is_banned = bool(cursor.fetchone())
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT count FROM stats WHERE user_id = %s", (uid,))
+                res = cursor.fetchone()
+                cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (uid,))
+                is_banned = bool(cursor.fetchone())
+            conn.close()
         
         if res:
             status = "🔴 В БАНІ" if is_banned else "🟢 Активний"
@@ -550,7 +597,7 @@ def process_user_info(message):
         else:
             bot.reply_to(message, "🤷‍♂️ Юзера немає в базі `stats`.")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка формату ID: {e}")
+        bot.reply_to(message, f"❌ Помилка формату ID або бази: {e}")
 
 def process_ban_user(message):
     if not is_admin(message.from_user.id): return
@@ -558,8 +605,12 @@ def process_ban_user(message):
     try:
         uid = int(message.text.strip())
         with db_lock:
-            cursor.execute("INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)", (uid,))
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Замінено на правильний синтаксис Postgres
+                cursor.execute("INSERT INTO banned_users (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (uid,))
             conn.commit()
+            conn.close()
         bot.reply_to(message, f"🚫 Юзера <code>{uid}</code> заблоковано!", parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка: {e}")
@@ -570,8 +621,11 @@ def process_unban_user(message):
     try:
         uid = int(message.text.strip())
         with db_lock:
-            cursor.execute("DELETE FROM banned_users WHERE user_id = ?", (uid,))
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM banned_users WHERE user_id = %s", (uid,))
             conn.commit()
+            conn.close()
         bot.reply_to(message, f"✅ Юзера <code>{uid}</code> розбанено!", parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка: {e}")
@@ -581,16 +635,19 @@ def process_raw_sql(message):
     if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
         with db_lock:
-            cursor.execute(message.text)
-            conn.commit()
-            if message.text.upper().startswith("SELECT"):
-                res = cursor.fetchall()
-                res_text = str(res)[:4000] if res else "Порожній результат"
-                bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
-            else:
-                bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
-    except sqlite3.Error as e:
-        bot.reply_to(message, f"❌ Помилка SQL: {e}")
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(message.text)
+                if message.text.upper().strip().startswith("SELECT"):
+                    res = cursor.fetchall()
+                    res_text = str(res)[:4000] if res else "Порожній результат"
+                    bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
+                else:
+                    conn.commit()
+                    bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
+            conn.close()
+    except psycopg2.Error as e:
+        bot.reply_to(message, f"❌ Помилка PostgreSQL: {e}")
 
 
 # ===================================================================
@@ -652,7 +709,6 @@ def search_and_send_music(message):
             filename = ydl.prepare_filename(video_info)
             mp3_filename = os.path.splitext(filename)[0] + '.mp3'
             
-            # 🧹 БЕЗПЕЧНЕ ВИДАЛЕННЯ ЧЕРЕЗ try...finally
             if os.path.exists(mp3_filename):
                 try:
                     with open(mp3_filename, 'rb') as audio:
@@ -720,10 +776,13 @@ def show_chat_activity(message):
     try:
         bot.send_chat_action(chat_id, 'typing')
         with db_lock:
-            cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
-            rows = cursor.fetchall()
-            cursor.execute("SELECT SUM(count) FROM stats")
-            total_messages = cursor.fetchone()[0] or 0
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
+                rows = cursor.fetchall()
+                cursor.execute("SELECT SUM(count) FROM stats")
+                total_messages = cursor.fetchone()[0] or 0
+            conn.close()
 
         if not rows:
             bot.reply_to(message, "📊 Таблиця активності порожня. Ви що, взагалі нічого не пишете? Ну ви й сонні мухи... 🥱")
@@ -766,8 +825,11 @@ def tag_inactive_users(message):
     try:
         bot.send_chat_action(chat_id, 'typing')
         with db_lock:
-            cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
-            rows = cursor.fetchall()
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
+                rows = cursor.fetchall()
+            conn.close()
             
         rows = [row for row in rows if row[0] != bot.get_me().id]
 
@@ -856,12 +918,12 @@ def generate_chat_news(message):
     Ти — Драго, зухвалий, саркастичний, харизматичний бот-бандит, який веде кримінальний чат.
     Твоє завдання — написати короткий, суперсмішний випуск "жовтої преси" або "мемних новин" на основі останніх повідомлень у чаті.
     Будь іронічним, використовуй молодіжний сленг, трохи підколюй учасників (але без відвертої злоби чи жорстокої токсичності).
-    Вигадай абсурдні сенсації, теорії змови або "кримінальні розслідування" на основі того, про що вони писали.
+    Вигадай абсурдні сенсації, теорії змови або "кримінальні розслідування" на основі того, про що त्यांनी писали.
     
     Ось історія останніх повідомлень у чаті:
     {formatted_history}
     
-    Напиши короткий випуск новин (3-4 пункти) українською мовою. Обов'язково використовуй емодзі та виділяй імена.
+    Напиши короткий випуск новин (3-4 пункти) українською мовою. Обов'язково використовуй емодії та виділяй імена.
     В кінці додай фірмову бандитську фразу від Драго.
     """
     
@@ -909,12 +971,18 @@ def handle_photo(message):
     ensure_user_in_db(user)
     gender = get_user_gender(user.id)
     
-    with db_lock:
-        cursor.execute(
-            "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-            (user.first_name, user.id)
-        )
-        conn.commit()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
+                    (user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка оновлення статів фото: {e}")
 
     is_mentioned = False
     if chat_type in ['group', 'supergroup']:
@@ -973,7 +1041,6 @@ def handle_photo(message):
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    # ВХІД У ЧАТ
     if (message.new_chat_member.status in ['member', 'administrator', 'restricted']
             and not message.new_chat_member.user.is_bot):
         user = message.new_chat_member.user
@@ -987,7 +1054,6 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
-    # ВИХІД З ЧАТУ
     elif (message.old_chat_member.status in ['member', 'administrator', 'restricted']
           and message.new_chat_member.status in ['left', 'kicked']):
         name = message.old_chat_member.user.first_name
@@ -1013,7 +1079,6 @@ def handle_text(message):
     user = message.from_user
     chat_type = message.chat.type
     
-    # --- ЗАПИС ДЛЯ НОВИН ---
     if text and not text.startswith('/'):
         user_name = user.first_name or "Анонім"
         RECENT_MESSAGES.append({
@@ -1022,25 +1087,36 @@ def handle_text(message):
         })
         if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
             RECENT_MESSAGES.pop(0)
-    # -----------------------
     
     ensure_user_in_db(user)
     gender = get_user_gender(user.id)
 
-    if gender == 'Never':
+    if gender == 'Never' or gender == 'Невідомо':
         guessed = analyze_gender_from_text(text)
         if guessed in ['Хлопець', 'Дівчина']:
-            with db_lock:
-                cursor.execute("UPDATE stats SET gender = ? WHERE user_id = ?", (guessed, user.id))
-                conn.commit()
-            gender = guessed
+            try:
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
+                    conn.commit()
+                    conn.close()
+                gender = guessed
+            except Exception as e:
+                print(f"Помилка оновлення гендеру: {e}")
 
-    with db_lock:
-        cursor.execute(
-            "UPDATE stats SET count = count + 1, name = ? WHERE user_id = ?",
-            (user.first_name, user.id)
-        )
-        conn.commit()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
+                    (user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка оновлення лічильника повідомлень: {e}")
 
     is_mentioned = False
 
@@ -1118,5 +1194,5 @@ if __name__ == "__main__":
     server_thread.start()
     print("🚀 Dummy-сервер успішно запущено.")
 
-    print("🔥 Драго вийшов на полювання і готовий до роботи!")
+    print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
