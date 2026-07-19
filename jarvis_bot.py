@@ -13,6 +13,9 @@ from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import psycopg2
+import discord
+from discord.ext import commands
+
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
