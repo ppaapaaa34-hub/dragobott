@@ -1683,7 +1683,7 @@ def handle_text(message):
     chat_id = message.chat.id
     user = message.from_user
     chat_type = message.chat.type
-    
+
     if text and not text.startswith('/'):
         user_name = user.first_name or "Анонім"
         RECENT_MESSAGES.append({
@@ -1692,15 +1692,27 @@ def handle_text(message):
         })
         if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
             RECENT_MESSAGES.pop(0)
-    
+
     ensure_user_in_db(user)
     gender = get_user_gender(user.id)
 
-    if gender == 'Never' or gender == 'Невідомо':
+    # 1. Оновлення статі, якщо вона невідома
+    if gender in ['Never', 'Невідомо']:
         guessed = analyze_gender_from_text(text)
         if guessed in ['Хлопець', 'Дівчина']:
             try:
-        earned_money = random.randint(5, 15) # 💰 Генеруємо випадковий заробіток
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                print(f"Помилка оновлення статі: {e}")
+
+    # 2. Нарахування грошей та оновлення лічильника повідомлень
+    try:
+        earned_money = random.randint(5, 15)  # 💰 Генеруємо випадковий заробіток
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
@@ -1712,19 +1724,6 @@ def handle_text(message):
             conn.close()
     except Exception as e:
         print(f"Помилка оновлення лічильника та балансу: {e}")
-
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
-                    (user.first_name, user.id)
-                )
-            conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення лічильника повідомлень: {e}")
 
     is_mentioned = False
 
@@ -1802,7 +1801,6 @@ if __name__ == "__main__":
     server_thread.start()
     print("🚀 Dummy-сервер успішно запущено.")
 
-    # Тепер тут усе чітко по 4 пробіли і без зайвих слів наприкінці:
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
     
