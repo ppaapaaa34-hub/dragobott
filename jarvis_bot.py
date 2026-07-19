@@ -56,7 +56,12 @@ API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
 # ======================================================
- 
+
+DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
+# Сюди впиши ID твого Телеграм-чату, куди бот має кидати анонси стрімів:
+TELEGRAM_CHAT_ID = -1003428241218  # Заміни на реальний ID свого чату
+
+
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -164,6 +169,49 @@ def handle_voice(message):
     except Exception as e:
         print(f"Помилка голосового: {e}")
         bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
+
+
+# ===================================================================
+# 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
+# ===================================================================
+intents = discord.Intents.default()
+intents.voice_states = True  # Щоб бачити, хто заходить в голос і вмикає стрім
+intents.members = True       # Щоб бачити нікнейми
+
+discord_client = discord.Client(intents=intents)
+
+@discord_client.event
+async def on_ready():
+    print(f"🤖 Discord-агент Драго успішно підключився як {discord_client.user}!")
+
+@discord_client.event
+async def on_voice_state_update(member, before, after):
+    # Перевіряємо, чи користувач запустив трансляцію екрана/стрім
+    # before.self_stream було False, а після оновлення after.self_stream стало True
+    if not before.self_stream and after.self_stream:
+        user_name = member.display_name
+        channel_name = after.channel.name if after.channel else "Голосовий канал"
+        
+        # Текст анонсу в Telegram у пацанському стилі Драго
+        announcement = (
+            f"🎮 <b>ДРАГО ПАЛИТЬ КОНТОРУ В DISCORD!</b> 🚨\n\n"
+            f"Чувак <b>{user_name}</b> не схотів сидіти тихо і запустив <b>живу трансляцію</b> "
+            f"у голосовому каналі <i>«{channel_name}»</i>!\n\n"
+            f"🍿 <i>Шоу почалося, бандити! Залітайте в ДС, поки гаряче, подивимося що він там мутить!</i>"
+        )
+        
+        # Відправляємо повідомлення в наш Телеграм чат
+        try:
+            bot.send_message(TELEGRAM_CHAT_ID, announcement, parse_mode="HTML")
+        except Exception as e:
+            print(f"Помилка відправки анонсу стріму в ТГ: {e}")
+
+# Функція для запуску ДС бота в окремому потоці
+def run_discord():
+    if DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
+        discord_client.run(DISCORD_TOKEN)
+    else:
+        print("⚠️ DISCORD_TOKEN не налаштовано. Модуль Discord спить.")
 
 
 # ===================================================================
