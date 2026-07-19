@@ -192,12 +192,18 @@ async def on_voice_state_update(member, before, after):
         user_name = member.display_name
         channel_name = after.channel.name if after.channel else "Голосовий канал"
         
-        # Текст анонсу в Telegram у пацанському стилі Драго
+        # 🔗 Збираємо ID для створення прямого посилання на трансляцію
+        guild_id = member.guild.id
+        channel_id = after.channel.id if after.channel else 0
+        discord_stream_url = f"https://discord.com/channels/{guild_id}/{channel_id}"
+        
+        # Текст анонсу в Telegram з вбудованим клікабельним лінком
         announcement = (
             f"🎮 <b>ДРАГО ПАЛИТЬ КОНТОРУ В DISCORD!</b> 🚨\n\n"
             f"Чувак <b>{user_name}</b> не схотів сидіти тихо і запустив <b>живу трансляцію</b> "
             f"у голосовому каналі <i>«{channel_name}»</i>!\n\n"
-            f"🍿 <i>Шоу почалося, бандити! Залітайте в ДС, поки гаряче, подивимося що він там мутить!</i>"
+            f"🚀 <b><a href='{discord_stream_url}'>👉 ЗАЛЕТІТИ НА СТРІМ 👈</a></b>\n\n"
+            f"🍿 <i>Шоу почалося, бандити! Тисніть на лінк вище і залітайте, подивимося що він там мутить!</i>"
         )
         
         # Відправляємо повідомлення в наш Телеграм чат
@@ -212,7 +218,6 @@ def run_discord():
         discord_client.run(DISCORD_TOKEN)
     else:
         print("⚠️ DISCORD_TOKEN не налаштовано. Модуль Discord спить.")
-
 
 # ===================================================================
 # 📋 КОМАНДА /help (Список можливостей Драго)
