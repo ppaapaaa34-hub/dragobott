@@ -1700,15 +1700,18 @@ def handle_text(message):
         guessed = analyze_gender_from_text(text)
         if guessed in ['Хлопець', 'Дівчина']:
             try:
-                with db_lock:
-                    conn = get_db_connection()
-                    with conn.cursor() as cursor:
-                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
-                    conn.commit()
-                    conn.close()
-                gender = guessed
-            except Exception as e:
-                print(f"Помилка оновлення гендеру: {e}")
+        earned_money = random.randint(5, 15) # 💰 Генеруємо випадковий заробіток
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, balance = COALESCE(balance, 0) + %s, name = %s WHERE user_id = %s",
+                    (earned_money, user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка оновлення лічильника та балансу: {e}")
 
     try:
         with db_lock:
