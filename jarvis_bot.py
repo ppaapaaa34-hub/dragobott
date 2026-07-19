@@ -1591,16 +1591,16 @@ def handle_text(message):
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
 if __name__ == "__main__":
-    bot.enable_save_next_step_handlers(delay=2)[cite: 1]
-    bot.load_next_step_handlers()[cite: 1]
+    bot.enable_save_next_step_handlers(delay=2)
+    bot.load_next_step_handlers()
     
-    server_thread = threading.Thread(target=run_dummy_server, daemon=True)[cite: 1]
-    server_thread.start()[cite: 1]
-    print("🚀 Dummy-сервер успішно запущено.") Meso[cite: 1]
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
+    print("🚀 Dummy-сервер успішно запущено.")
 
-    # ТЕПЕР ТУТ ВСЕ СТОЇТЬ СТРОГО НА СВОЇХ МІСЦЯХ (ПО 4 ПРОБІЛИ):
+    # Тепер тут усе чітко по 4 пробіли і без зайвих слів наприкінці:
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
     
-    print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")[cite: 1]
-    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])[cite: 1]
+    print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
+    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
