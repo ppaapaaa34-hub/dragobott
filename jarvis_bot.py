@@ -31,13 +31,17 @@ try:
     with db_lock:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # Таблиця статистики
+            # Таблиця статистики (додано in_chat)
             cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
                 user_id BIGINT PRIMARY KEY,
                 name TEXT,
                 count INTEGER,
-                gender TEXT
+                gender TEXT,
+                in_chat BOOLEAN DEFAULT TRUE
             )""")
+            # Безпечно додаємо колонку in_chat, якщо таблиця вже була створена раніше
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS in_chat BOOLEAN DEFAULT TRUE;")
+            
             # Таблиця шлюбів
             cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
                 user1_id BIGINT,
@@ -1174,13 +1178,15 @@ def show_chat_activity(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо топ 10
-                cursor.execute("SELECT name, count, gender FROM stats ORDER BY count DESC LIMIT 10")
+                # Беремо топ 10 ТІЛЬКИ СЕРЕД ТИХ, ХТО ЗАРАЗ Є В ЧАТІ
+                cursor.execute("SELECT name, count, gender FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
                 rows = cursor.fetchall()
-                # Беремо "найсоннішого" (той, хто пише, але мало)
-                cursor.execute("SELECT name, count FROM stats WHERE count > 0 ORDER BY count ASC LIMIT 1")
+                
+                # Беремо "найсоннішого" (той, хто пише, але мало) ТІЛЬКИ СЕРЕД ЖИВИХ
+                cursor.execute("SELECT name, count FROM stats WHERE count > 0 AND in_chat = TRUE ORDER BY count ASC LIMIT 1")
                 sleepy_one = cursor.fetchone()
-                # Разом
+                
+                # Разом рахуємо повідомлення всіх (навіть тих, хто вже пішов)
                 cursor.execute("SELECT SUM(count) FROM stats")
                 total_messages = cursor.fetchone()[0] or 0
             conn.close()
@@ -1236,7 +1242,8 @@ def tag_inactive_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 ORDER BY count ASC LIMIT 15")
+                # Шукаємо лінивців ТІЛЬКИ СЕРЕД ТИХ, ХТО ЗАРАЗ Є В ЧАТІ
+                cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 AND in_chat = TRUE ORDER BY count ASC LIMIT 15")
                 rows = cursor.fetchall()
             conn.close()
             
@@ -1450,11 +1457,25 @@ def handle_photo(message):
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
+    user = message.new_chat_member.user
+    
+    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ
     if (message.new_chat_member.status in ['member', 'administrator', 'restricted']
-            and not message.new_chat_member.user.is_bot):
-        user = message.new_chat_member.user
+            and not user.is_bot):
         gender = ensure_user_in_db(user)
         name = user.first_name
+        
+        # Повертаємо його в активні списки
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = TRUE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при поверненні юзера: {e}")
+            
         if gender == 'Дівчина':
             greeting = f"Вітаємо в чаті, <b>{name}</b>! 🤍\nРадий бачити тебе тут!"
         elif gender == 'Хлопець':
@@ -1463,9 +1484,22 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
+    # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
     elif (message.old_chat_member.status in ['member', 'administrator', 'restricted']
           and message.new_chat_member.status in ['left', 'kicked']):
         name = message.old_chat_member.user.first_name
+        
+        # ВИКРЕСЛЮЄМО З ТОПІВ
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при виході юзера: {e}")
+
         goodbyes = [
             f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
             f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
@@ -1473,7 +1507,6 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії!"
         ]
         bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
-
 
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
