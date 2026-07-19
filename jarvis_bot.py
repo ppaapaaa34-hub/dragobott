@@ -1550,5 +1550,8 @@ if __name__ == "__main__":
     server_thread.start()
     print("🚀 Dummy-сервер успішно запущено.")
 
+discord_thread = threading.Thread(target=run_discord, daemon=True)
+    discord_thread.start()
+    
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
