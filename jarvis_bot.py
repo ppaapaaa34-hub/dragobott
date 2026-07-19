@@ -31,16 +31,26 @@ try:
     with db_lock:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # Таблиця статистики (додано in_chat)
+            # Таблиця статистики (додано balance)
             cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
                 user_id BIGINT PRIMARY KEY,
                 name TEXT,
                 count INTEGER,
                 gender TEXT,
-                in_chat BOOLEAN DEFAULT TRUE
+                in_chat BOOLEAN DEFAULT TRUE,
+                balance BIGINT DEFAULT 0
             )""")
-            # Безпечно додаємо колонку in_chat, якщо таблиця вже була створена раніше
-            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS in_chat BOOLEAN DEFAULT TRUE;")
+            # Безпечно додаємо колонку balance, якщо таблиця вже існує
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
+            
+            # Таблиця майна (Монополія)
+            cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                item_code TEXT,
+                item_name TEXT,
+                item_category TEXT
+            )""")
             
             # Таблиця шлюбів
             cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
@@ -174,6 +184,154 @@ def handle_voice(message):
         print(f"Помилка голосового: {e}")
         bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
 
+# ===================================================================
+# 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
+# ===================================================================
+
+# Асортимент нашого чорного ринку (код товару: [Назва, Ціна, Категорія])
+SHOP_ITEMS = {
+    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 60000, "cat": "Електроніка"},
+    "pc": {"name": "🖥️ ПК на RTX 5090", "price": 150000, "cat": "Електроніка"},
+    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини"},
+    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини"},
+    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки"},
+    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки"},
+    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки"},
+    "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість"},
+    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість"},
+    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс"}
+}
+
+# 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
+@bot.message_handler(commands=['shop', 'магазин'])
+def show_shop(message):
+    if is_user_banned(message.from_user.id): return
+    
+    shop_text = [
+        "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
+        "<i>За кожне смс я кидаю тобі пару гривень. Зібрав капітал? Купуй жирні ніштяки!</i>\n",
+        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити jiga</i>)\n"
+    ]
+    
+    # Групуємо товари за категоріями для краси
+    categories = {}
+    for code, item in SHOP_ITEMS.items():
+        cat = item["cat"]
+        if cat not in categories: categories[cat] = []
+        categories[cat].append(f"• <code>{code}</code> — <b>{item['name']}</b> | 💰 <code>{item['price']:,} грн</code>")
+        
+    for cat, items in categories.items():
+        shop_text.append(f"📦 <b>{cat.upper()}:</b>")
+        shop_text.extend(items)
+        shop_text.append("")
+        
+    bot.reply_to(message, "\n".join(shop_text), parse_mode="HTML")
+
+# 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
+@bot.message_handler(commands=['buy', 'купити'])
+def buy_item(message):
+    if is_user_banned(message.from_user.id): return
+    
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "⚠️ Код товару хто писати буде? Наприклад: <code>/купити bmw</code>", parse_mode="HTML")
+        return
+        
+    item_code = args[1].lower().strip()
+    
+    if item_code not in SHOP_ITEMS:
+        bot.reply_to(message, "🤡 Ти щось переплутав, бариго. Такого товару на моєму ринку немає! Глянь в `/магазин`.")
+        return
+        
+    item = SHOP_ITEMS[item_code]
+    user_id = message.from_user.id
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Перевіряємо баланс
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                current_balance = res[0] if res else 0
+                
+                if current_balance < item["price"]:
+                    shortage = item["price"] - current_balance
+                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на Porsche не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
+                    conn.close()
+                    return
+                    
+                # Знімаємо бабки
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
+                # Додаємо в інвентар
+                cursor.execute(
+                    "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
+                    (user_id, item_code, item["name"], item["cat"])
+                )
+            conn.commit()
+            conn.close()
+            
+        bot.reply_to(
+            message, 
+            f"🎉 <b>УСПІШНА УГОДА! ОЛІГАРХ НА ЗВ'ЯЗКУ!</b> 🎉\n\n"
+            f"Ти успішно купив: <b>{item['name']}</b> за <code>{item['price']:,} грн</code>!\n"
+            f"Майно внесено до реєстру СБУ. Перевір свій статус через `/майно`.", 
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        print(f"Помилка купівлі: {e}")
+        bot.reply_to(message, "❌ Щось термінал барахлить, база даних відхилила транзакцію.")
+
+# 💼 КОМАНДА: БАЛАНС ТА МАЙНО (/money, /balance, /майно, /гаманець)
+@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
+def show_inventory(message):
+    if is_user_banned(message.from_user.id): return
+    
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Беремо баланс
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                balance = res[0] if res else 0
+                
+                # Беремо список речей
+                cursor.execute("SELECT item_name FROM inventory WHERE user_id = %s", (user_id,))
+                items = cursor.fetchall()
+            conn.close()
+            
+        clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
+        
+        response = [
+            f"💼 *ФІНАНСОВИЙ АУДІТ: {clean_name.upper()}* 💼\n",
+            f"💳 <b>Готівка в кишені:</b> <code>{balance:,} грн</code>\n",
+            "📊 <b>Зареєстроване майно:</b>"
+        ]
+        
+        if not items:
+            response.append("<i>Повний голяк. Тільки шкарпетки й телефон, з якого ти пишеш. Бігом на заробітки! 🏃‍♂️</i>")
+        else:
+            # Збираємо однакові речі в купу (наприклад, 2 Жигулі)
+            item_counts = {}
+            for row in items:
+                name = row[0]
+                item_counts[name] = item_counts.get(name, 0) + 1
+                
+            for name, count in item_counts.items():
+                count_str = f" (x{count})" if count > 1 else ""
+                response.append(f"✅ {name}{count_str}")
+                
+        bot.reply_to(message, "\n".join(response), parse_mode="HTML")
+        
+    except Exception as e:
+        print(f"Помилка виведення майна: {e}")
+        bot.reply_to(message, "❌ Не вдалося зчитати дані з твого гаманця.")
+
 
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
@@ -252,6 +410,11 @@ def show_all_commands(message):
 • /marry або /шлюб — <i>(тільки реплай)</i> Зробити пропозицію.
 • /divorce або /розлучення — Розірвати шлюб.
 • /marriages або /пари — Подивитися список усіх кримінальних сімей чату.
+
+💰 <b>Кримінальна Монополія:</b>
+• /магазин або /shop — Відкрити чорний ринок з тачками, віллами та айфонами.
+• /купити [код] — Придбати обраний ніштяк (наприклад: <i>/купити bmw</i>).
+• /майно або /баланс — Перевірити свій рахунок та список куплених речей.
 
 🎵 <b>Музика та Арт:</b>
 • /найти [назва] або /music — Знайти і скачати трек (наприклад: <i>/найти Скрябін</i>).
