@@ -302,6 +302,7 @@ def show_user_profile(message):
 # ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
 # ===================================================================
+
 # Асортимент нашого чорного ринку (код товару: [Назва, Ціна, Категорія])
 SHOP_ITEMS = {
     "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 60000, "cat": "Електроніка"},
@@ -502,11 +503,7 @@ def handle_property_photo_view(call):
     item_name = SHOP_ITEMS[item_code]["name"]
     item_price = SHOP_ITEMS[item_code]["price"]
     
-    # Створюємо невидимий лінк для виведення картинки в медіа-прев'ю Telegram
-    photo_preview = f'<a href="{item_url}">‌</a>'
-    
     view_text = (
-        f"{photo_preview}"
         f"📊 <b>ОГЛЯД МАЙНА: {item_name.upper()}</b>\n"
         f"────────────────────\n"
         f"💵 <b>Ринкова ціна:</b> <code>{item_price:,} грн</code>\n"
@@ -516,17 +513,27 @@ def handle_property_photo_view(call):
     )
     
     try:
-        # Змінюємо текст повідомлення, зберігаючи кнопки для швидкого перемикання
-        bot.edit_message_text(
+        # Варіант 1: Якщо повідомлення вже містить медіа (фото), просто оновлюємо його
+        media = types.InputMediaPhoto(media=item_url, caption=view_text, parse_mode="HTML")
+        bot.edit_message_media(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text=view_text,
-            reply_markup=call.message.reply_markup,
-            parse_mode="HTML"
+            media=media,
+            reply_markup=call.message.reply_markup
         )
     except Exception as e:
-        print(f"Помилка оновлення картки фото: {e}")
-
+        # Варіант 2: Якщо списку активів було надіслано текстом, видаляємо його і відправляємо повноцінне фото
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            bot.send_photo(
+                chat_id=call.message.chat.id,
+                photo=item_url,
+                caption=view_text,
+                reply_markup=call.message.reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as inner_e:
+            print(f"Помилка виведення фото: {inner_e}")
 
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
