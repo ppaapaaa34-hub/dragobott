@@ -187,135 +187,6 @@ def handle_voice(message):
 
 
 # ===================================================================
-# 👑 РОЗДІЛ 5: КАСТОМІЗАЦІЯ ТА ВІП-НАЛАШТУВАННЯ
-# ===================================================================
-
-PRICES = {
-    "title": 50000,    # Ціна зміни титулу
-    "nick": 30000,     # Ціна зміни ніку
-    "photo": 100000,   # Ціна зміни аватарки
-    "reorder": 15000   # Ціна пересортування
-}
-
-# 1. 🏷 ЗМІНА ТИТУЛУ (Припис у профілі)
-@bot.message_handler(commands=['set_title', 'титул'])
-def set_custom_title(message):
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-    
-    if len(args) < 2:
-        bot.reply_to(message, f"❌ Вкажи новий титул!\nПриклад: `/титул Король Оболоні`\nВартість: <b>{PRICES['title']} грн</b>.", parse_mode="HTML")
-        return
-
-    new_title = args[1][:30] # Обмеження 30 символів
-    balance = get_user_balance(user_id) # Твоя функція отримання балансу
-
-    if balance < PRICES['title']:
-        bot.reply_to(message, f"💸 Нестача бабок! Зміна титулу коштує <b>{PRICES['title']} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['title'])
-    update_user_field(user_id, "custom_title", new_title) # Функція опису поля в БД
-    bot.reply_to(message, f"😎 База прийняла! Твій новий титул: <b>{new_title}</b>", parse_mode="HTML")
-
-
-# 2. 📛 ЗМІНА ІМЕНІ / НІКУ У ПРОФІЛІ
-@bot.message_handler(commands=['set_nick', 'нік'])
-def set_custom_nick(message):
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2:
-        bot.reply_to(message, f"❌ Вкажи новий нік!\nПриклад: `/нік Лютий`\nВартість: <b>{PRICES['nick']} грн</b>.", parse_mode="HTML")
-        return
-
-    new_nick = args[1][:25]
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['nick']:
-        bot.reply_to(message, f"💸 Не вистачає кешу! Зміна ніку коштує <b>{PRICES['nick']} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['nick'])
-    update_user_field(user_id, "custom_nick", new_nick)
-    bot.reply_to(message, f"👌 Відтепер ти для мене — <b>{new_nick}</b>!", parse_mode="HTML")
-
-
-# 3. 🖼 ВСТАНОВЛЕННЯ КАСТОМНОЇ АВАТАРКИ ПРОФІЛЮ
-@bot.message_handler(commands=['set_photo', 'фото'])
-def set_custom_photo(message):
-    user_id = message.from_user.id
-    
-    # Перевірка: або реплай на фото, або посилання в тексті
-    photo_url = None
-    if message.reply_to_message and message.reply_to_message.photo:
-        photo_url = message.reply_to_message.photo[-1].file_id
-    else:
-        args = message.text.split(maxsplit=1)
-        if len(args) > 1:
-            photo_url = args[1]
-
-    if not photo_url:
-        bot.reply_to(message, f"❌ Зроби реплай на фото з командою `/фото` або дай посилання на картинку!\nВартість: <b>{PRICES['photo']} грн</b>.", parse_mode="HTML")
-        return
-
-    balance = get_user_balance(user_id)
-    if balance < PRICES['photo']:
-        bot.reply_to(message, f"💸 Елітний атрибут! Зміна фото коштує <b>{PRICES['photo']} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['photo'])
-    update_user_field(user_id, "custom_photo", photo_url)
-    bot.reply_to(message, "📸 Фото профілю успішно оновлено!", parse_mode="HTML")
-
-
-# 4. 🏎 СОРТУВАННЯ КУПЛЕНИХ ПРЕДМЕТІВ (Майна)
-@bot.message_handler(commands=['sort_items', 'порядок_майна'])
-def sort_items(message):
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2:
-        bot.reply_to(message, f"⚙️ Вкажи коди предметів через пробіл у бажаному порядку!\nПриклад: `/порядок_майна bmw villa rolex`\nВартість послуги: <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
-        return
-
-    new_order = args[1].lower().split()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['reorder']:
-        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
-        return
-
-    # Тут зберігаємо новий порядок у вигляді JSON або рядка "bmw,villa,rolex"
-    update_user_balance(user_id, -PRICES['reorder'])
-    update_user_field(user_id, "inventory_order", ",".join(new_order))
-    bot.reply_to(message, "📦 Порядок речей у гаражі/маєтку переставлено!", parse_mode="HTML")
-
-
-# 5. 🏢 СОРТУВАННЯ КУПЛЕНИХ БІЗНЕСІВ
-@bot.message_handler(commands=['sort_biz', 'порядок_бізнесів'])
-def sort_businesses(message):
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2:
-        bot.reply_to(message, f"⚙️ Вкажи коди бізнесів через пробіл у бажаному порядку!\nПриклад: `/порядок_бізнесів kebab lavka hotel`\nВартість перестановки: <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
-        return
-
-    new_order = args[1].lower().split()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['reorder']:
-        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['reorder'])
-    update_user_field(user_id, "biz_order", ",".join(new_order))
-    bot.reply_to(message, "💼 Порядок бізнесів у каталозі успішно змінено!", parse_mode="HTML")
-
-
-
-# ===================================================================
 # 👑 КАРТКА ПРОФІЛЮ ТА КАСТОМІЗАЦІЯ (ПОВНИЙ ОБ'ЄДНАНИЙ МОДУЛЬ)
 # ===================================================================
 
@@ -357,20 +228,21 @@ def update_user_field(user_id, field_name, value):
 
 
 # -------------------------------------------------------------------
-# 🏷 2. КОМАНДИ НАЛАШТУВАННЯ КАСТОМІЗАЦІЇ
+# 🏷 2. КОМАНДИ НАЛАШТУВАННЯ КАСТОМІЗАЦІЇ (З ВИПРАВЛЕНИМИ РЕГЕКСАМИ)
 # -------------------------------------------------------------------
 
-@bot.message_handler(commands=['set_title', 'титул'])
+# 1. 🏷 ЗМІНА ТИТУЛУ (/титул Король Оболоні)
+@bot.message_handler(regexp=r'^(?i)[/!]?(?:титул|set_title)(?:\s+|$)')
 def set_custom_title(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     args = message.text.split(maxsplit=1)
     
-    if len(args) < 2:
-        bot.reply_to(message, f"❌ Вкажи новий титул!\nПриклад: `/титул Король Оболоні`\nВартість: <b>{PRICES['title']:,} грн</b>.", parse_mode="HTML")
+    if len(args) < 2 or not args[1].strip():
+        bot.reply_to(message, f"❌ Вкажи новий титул!\nПриклад: <code>/титул Король Оболоні</code>\nВартість: <b>{PRICES['title']:,} грн</b>.", parse_mode="HTML")
         return
 
-    new_title = args[1][:30]
+    new_title = args[1][:30].strip()
     balance = get_user_balance(user_id)
 
     if balance < PRICES['title']:
@@ -382,17 +254,18 @@ def set_custom_title(message):
     bot.reply_to(message, f"😎 База прийняла! Твій новий титул: <b>{new_title}</b>", parse_mode="HTML")
 
 
-@bot.message_handler(commands=['set_nick', 'нік'])
+# 2. 📛 ЗМІНА ІМЕНІ / НІКУ (/нік Лютий)
+@bot.message_handler(regexp=r'^(?i)[/!]?(?:нік|set_nick)(?:\s+|$)')
 def set_custom_nick(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     args = message.text.split(maxsplit=1)
 
-    if len(args) < 2:
-        bot.reply_to(message, f"❌ Вкажи новий нік!\nПриклад: `/нік Лютий`\nВартість: <b>{PRICES['nick']:,} грн</b>.", parse_mode="HTML")
+    if len(args) < 2 or not args[1].strip():
+        bot.reply_to(message, f"❌ Вкажи новий нік!\nПриклад: <code>/нік Лютий</code>\nВартість: <b>{PRICES['nick']:,} грн</b>.", parse_mode="HTML")
         return
 
-    new_nick = args[1][:25]
+    new_nick = args[1][:25].strip()
     balance = get_user_balance(user_id)
 
     if balance < PRICES['nick']:
@@ -404,21 +277,29 @@ def set_custom_nick(message):
     bot.reply_to(message, f"👌 Відтепер у базі ти — <b>{new_nick}</b>!", parse_mode="HTML")
 
 
-@bot.message_handler(commands=['set_photo', 'фото'])
+# 3. 🖼 ВСТАНОВЛЕННЯ АВАТАРКИ (/фото або реплай з /фото)
+@bot.message_handler(func=lambda m: (m.text and any(m.text.lower().startswith(x) for x in ['/фото', 'фото', '/set_photo'])) or 
+                                  (m.caption and any(m.caption.lower().startswith(x) for x in ['/фото', 'фото', '/set_photo'])))
 def set_custom_photo(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     
     photo_url = None
-    if message.reply_to_message and message.reply_to_message.photo:
+    # 1. Якщо це фото з підписом
+    if message.photo:
+        photo_url = message.photo[-1].file_id
+    # 2. Якщо це реплай на фото
+    elif message.reply_to_message and message.reply_to_message.photo:
         photo_url = message.reply_to_message.photo[-1].file_id
+    # 3. Якщо надали посилання в тексті
     else:
-        args = message.text.split(maxsplit=1)
+        text_content = message.text or message.caption or ""
+        args = text_content.split(maxsplit=1)
         if len(args) > 1:
-            photo_url = args[1]
+            photo_url = args[1].strip()
 
     if not photo_url:
-        bot.reply_to(message, f"❌ Зроби реплай на фото з командою `/фото` або надай посилання на картинку!\nВартість: <b>{PRICES['photo']:,} грн</b>.", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Зроби реплай на фото з командою <code>/фото</code> або надішли картинку з підписом <code>/фото</code>!\nВартість: <b>{PRICES['photo']:,} грн</b>.", parse_mode="HTML")
         return
 
     balance = get_user_balance(user_id)
@@ -431,14 +312,15 @@ def set_custom_photo(message):
     bot.reply_to(message, "📸 Фото профілю успішно оновлено!", parse_mode="HTML")
 
 
-@bot.message_handler(commands=['sort_items', 'порядок_майна'])
+# 4. 🏎 СОРТУВАННЯ МАЙНА (/порядок_майна bmw villa)
+@bot.message_handler(regexp=r'^(?i)[/!]?(?:порядок_майна|sort_items)(?:\s+|$)')
 def sort_items(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     args = message.text.split(maxsplit=1)
 
-    if len(args) < 2:
-        bot.reply_to(message, f"⚙️ Вкажи коди предметів через пробіл у бажаному порядку!\nПриклад: `/порядок_майна bmw villa rolex`\nВартість послуги: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
+    if len(args) < 2 or not args[1].strip():
+        bot.reply_to(message, f"⚙️ Вкажи коди предметів через пробіл!\nПриклад: <code>/порядок_майна bmw villa rolex</code>\nВартість послуги: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
         return
 
     new_order = args[1].lower().split()
@@ -453,14 +335,15 @@ def sort_items(message):
     bot.reply_to(message, "📦 Порядок речей у профілі успішно відсортовано!", parse_mode="HTML")
 
 
-@bot.message_handler(commands=['sort_biz', 'порядок_бізнесів'])
+# 5. 🏢 СОРТУВАННЯ БІЗНЕСІВ (/порядок_бізнесів kebab lavka)
+@bot.message_handler(regexp=r'^(?i)[/!]?(?:порядок_бізнесів|sort_biz)(?:\s+|$)')
 def sort_businesses(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     args = message.text.split(maxsplit=1)
 
-    if len(args) < 2:
-        bot.reply_to(message, f"⚙️ Вкажи коди бізнесів через пробіл у бажаному порядку!\nПриклад: `/порядок_бізнесів kebab lavka hotel`\nВартість перестановки: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
+    if len(args) < 2 or not args[1].strip():
+        bot.reply_to(message, f"⚙️ Вкажи коди бізнесів через пробіл!\nПриклад: <code>/порядок_бізнесів kebab lavka hotel</code>\nВартість перестановки: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
         return
 
     new_order = args[1].lower().split()
@@ -479,7 +362,7 @@ def sort_businesses(message):
 # 🪪 3. ГОЛОВНА ВІДОБРАЖУВАЛЬНА ФУНКЦІЯ ПАСПОРТА/ПРОФІЛЮ
 # -------------------------------------------------------------------
 
-@bot.message_handler(commands=['profile', 'профіль'])
+@bot.message_handler(regexp=r'^(?i)[/!]?(?:профіль|profile)(?:\s+|$)')
 def show_user_profile(message):
     if is_user_banned(message.from_user.id): return
 
@@ -628,16 +511,19 @@ def show_user_profile(message):
             f"🚬 <i>База даних СБУ оновлена. Перевірку пройдено.</i>"
         )
 
-        # 📸 ВИЗНАЧЕННЯ АВАТАРКИ ПРОФІЛЮ (Пріоритет: Кастомне фото -> Telegram Аватарка -> Заглушка)
+        # 📸 ВИЗНАЧЕННЯ АВАТАРКИ ПРОФІЛЮ
         final_photo = None
 
         if custom_photo:
             final_photo = custom_photo
         else:
-            photos = bot.get_user_profile_photos(user.id, limit=1)
-            if photos.total_count > 0:
-                final_photo = photos.photos[0][-1].file_id
-            else:
+            try:
+                photos = bot.get_user_profile_photos(user.id, limit=1)
+                if photos.total_count > 0:
+                    final_photo = photos.photos[0][-1].file_id
+                else:
+                    final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
+            except Exception:
                 final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
 
         # Відправка зібраного профілю
