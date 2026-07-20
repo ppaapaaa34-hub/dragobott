@@ -1078,6 +1078,116 @@ def generate_inventory_ai_image(bought_codes):
         
     return None
 
+import random
+
+# ===================================================================
+# 🎭 МОДУЛЬ РП-КОМАНД З КАРТИНКАМИ / ГІФКАМИ
+# ===================================================================
+
+RP_COMMANDS = {
+    'обняти': {
+        'emoji': '🤗',
+        'phrases': [
+            "міцно обіймає та не хоче відпускати",
+            "тепло обіймає за плечі",
+            "пригортає до себе"
+        ],
+        'gifs': [
+            "https://media.tenor.com/kCZ3To2VnigAAAAC/hug-anime.gif",
+            "https://media.tenor.com/3mr1P3233pAAAAAC/hug-anime.gif",
+            "https://media.tenor.com/sX_20PqfV4AAAAAC/anime-hug.gif"
+        ]
+    },
+    'поцілувати': {
+        'emoji': '💋',
+        'phrases': [
+            "ніжно цілує у щоку",
+            "палко цілує в губи",
+            "залишає солодкий поцілунок"
+        ],
+        'gifs': [
+            "https://media.tenor.com/dn_KuO3x1L4AAAAC/anime-kiss.gif",
+            "https://media.tenor.com/v42R0fhS30AAAAAC/kiss-in-the-mouth-anime.gif",
+            "https://media.tenor.com/F0_S8L4Oq_AAAAAC/kiss-anime.gif"
+        ]
+    },
+    'вдарити': {
+        'emoji': '👊',
+        'phrases': [
+            "дає потужного ляща",
+            "записує хук справа",
+            "дає легкого штовхана"
+        ],
+        'gifs': [
+            "https://media.tenor.com/eU13A92S4yAAAAAC/anime-slap.gif",
+            "https://media.tenor.com/4g_f1_32x3IAAAAC/anime-punch.gif",
+            "https://media.tenor.com/K_r_a8S_U48AAAAC/hit-anime.gif"
+        ]
+    },
+    'похвалити': {
+        'emoji': '👏',
+        'phrases': [
+            "хвалить за чудову роботу",
+            "підбадьорливо ляскає по плечу",
+            "каже, що це найкращий результат"
+        ],
+        'gifs': [
+            "https://media.tenor.com/N41L942E27AAAAAC/pat-head-anime.gif",
+            "https://media.tenor.com/E62wP_3x_P0AAAAC/anime-pat.gif",
+            "https://media.tenor.com/Y7B14xN7mB4AAAAC/head-pat-anime.gif"
+        ]
+    }
+}
+
+def get_user_mention(user):
+    name = user.first_name.replace('<', '&lt;').replace('>', '&gt;')
+    return f'<a href="tg://user?id={user.id}">{name}</a>'
+
+@bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().strip('/#!.') in RP_COMMANDS else False)
+def handle_rp_action(message):
+    if is_user_banned(message.from_user.id): return
+    
+    cmd = message.text.split()[0].lower().strip('/#!.')
+    rp_data = RP_COMMANDS.get(cmd)
+    
+    if not rp_data: return
+
+    sender = message.from_user
+    sender_mention = get_user_mention(sender)
+    
+    emoji = rp_data['emoji']
+    random_phrase = random.choice(rp_data['phrases'])
+    random_gif = random.choice(rp_data['gifs'])
+
+    # Якщо робиться реплай на повідомлення
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+        
+        if target.id == sender.id:
+            bot.reply_to(message, "🤡 Навіщо робити це із самим собою? Знайди когось іншого!", parse_mode="HTML")
+            return
+            
+        target_mention = get_user_mention(target)
+        caption_text = f"{emoji} {sender_mention} {random_phrase} {target_mention}!"
+        
+        # Відправляємо гіфку з підписом
+        try:
+            bot.send_animation(
+                message.chat.id, 
+                animation=random_gif, 
+                caption=caption_text, 
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            # Якщо раптом гіфка не завантажилася — відправляємо просто текст
+            bot.send_message(message.chat.id, caption_text, parse_mode="HTML")
+            
+    else:
+        bot.reply_to(message, "⚠️ Зроби <b>реплай</b> на повідомлення того, до кого хочеш застосувати дію!", parse_mode="HTML")
+    
+
+
+
 # ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
