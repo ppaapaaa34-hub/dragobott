@@ -26,12 +26,12 @@ def get_db_connection():
 # 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
 
-# Створення таблиць при запуску
+# Створення та авто-оновлення таблиць при запуску
 try:
     with db_lock:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # Таблиця статистики (додано balance)
+            # 1. Таблиця статистики
             cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
                 user_id BIGINT PRIMARY KEY,
                 name TEXT,
@@ -40,10 +40,16 @@ try:
                 in_chat BOOLEAN DEFAULT TRUE,
                 balance BIGINT DEFAULT 0
             )""")
-            # Безпечно додаємо колонку balance, якщо таблиця вже існує
-            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
             
-            # Таблиця майна (Монополія)
+            # 🛠 ДОДАЄМО ВСІ НЕОБХІДНІ КОЛОНКИ ДЛЯ КАСТОМІЗАЦІЇ ТА ПРОФІЛЮ
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_nick VARCHAR(50) DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_title VARCHAR(50) DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_photo TEXT DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS inventory_order TEXT DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS biz_order TEXT DEFAULT NULL;")
+            
+            # 2. Таблиця майна (Монополія)
             cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT,
@@ -52,18 +58,32 @@ try:
                 item_category TEXT
             )""")
             
-            # Таблиця шлюбів
+            # 3. Таблиця бізнесів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS user_businesses (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                biz_code TEXT
+            )""")
+
+            # 4. Таблиця шлюбів
             cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
                 user1_id BIGINT,
                 user2_id BIGINT,
                 UNIQUE(user1_id),
                 UNIQUE(user2_id)
             )""")
+
+            # 5. Таблиця банів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS banned_users (
+                user_id BIGINT PRIMARY KEY
+            )""")
+
         conn.commit()
         conn.close()
+    print("✅ База даних успішно оновлена та готова до роботи!")
 except Exception as e:
-    print(f"Помилка створення таблиць: {e}")
- 
+    print(f"Помилка створення/оновлення таблиць: {e}")
+
 # ==================== НАЛАШТУВАННЯ ====================
 API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
@@ -106,7 +126,7 @@ model = genai.GenerativeModel(
         "Пиши коротко і ясно!, твій создатель СБУ, якщо ти пишеш досє ілі новини відповідай повністю"
     )
 )
- 
+
 # Пам'ять чатів
 bot_chats = {}
 
@@ -140,7 +160,6 @@ def is_user_banned(user_id):
             return result
     except Exception:
         return False
-
 
 # ===================================================================
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
