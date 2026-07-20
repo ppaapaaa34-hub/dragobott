@@ -187,6 +187,135 @@ def handle_voice(message):
 
 
 # ===================================================================
+# 👑 РОЗДІЛ 5: КАСТОМІЗАЦІЯ ТА ВІП-НАЛАШТУВАННЯ
+# ===================================================================
+
+PRICES = {
+    "title": 50000,    # Ціна зміни титулу
+    "nick": 30000,     # Ціна зміни ніку
+    "photo": 100000,   # Ціна зміни аватарки
+    "reorder": 15000   # Ціна пересортування
+}
+
+# 1. 🏷 ЗМІНА ТИТУЛУ (Припис у профілі)
+@bot.message_handler(commands=['set_title', 'титул'])
+def set_custom_title(message):
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+    
+    if len(args) < 2:
+        bot.reply_to(message, f"❌ Вкажи новий титул!\nПриклад: `/титул Король Оболоні`\nВартість: <b>{PRICES['title']} грн</b>.", parse_mode="HTML")
+        return
+
+    new_title = args[1][:30] # Обмеження 30 символів
+    balance = get_user_balance(user_id) # Твоя функція отримання балансу
+
+    if balance < PRICES['title']:
+        bot.reply_to(message, f"💸 Нестача бабок! Зміна титулу коштує <b>{PRICES['title']} грн</b>.", parse_mode="HTML")
+        return
+
+    update_user_balance(user_id, -PRICES['title'])
+    update_user_field(user_id, "custom_title", new_title) # Функція опису поля в БД
+    bot.reply_to(message, f"😎 База прийняла! Твій новий титул: <b>{new_title}</b>", parse_mode="HTML")
+
+
+# 2. 📛 ЗМІНА ІМЕНІ / НІКУ У ПРОФІЛІ
+@bot.message_handler(commands=['set_nick', 'нік'])
+def set_custom_nick(message):
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        bot.reply_to(message, f"❌ Вкажи новий нік!\nПриклад: `/нік Лютий`\nВартість: <b>{PRICES['nick']} грн</b>.", parse_mode="HTML")
+        return
+
+    new_nick = args[1][:25]
+    balance = get_user_balance(user_id)
+
+    if balance < PRICES['nick']:
+        bot.reply_to(message, f"💸 Не вистачає кешу! Зміна ніку коштує <b>{PRICES['nick']} грн</b>.", parse_mode="HTML")
+        return
+
+    update_user_balance(user_id, -PRICES['nick'])
+    update_user_field(user_id, "custom_nick", new_nick)
+    bot.reply_to(message, f"👌 Відтепер ти для мене — <b>{new_nick}</b>!", parse_mode="HTML")
+
+
+# 3. 🖼 ВСТАНОВЛЕННЯ КАСТОМНОЇ АВАТАРКИ ПРОФІЛЮ
+@bot.message_handler(commands=['set_photo', 'фото'])
+def set_custom_photo(message):
+    user_id = message.from_user.id
+    
+    # Перевірка: або реплай на фото, або посилання в тексті
+    photo_url = None
+    if message.reply_to_message and message.reply_to_message.photo:
+        photo_url = message.reply_to_message.photo[-1].file_id
+    else:
+        args = message.text.split(maxsplit=1)
+        if len(args) > 1:
+            photo_url = args[1]
+
+    if not photo_url:
+        bot.reply_to(message, f"❌ Зроби реплай на фото з командою `/фото` або дай посилання на картинку!\nВартість: <b>{PRICES['photo']} грн</b>.", parse_mode="HTML")
+        return
+
+    balance = get_user_balance(user_id)
+    if balance < PRICES['photo']:
+        bot.reply_to(message, f"💸 Елітний атрибут! Зміна фото коштує <b>{PRICES['photo']} грн</b>.", parse_mode="HTML")
+        return
+
+    update_user_balance(user_id, -PRICES['photo'])
+    update_user_field(user_id, "custom_photo", photo_url)
+    bot.reply_to(message, "📸 Фото профілю успішно оновлено!", parse_mode="HTML")
+
+
+# 4. 🏎 СОРТУВАННЯ КУПЛЕНИХ ПРЕДМЕТІВ (Майна)
+@bot.message_handler(commands=['sort_items', 'порядок_майна'])
+def sort_items(message):
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        bot.reply_to(message, f"⚙️ Вкажи коди предметів через пробіл у бажаному порядку!\nПриклад: `/порядок_майна bmw villa rolex`\nВартість послуги: <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
+        return
+
+    new_order = args[1].lower().split()
+    balance = get_user_balance(user_id)
+
+    if balance < PRICES['reorder']:
+        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
+        return
+
+    # Тут зберігаємо новий порядок у вигляді JSON або рядка "bmw,villa,rolex"
+    update_user_balance(user_id, -PRICES['reorder'])
+    update_user_field(user_id, "inventory_order", ",".join(new_order))
+    bot.reply_to(message, "📦 Порядок речей у гаражі/маєтку переставлено!", parse_mode="HTML")
+
+
+# 5. 🏢 СОРТУВАННЯ КУПЛЕНИХ БІЗНЕСІВ
+@bot.message_handler(commands=['sort_biz', 'порядок_бізнесів'])
+def sort_businesses(message):
+    user_id = message.from_user.id
+    args = message.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        bot.reply_to(message, f"⚙️ Вкажи коди бізнесів через пробіл у бажаному порядку!\nПриклад: `/порядок_бізнесів kebab lavka hotel`\nВартість перестановки: <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
+        return
+
+    new_order = args[1].lower().split()
+    balance = get_user_balance(user_id)
+
+    if balance < PRICES['reorder']:
+        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']} грн</b>.", parse_mode="HTML")
+        return
+
+    update_user_balance(user_id, -PRICES['reorder'])
+    update_user_field(user_id, "biz_order", ",".join(new_order))
+    bot.reply_to(message, "💼 Порядок бізнесів у каталозі успішно змінено!", parse_mode="HTML")
+
+
+
+# ===================================================================
 # 🪪 КРАСИВИЙ ПОВНИЙ ПРОФІЛЬ КОРИСТУВАЧА (/profile, /профіль)
 # ===================================================================
 @bot.message_handler(commands=['profile', 'профіль'])
@@ -1256,6 +1385,13 @@ def show_all_commands(message):
 • /sleepers або /сонні — Викликати на килим тих, хто спить і нічого не пише.
 • /dossier або /досьє — <i>(тільки реплай)</i> Скласти секретне кримінальне досьє на юзера.
 • /news або /новини — Гарячий випуск мемних новин з останніх переписок чату.
+
+🎨 VIP & Кастомізація:
+• /титул [текст] — Встановити унікальний статус у профілі (50 000 грн).
+• /нік [ім'я] — Змінити ім'я, як тебе називає Драго (30 000 грн).
+• /фото (у відповідь на фотку) — Поставити власну аватарку профілю (100 000 грн).
+• /порядок_майна [код1 код2...] — Змінити порядок речей у списку (15 000 грн).
+• /порядок_бізнесів [код1 код2...] — Відсортувати свої бізнеси (15 000 грн).
 
 🏢 <b>Бізнес-Імперія (Пасивний дохід):</b>
 • /biz або /бізнеси — Каталог бізнесів та огляд твоєї фінансової імперії.
