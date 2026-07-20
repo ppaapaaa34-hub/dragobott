@@ -1035,14 +1035,14 @@ def sell_business(message):
 
 
 # ===================================================================
-# 🎭 РП-КОМАНДИ З АВТОМАТИЧНОЮ AI-ГЕНЕРАЦІЄЮ КАРТИНОК
+# 🎭 МОДУЛЬ РП-КОМАНД (AI ГЕНЕРАЦІЯ КАРТИНОК БЕЗ СЛЕШІВ)
 # ===================================================================
 
 RP_DATA = {
     'обняти': {
         'emoji': '🤗',
         'phrase': 'міцно обіймає',
-        'prompt': 'anime hug two friends, wholesome, detailed art, cute, high quality'
+        'prompt': 'anime hug two friends, wholesome, detailed art, cute, emotional'
     },
     'поцілувати': {
         'emoji': '💋',
@@ -1058,6 +1058,31 @@ RP_DATA = {
         'emoji': '👏',
         'phrase': 'гладить по голові та хвалить',
         'prompt': 'anime headpat wholesome, cute smile, gentle, detailed art'
+    },
+    'укусити': {
+        'emoji': '🦷',
+        'phrase': 'підступно кусає',
+        'prompt': 'anime playful biting, cute, funny reaction, detailed art'
+    },
+    'пнути': {
+        'emoji': '🦵',
+        'phrase': 'дає чарівного пенделя',
+        'prompt': 'anime kick funny scene, comical, dynamic pose, high quality'
+    },
+    'погладити': {
+        'emoji': '🫳',
+        'phrase': 'лагідно гладить',
+        'prompt': 'anime head pat, wholesome, cute smile, gentle anime style'
+    },
+    'трахнути': {
+        'emoji': '🔥',
+        'phrase': 'влаштовує жорстку прочуханку',
+        'prompt': 'anime energetic intense battle reaction, dramatic face, high energy'
+    },
+    'виїбати': {
+        'emoji': '😈',
+        'phrase': 'розносить у пух і прах',
+        'prompt': 'anime dominant powerful pose, fierce look, dark aura, epic detailed'
     }
 }
 
@@ -1065,23 +1090,25 @@ def get_user_mention(user):
     name = user.first_name.replace('<', '&lt;').replace('>', '&gt;')
     return f'<a href="tg://user?id={user.id}">{name}</a>'
 
-# Реагує на звичайні слова "обняти", "поцілувати" тощо (як із /!#, так і без них)
+# Реагує на слова зі словника без обов'язкового використання слешу
 @bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().lstrip('/#!.') in RP_DATA else False)
 def handle_rp_ai_action(message):
-    if is_user_banned(message.from_user.id): return
-    
+    if is_user_banned(message.from_user.id):
+        return
+
     cmd = message.text.split()[0].lower().lstrip('/#!.')
     data = RP_DATA.get(cmd)
-    if not data: return
+    if not data:
+        return
 
-    # Перевірка на реплай
+    # Перевіряємо наявність реплаю
     if not message.reply_to_message:
         bot.reply_to(message, "⚠️ Зроби <b>реплай</b> на повідомлення того, до кого хочеш застосувати дію!", parse_mode="HTML")
         return
 
     sender = message.from_user
     target = message.reply_to_message.from_user
-    
+
     if sender.id == target.id:
         bot.reply_to(message, "🤡 Навіщо робити це із самим собою? Знайди когось іншого!", parse_mode="HTML")
         return
@@ -1089,34 +1116,59 @@ def handle_rp_ai_action(message):
     sender_mention = get_user_mention(sender)
     target_mention = get_user_mention(target)
 
-    # Сповіщаємо чат про генерацію
-    status_msg = bot.reply_to(message, "🎨 <i>Малюю картинку... Зачекай секунду!</i>", parse_mode="HTML")
+    status_msg = bot.reply_to(message, "⏳ Драго малює РП-момент... Зачекай пару секунд.")
 
     try:
-        # Генеруємо унікальне посилання на зображення через AI
-        encoded_prompt = urllib.parse.quote(data['prompt'])
-        seed = random.randint(1, 999999) # Випадкове зерно для нової картинки
-        
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=800&height=600&nologo=true&seed={seed}"
+        # Формуємо URL запиту
+        encoded_prompt = requests.utils.quote(data['prompt'])
+        seed = random.randint(1, 999999)
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
 
-        caption_text = f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!"
+        response = requests.get(image_url, timeout=120)
 
-        # Відправляємо згенеровану картинку
-        bot.send_photo(
-            message.chat.id,
-            photo=image_url,
-            caption=caption_text,
-            parse_mode="HTML"
-        )
-        # Видаляємо статус «Малюю картинку...»
-        bot.delete_message(message.chat.id, status_msg.message_id)
+        if response.status_code == 200:
+            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
+                raise Exception("Сервер ШІ перевантажений або повернув помилку ліміту.")
+
+            # Обробка через PIL (як у твоїй команді /generate)
+            img = Image.open(io.BytesIO(response.content))
+            img = img.convert("RGB")
+            
+            bio = io.BytesIO()
+            bio.name = 'drago_rp.jpg'
+            img.save(bio, 'JPEG', progressive=False, quality=95)
+            bio.seek(0)
+
+            caption_text = f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!"
+
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=bio,
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id
+            )
+
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+
+        else:
+            raise Exception(f"Сервер повернув код: {response.status_code}")
 
     except Exception as e:
-        print(f"Помилка генерації зображення: {e}")
-        # Якщо генерація зламалася — просто надсилаємо текст
-        bot.edit_message_text(f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!", message.chat.id, status_msg.message_id, parse_mode="HTML")
-    
-
+        print(f"Помилка РП-генерації: {e}")
+        caption_text = f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!"
+        try:
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=status_msg.message_id,
+                text=caption_text,
+                parse_mode="HTML"
+            )
+        except Exception:
+            bot.reply_to(message, caption_text, parse_mode="HTML")
 
 
 # ===================================================================
