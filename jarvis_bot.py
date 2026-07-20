@@ -299,6 +299,10 @@ def show_user_profile(message):
         bot.reply_to(message, "❌ Не вдалося згенерувати твій паспорт активів. База даних підвисла.")
 
 
+import os
+import io
+from PIL import Image
+
 # ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
 # ===================================================================
@@ -317,19 +321,54 @@ SHOP_ITEMS = {
     "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс"}
 }
 
-# Словник з прямими посиланнями на красиві зображення товарів
-ITEM_IMAGES = {
-    "iphone": "https://i.ibb.co/vxs4yRC/iphone16.jpg",
-    "pc": "https://i.ibb.co/N6T4Xf0/rtx5090.jpg",
-    "capybara": "https://i.ibb.co/r2dtMcy/capybara.jpg",
-    "tiger": "https://i.ibb.co/3M3zH1V/tiger.jpg",
-    "jiga": "https://i.ibb.co/L6Qx0g2/jiga.jpg",
-    "bmw": "https://i.ibb.co/zH9XmGz/bmwm5.jpg",
-    "porsche": "https://i.ibb.co/QpHbDY4/porsche911.jpg",
-    "flat": "https://i.ibb.co/kQv1qVn/flat.jpg",
-    "villa": "https://i.ibb.co/C2n1hYn/villa.jpg",
-    "yacht": "https://i.ibb.co/qy0M8z2/yacht.jpg"
-}
+# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ КОЛАЖУ МАЙНА
+def generate_inventory_collage(item_codes):
+    """Генерує сітку з картинок товарів, що є в наявності"""
+    tile_size = 200  # Розмір кожної картинки в пікселях
+    images = []
+
+    # Перевіряємо та завантажуємо наявні зображення з папки images/
+    for code in item_codes:
+        # Шукаємо файл з розширенням .jpg або .png
+        img_path_jpg = f"images/{code}.jpg"
+        img_path_png = f"images/{code}.png"
+        
+        path_to_open = None
+        if os.path.exists(img_path_jpg):
+            path_to_open = img_path_jpg
+        elif os.path.exists(img_path_png):
+            path_to_open = img_path_png
+
+        if path_to_open:
+            try:
+                img = Image.open(path_to_open).convert("RGB")
+                img = img.resize((tile_size, tile_size))
+                images.append(img)
+            except Exception as e:
+                print(f"Помилка відкриття фото {code}: {e}")
+
+    if not images:
+        return None
+
+    # Розраховуємо кількість колонок і рядків (максимум 4 в ряд)
+    cols = min(len(images), 4)
+    rows = (len(images) + cols - 1) // cols
+
+    # Створюємо темне полотно під колаж
+    collage = Image.new('RGB', (cols * tile_size, rows * tile_size), color=(25, 25, 25))
+
+    # Розміщуємо кожне фото в сітці
+    for index, img in enumerate(images):
+        x = (index % cols) * tile_size
+        y = (index // cols) * tile_size
+        collage.paste(img, (x, y))
+
+    # Зберігаємо картинку в оперативну пам'ять (без створення зайвих файлів на диску)
+    img_byte_arr = io.BytesIO()
+    collage.save(img_byte_arr, format='JPEG')
+    img_byte_arr.seek(0)
+
+    return img_byte_arr
 
 # 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
 @bot.message_handler(commands=['shop', 'магазин'])
@@ -412,7 +451,7 @@ def buy_item(message):
         print(f"Помилка купівлі: {e}")
         bot.reply_to(message, "❌ Щось термінал барахлить, база даних відхилила транзакцію.")
 
-# 💼 👑 ІНТЕРАКТИВНЕ МАЙНО ТА БАЛАНС З КНОПКАМИ (/money, /balance, /майно, /гаманець, /баланс)
+# 💼 👑 МАЙНО З ГЕНЕРАЦІЄЮ КОЛАЖУ (/money, /balance, /майно, /гаманець, /баланс)
 @bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
 def show_inventory(message):
     if is_user_banned(message.from_user.id): return
@@ -443,8 +482,6 @@ def show_inventory(message):
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>",
         ]
         
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        
         if not items:
             response.append(f"────────────────────")
             response.append("🎰 <b>Статус:</b> <i>Повний голяк. Тільки шкарпетки й телефон, з якого ти пишеш. Бігом на заробітки! 🏃‍♂️</i>")
@@ -452,11 +489,12 @@ def show_inventory(message):
         else:
             total_property_value = 0
             item_counts = {}
-            unique_items = {} # Фільтруємо унікальні речі, щоб кнопки не дублювалися
+            unique_codes = []
             
             for code, name in items:
                 item_counts[name] = item_counts.get(name, 0) + 1
-                unique_items[code] = name
+                if code not in unique_codes:
+                    unique_codes.append(code)
                 if code in SHOP_ITEMS:
                     total_property_value += SHOP_ITEMS[code]["price"]
             
@@ -467,96 +505,24 @@ def show_inventory(message):
             for name, count in item_counts.items():
                 count_str = f" <code>[x{count}]</code>" if count > 1 else ""
                 response.append(f" ╰┈➤ {name}{count_str}")
-                
-            response.append(f"────────────────────")
-            response.append("📸 <i>Натисни на кнопку нижче, щоб глянути фотографію свого майна!</i>")
             
-            # Динамічно генеруємо inline-кнопки перегляду фоток
-            for code, name in unique_items.items():
-                btn = types.InlineKeyboardButton(text=f"📷 {name}", callback_data=f"view_prop_{code}_{user_id}")
-                markup.add(btn)
-                
-            bot.reply_to(message, "\n".join(response), reply_markup=markup, parse_mode="HTML")
+            caption_text = "\n".join(response)
+
+            # Генеруємо єдиний колаж з майна
+            collage_photo = generate_inventory_collage(unique_codes)
+
+            if collage_photo:
+                # Якщо зображення успішно згенеровано — надсилаємо фото з підписом
+                bot.send_photo(message.chat.id, photo=collage_photo, caption=caption_text, parse_mode="HTML")
+            else:
+                # Якщо фотографій у папці images/ ще немає — надсилаємо звичайний текст
+                bot.reply_to(message, caption_text, parse_mode="HTML")
         
     except Exception as e:
         print(f"Помилка виведення майна: {e}")
         bot.reply_to(message, "❌ Не вдалося зчитати дані з твого гаманця.")
 
-# 🎮 ОБРОБНИК НАЖАТТЯ КНОПОК МАЙНА (ФОТОКАРТКИ)
-@bot.callback_query_handler(func=lambda call: call.data.startswith('view_prop_'))
-def handle_property_photo_view(call):
-    parts = call.data.split('_')
-    item_code = parts[2]
-    owner_id = int(parts[3])
-    
-    # Захист: тільки власник інвентаря може гортати свої фотки
-    if call.from_user.id != owner_id:
-        bot.answer_callback_query(call.id, "🛑 Це не твої кишені! Перевір своє майно командою /майно", show_alert=True)
-        return
-        
-    bot.answer_callback_query(call.id)
-    
-    if item_code not in ITEM_IMAGES or item_code not in SHOP_ITEMS:
-        return
-        
-    item_url = ITEM_IMAGES[item_code]
-    item_name = SHOP_ITEMS[item_code]["name"]
-    item_price = SHOP_ITEMS[item_code]["price"]
-    
-    view_text = (
-        f"📊 <b>ОГЛЯД МАЙНА: {item_name.upper()}</b>\n"
-        f"────────────────────\n"
-        f"💵 <b>Ринкова ціна:</b> <code>{item_price:,} грн</code>\n"
-        f"🗂 <b>Категорія:</b> {SHOP_ITEMS[item_code]['cat']}\n"
-        f"────────────────────\n"
-        f"↩️ <i>Щоб повернутися до повного списку активів, напиши /майно ще раз.</i>"
-    )
-    
-    # 1. Пробуємо оновити існуюче фото (якщо ми вже в режимі перегляду фото)
-    try:
-        media = types.InputMediaPhoto(media=item_url, caption=view_text, parse_mode="HTML")
-        bot.edit_message_media(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            media=media,
-            reply_markup=call.message.reply_markup
-        )
-        return
-    except Exception:
-        pass  # Якщо це було текстове повідомлення, переходимо до кроку 2
 
-    # 2. Якщо це було текстове повідомлення — надсилаємо нове фото ПЕРЕД тим, як видалити старе
-    try:
-        bot.send_photo(
-            chat_id=call.message.chat.id,
-            photo=item_url,
-            caption=view_text,
-            reply_markup=call.message.reply_markup,
-            parse_mode="HTML"
-        )
-        # Видаляємо старе текстове повідомлення ТІЛЬКИ після успішної відправки фото
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception as e:
-        print(f"Помилка відправки photo_url ({item_url}): {e}")
-        
-        # 3. Резервний варіант (FALLBACK): Якщо Telegram відхилив посилання на фото,
-        # ми НЕ видаляємо повідомлення, а просто оновлюємо текст і додаємо кнопку з посиланням на фото!
-        fallback_markup = types.InlineKeyboardMarkup()
-        
-        # Переносимо всі існуючі кнопки
-        if call.message.reply_markup:
-            fallback_markup.keyboard = call.message.reply_markup.keyboard
-            
-        # Додаємо кнопку безпосередньо на відкриття картинки в браузері/телеграмі
-        fallback_markup.add(types.InlineKeyboardButton(text="🔗 Відкрити фото товару", url=item_url))
-        
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"🖼 <b>[Завантаження фото]</b>\n\n{view_text}",
-            reply_markup=fallback_markup,
-            parse_mode="HTML"
-        )
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
