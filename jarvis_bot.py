@@ -344,14 +344,136 @@ def generate_inventory_ai_image(bought_codes):
     return None
 
 # ===================================================================
-# 💼 👑 КОМАНДА /майно З ГЕНЕРАЦІЄЮ СУЦІЛЬНОЇ КАРТИНКИ
+# 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
 # ===================================================================
-@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
-def show_inventory(message):
+
+# Асортимент ринку: [Код: {Назва, Ціна, Категорія, Опис для AI}]
+SHOP_ITEMS = {
+    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 60000, "cat": "Електроніка", "ai_desc": "latest iPhone 16 Pro Max"},
+    "pc": {"name": "🖥️ ПК на RTX 5090", "price": 150000, "cat": "Електроніка", "ai_desc": "futuristic gaming PC with glowing RTX 5090"},
+    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara"},
+    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic pet tiger"},
+    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки", "ai_desc": "classic VAZ 2107 car"},
+    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки", "ai_desc": "black sports car BMW M5 F90"},
+    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки", "ai_desc": "racing Porsche 911 GT3 RS"},
+    "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість", "ai_desc": "Soviet-style apartment building"},
+    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість", "ai_desc": "luxury modern mansion"},
+    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht"}
+}
+
+# 🛠️ АВТОМАТИЧНА ПЕРЕВІРКА ТА СТВОРЕННЯ ТАБЛИЦІ В БД
+def init_inventory_db():
+    """Створює таблицю inventory в PostgreSQL, якщо вона відсутня"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS inventory (
+                        id SERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        item_code VARCHAR(50) NOT NULL,
+                        item_name VARCHAR(150) NOT NULL,
+                        item_category VARCHAR(50),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"⚠️ Помилка ініціалізації таблиці inventory: {e}")
+
+# Викликаємо автоматичну перевірку при старті бота
+init_inventory_db()
+
+# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
+def generate_inventory_ai_image(bought_codes):
+    """Генерує арт з усім майном через Pollinations AI з захистом від помилок"""
+    if not bought_codes:
+        return None
+        
+    ai_descriptions = []
+    for code in bought_codes:
+        if code in SHOP_ITEMS and "ai_desc" in SHOP_ITEMS[code]:
+            ai_descriptions.append(SHOP_ITEMS[code]["ai_desc"])
+        elif code in SHOP_ITEMS:
+            ai_descriptions.append(SHOP_ITEMS[code]["name"])
+
+    if not ai_descriptions:
+        return None
+        
+    # Беремо до 5 головних речей для стабільної швидкості
+    items_prompt = ", ".join(ai_descriptions[:5])
+    full_prompt = (
+        f"A cinematic high quality photo showing a wealthy owner collection in one scene: {items_prompt}. "
+        f"4k resolution, ultra detailed, modern luxury style"
+    )
+    
+    try:
+        encoded_prompt = requests.utils.quote(full_prompt)
+        seed = random.randint(1, 999999)
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
+        
+        # Таймаут 30 секунд
+        response = requests.get(image_url, timeout=30)
+        
+        if response.status_code == 200:
+            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
+                return None
+                
+            img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            bio = io.BytesIO()
+            bio.name = 'inventory_art.jpg'
+            img.save(bio, 'JPEG', quality=90)
+            bio.seek(0)
+            return bio
+    except Exception as e:
+        print(f"⚠️ Помилка генерації AI майна: {e}")
+        
+    return None
+
+# 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
+@bot.message_handler(commands=['shop', 'магазин'])
+def show_shop(message):
     if is_user_banned(message.from_user.id): return
     
+    shop_text = [
+        "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
+        "<i>За кожне смс я кидаю тобі пару гривень. Зібрав капітал? Купуй жирні ніштяки!</i>\n",
+        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити jiga</i>)\n"
+    ]
+    
+    categories = {}
+    for code, item in SHOP_ITEMS.items():
+        cat = item["cat"]
+        if cat not in categories: categories[cat] = []
+        categories[cat].append(f"• <code>{code}</code> — <b>{item['name']}</b> | 💰 <code>{item['price']:,} грн</code>")
+        
+    for cat, items in categories.items():
+        shop_text.append(f"📦 <b>{cat.upper()}:</b>")
+        shop_text.extend(items)
+        shop_text.append("")
+        
+    bot.reply_to(message, "\n".join(shop_text), parse_mode="HTML")
+
+# 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
+@bot.message_handler(commands=['buy', 'купити'])
+def buy_item(message):
+    if is_user_banned(message.from_user.id): return
+    
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "⚠️ Код товару хто писати буде? Наприклад: <code>/купити bmw</code>", parse_mode="HTML")
+        return
+        
+    item_code = args[1].lower().strip()
+    
+    if item_code not in SHOP_ITEMS:
+        bot.reply_to(message, "🤡 Ти щось переплутав, бариго. Такого товару на моєму ринку немає! Глянь в `/магазин`.")
+        return
+        
+    item = SHOP_ITEMS[item_code]
     user_id = message.from_user.id
-    user_name = message.from_user.first_name
     
     try:
         with db_lock:
@@ -359,8 +481,53 @@ def show_inventory(message):
             with conn.cursor() as cursor:
                 cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
                 res = cursor.fetchone()
+                current_balance = res[0] if res else 0
+                
+                if current_balance < item["price"]:
+                    shortage = item["price"] - current_balance
+                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на Porsche не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
+                    conn.close()
+                    return
+                    
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
+                cursor.execute(
+                    "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
+                    (user_id, item_code, item["name"], item["cat"])
+                )
+            conn.commit()
+            conn.close()
+            
+        bot.reply_to(
+            message, 
+            f"🎉 <b>УСПІШНА УГОДА! ОЛІГАРХ НА ЗВ'ЯЗКУ!</b> 🎉\n\n"
+            f"Ти успішно купив: <b>{item['name']}</b> за <code>{item['price']:,} грн</code>!\n"
+            f"Майно внесено до реєстру СБУ. Перевір свій статус через `/майно`.", 
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        print(f"Помилка купівлі: {e}")
+        bot.reply_to(message, f"❌ Не вдалося здійснити покупку: <code>{str(e)[:100]}</code>", parse_mode="HTML")
+
+# 💼 👑 МАЙНО ТА ПРОФІЛЬ (/money, /balance, /майно, /гаманець, /баланс, /профіль)
+@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс', 'профіль', 'profile'])
+def show_inventory(message):
+    if is_user_banned(message.from_user.id): return
+    
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "Користувач"
+    status_msg = None
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Баланс
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
                 balance = res[0] if res else 0
                 
+                # Майно
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
                 items = cursor.fetchall()
             conn.close()
@@ -378,54 +545,77 @@ def show_inventory(message):
             response.append(f"────────────────────")
             response.append("🎰 <b>Статус:</b> <i>Повний голяк. Тільки шкарпетки й телефон, з якого ти пишеш. Бігом на заробітки! 🏃‍♂️</i>")
             bot.reply_to(message, "\n".join(response), parse_mode="HTML")
-        else:
-            total_property_value = 0
-            item_counts = {}
-            unique_codes = []
-            
-            for code, name in items:
-                item_counts[name] = item_counts.get(name, 0) + 1
-                if code not in unique_codes:
-                    unique_codes.append(code)
-                if code in SHOP_ITEMS:
-                    total_property_value += SHOP_ITEMS[code]["price"]
-            
-            response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
-            response.append(f"────────────────────")
-            response.append("📊 <b>СПИСОК ЗАРЕЄСТРОВАНОГО МАЙНА:</b>")
-            
-            for name, count in item_counts.items():
-                count_str = f" <code>[x{count}]</code>" if count > 1 else ""
-                response.append(f" ╰┈➤ {name}{count_str}")
-            
-            caption_text = "\n".join(response)
+            return
 
-            # Сповіщення для користувача про процес малювання
-            status_msg = bot.reply_to(
-                message, 
-                "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай кілька секунд!</i>", 
+        total_property_value = 0
+        item_counts = {}
+        unique_codes = []
+        
+        for item in items:
+            code = item[0]
+            name = item[1]
+            
+            item_counts[name] = item_counts.get(name, 0) + 1
+            if code not in unique_codes:
+                unique_codes.append(code)
+            if code in SHOP_ITEMS:
+                total_property_value += SHOP_ITEMS[code].get("price", 0)
+        
+        response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
+        response.append(f"────────────────────")
+        response.append("📊 <b>СПИСОК ЗАРЕЄСТРОВАНОГО МАЙНА:</b>")
+        
+        for name, count in item_counts.items():
+            count_str = f" <code>[x{count}]</code>" if count > 1 else ""
+            response.append(f" ╰┈➤ {name}{count_str}")
+        
+        caption_text = "\n".join(response)
+
+        # Відправляємо проміжне повідомлення
+        status_msg = bot.reply_to(
+            message, 
+            "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
+            parse_mode="HTML"
+        )
+
+        # Генерація картини
+        photo_bio = generate_inventory_ai_image(unique_codes)
+
+        if photo_bio:
+            try: bot.delete_message(message.chat.id, status_msg.message_id)
+            except: pass
+            
+            bot.send_photo(
+                message.chat.id, 
+                photo=photo_bio, 
+                caption=caption_text, 
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                caption_text, 
+                chat_id=message.chat.id, 
+                message_id=status_msg.message_id, 
                 parse_mode="HTML"
             )
-
-            # Генеруємо єдиний арт через Pollinations AI
-            photo_bio = generate_inventory_ai_image(unique_codes)
-
-            if photo_bio:
-                bot.delete_message(message.chat.id, status_msg.message_id)
-                bot.send_photo(
-                    message.chat.id, 
-                    photo=photo_bio, 
-                    caption=caption_text, 
-                    parse_mode="HTML",
-                    reply_to_message_id=message.message_id
-                )
-            else:
-                # Якщо сервер ШІ перевантажений — надсилаємо просто текстовий список
-                bot.edit_message_text(caption_text, message.chat.id, status_msg.message_id, parse_mode="HTML")
         
     except Exception as e:
-        print(f"Помилка виведення майна: {e}")
-        bot.reply_to(message, "❌ Не вдалося зчитати дані з твого гаманця.")
+        print(f"❌ Помилка команди майно: {e}")
+        error_details = str(e).replace("<", "&lt;").replace(">", "&gt;")
+        
+        if status_msg:
+            try:
+                bot.edit_message_text(
+                    f"❌ Помилка завантаження даних:\n<code>{error_details[:150]}</code>",
+                    chat_id=message.chat.id,
+                    message_id=status_msg.message_id,
+                    parse_mode="HTML"
+                )
+                return
+            except: pass
+            
+        bot.reply_to(message, f"❌ Помилка бази даних:\n<code>{error_details[:100]}</code>", parse_mode="HTML")
 
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
