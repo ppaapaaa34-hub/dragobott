@@ -2624,69 +2624,61 @@ def search_and_send_music(message):
 
 
 # ===================================================================
-# 📊 КОМАНДА СТАТИСТИКИ АКТИВНОСТІ (/top або /stats)
+# 📊 ТОП АКТИВНОСТІ (Стиль бота Соняшник)
 # ===================================================================
-def get_rank_title(count):
-    if count >= 1000: return "👑 Пахан чату"
-    if count >= 500: return "😎 Авторитет"
-    if count >= 200: return "💪 Бродяга"
-    if count >= 50: return "😏 Кент"
-    return "🐀 Шнир"
 
-@bot.message_handler(commands=['top', 'stats'])
+@bot.message_handler(commands=['top', 'stats', 'топ'])
 def show_chat_activity(message):
+    if is_user_banned(message.from_user.id): return
     chat_id = message.chat.id
+    
     try:
         bot.send_chat_action(chat_id, 'typing')
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо топ 10 ТІЛЬКИ СЕРЕД ТИХ, ХТО ЗАРАЗ Є В ЧАТІ
-                cursor.execute("SELECT name, count, gender FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
+                # Беремо топ 10 активних у чаті
+                cursor.execute("SELECT name, count FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
                 rows = cursor.fetchall()
                 
-                # Беремо "найсоннішого" (той, хто пише, але мало) ТІЛЬКИ СЕРЕД ЖИВИХ
-                cursor.execute("SELECT name, count FROM stats WHERE count > 0 AND in_chat = TRUE ORDER BY count ASC LIMIT 1")
-                sleepy_one = cursor.fetchone()
-                
-                # Разом рахуємо повідомлення всіх (навіть тих, хто вже пішов)
-                cursor.execute("SELECT SUM(count) FROM stats")
+                # Загальна сума повідомлень усього чату
+                cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
                 total_messages = cursor.fetchone()[0] or 0
             conn.close()
 
-        if not rows:
-            bot.reply_to(message, "🕸 <b>АРХІВИ ПОРОЖНІ.</b> Ви що, взагалі німі? Ну ви й сонні мухи... 🥱")
+        if not rows or total_messages == 0:
+            bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
             return
 
-        # Формуємо шапку
+        # Шапка
+        chat_title = message.chat.title or "цьому чаті"
+        chat_title_clean = chat_title.replace("<", "&lt;").replace(">", "&gt;")
+        
         response = [
-            "📂 <b>ЦІЛКОМ ТАЄМНО: ОПЕРАТИВНИЙ ЗВІТ</b>",
-            f"📈 <i>Загальна кількість зафіксованих реплік:</i> <b>{total_messages}</b>\n"
+            f"📊 <b>Топ найактивніших учасників в {chat_title_clean}:</b>\n"
         ]
 
-        # Додаємо топ
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-        for idx, (name, count, gender) in enumerate(rows):
-            medal = medals[idx]
+        # Іконки топу
+        medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+        for idx, (name, count) in enumerate(rows):
+            icon = medals[idx] if idx < len(medals) else "▫️"
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
-            rank = get_rank_title(count)
-            # Додаємо смайл статі, якщо це "авторитет" або вище
-            status_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
-            response.append(f"{medal} <b>{clean_name}</b> {status_icon} | <code>{count} пов.</code> | <i>{rank}</i>")
+            
+            # Вираховуємо відсоток від загальної кількості
+            percent = (count / total_messages) * 100 if total_messages > 0 else 0
+            
+            # Чистий вивід у стилі Соняшника
+            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> <i>({percent:.1f}%)</i>")
 
-        # Додаємо "вирок" для найледачішого
-        if sleepy_one and sleepy_one[0]:
-            name, count = sleepy_one
-            response.append(f"\n💤 <b>ВІДДІЛ ПОШУКУ ЛЕДАРІВ:</b>")
-            response.append(f"Найменш активний на сьогодні: <b>{name}</b> ({count} пов.).")
-            response.append("<i>Виправся, або підеш на допит до Драго!</i>")
-
+        # Підвал
+        response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
+        
         bot.reply_to(message, "\n".join(response), parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка виведення топу: {e}")
-        bot.reply_to(message, "❌ <b>Збій системи СБУ!</b> База даних знову кашляє. Спробуй пізніше.")
-
+        bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
 
 # ===================================================================
 # 💤 КОМАНДА ДЛЯ ПОШУКУ НЕАКТИВНИХ (/sleepers або /сонні)
