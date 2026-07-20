@@ -206,181 +206,47 @@ def handle_voice(message):
 
 
 # ===================================================================
-# 👑 КАРТКА ПРОФІЛЮ ТА КАСТОМІЗАЦІЯ (ПОВНИЙ ОБ'ЄДНАНИЙ МОДУЛЬ)
+# 🪪 КАРТКА ПРОФІЛЮ (БЕЗ КАСТОМІЗАЦІЇ)
 # ===================================================================
 
-PRICES = {
-    "title": 50000,    # Ціна зміни титулу
-    "nick": 30000,     # Ціна зміни ніку
-    "photo": 100000,   # Ціна зміни аватарки
-    "reorder": 15000   # Ціна пересортування
-}
-
 # -------------------------------------------------------------------
-# 🛠 1. ДОПОМІЖНІ ФУНКЦІЇ БАЗИ ДАНИХ ДЛЯ КАСТОМІЗАЦІЇ
-# -------------------------------------------------------------------
-def get_user_balance(user_id):
-    with db_lock:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-            res = cursor.fetchone()
-        conn.close()
-    return res[0] if res else 0
-
-def update_user_balance(user_id, amount):
-    with db_lock:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (amount, user_id))
-            conn.commit()
-        conn.close()
-
-def update_user_field(user_id, field_name, value):
-    with db_lock:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            # Динамічне оновлення безпечного поля
-            cursor.execute(f"UPDATE stats SET {field_name} = %s WHERE user_id = %s", (value, user_id))
-            conn.commit()
-        conn.close()
-
-
-# -------------------------------------------------------------------
-# 🏷 2. КОМАНДИ НАЛАШТУВАННЯ КАСТОМІЗАЦІЇ (ВИПРАВЛЕНИЙ РЕГЕКС)
+# 🛠 1. ДОПОМІЖНІ ФУНКЦІЇ БАЗИ ДАНИХ ТА ПЕРЕВІРОК
 # -------------------------------------------------------------------
 
-# 1. 🏷 ЗМІНА ТИТУЛУ (/титул Король Оболоні)
-@bot.message_handler(regexp=r'^[/#!]?(?:титул|set_title)(?:\s+|$)')
-def set_custom_title(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
+def ensure_user_in_db(user):
+    """Гарантує, що користувач є в базі stats"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO stats (user_id, name, count)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (user_id) DO UPDATE 
+                    SET name = EXCLUDED.name;
+                """, (user.id, user.first_name))
+                conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка ensure_user_in_db: {e}")
+
+def safe_get_rank(msg_count):
+    """Резервний підрахунок рангу, якщо немає зовнішньої get_rank_title"""
+    if 'get_rank_title' in globals():
+        return get_rank_title(msg_count)
     
-    if len(args) < 2 or not args[1].strip():
-        bot.reply_to(message, f"❌ Вкажи новий титул!\nПриклад: <code>/титул Король Оболоні</code>\nВартість: <b>{PRICES['title']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    new_title = args[1][:30].strip()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['title']:
-        bot.reply_to(message, f"💸 Нестача бабок! Зміна титулу коштує <b>{PRICES['title']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['title'])
-    update_user_field(user_id, "custom_title", new_title)
-    bot.reply_to(message, f"😎 База прийняла! Твій новий титул: <b>{new_title}</b>", parse_mode="HTML")
-
-
-# 2. 📛 ЗМІНА ІМЕНІ / НІКУ (/нік Лютий)
-@bot.message_handler(regexp=r'^[/#!]?(?:нік|set_nick)(?:\s+|$)')
-def set_custom_nick(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2 or not args[1].strip():
-        bot.reply_to(message, f"❌ Вкажи новий нік!\nПриклад: <code>/нік Лютий</code>\nВартість: <b>{PRICES['nick']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    new_nick = args[1][:25].strip()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['nick']:
-        bot.reply_to(message, f"💸 Не вистачає кешу! Зміна ніку коштує <b>{PRICES['nick']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['nick'])
-    update_user_field(user_id, "custom_nick", new_nick)
-    bot.reply_to(message, f"👌 Відтепер у базі ти — <b>{new_nick}</b>!", parse_mode="HTML")
-
-
-# 3. 🖼 ВСТАНОВЛЕННЯ АВАТАРКИ (/фото або реплай з /фото)
-@bot.message_handler(func=lambda m: (m.text and any(m.text.lower().startswith(x) for x in ['/фото', 'фото', '/set_photo'])) or 
-                                  (m.caption and any(m.caption.lower().startswith(x) for x in ['/фото', 'фото', '/set_photo'])))
-def set_custom_photo(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    
-    photo_url = None
-    if message.photo:
-        photo_url = message.photo[-1].file_id
-    elif message.reply_to_message and message.reply_to_message.photo:
-        photo_url = message.reply_to_message.photo[-1].file_id
-    else:
-        text_content = message.text or message.caption or ""
-        args = text_content.split(maxsplit=1)
-        if len(args) > 1:
-            photo_url = args[1].strip()
-
-    if not photo_url:
-        bot.reply_to(message, f"❌ Зроби реплай на фото з командою <code>/фото</code> або надішли картинку з підписом <code>/фото</code>!\nВартість: <b>{PRICES['photo']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    balance = get_user_balance(user_id)
-    if balance < PRICES['photo']:
-        bot.reply_to(message, f"💸 Елітний атрибут! Зміна фото коштує <b>{PRICES['photo']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['photo'])
-    update_user_field(user_id, "custom_photo", photo_url)
-    bot.reply_to(message, "📸 Фото профілю успішно оновлено!", parse_mode="HTML")
-
-
-# 4. 🏎 СОРТУВАННЯ МАЙНА (/порядок_майна bmw villa)
-@bot.message_handler(regexp=r'^[/#!]?(?:порядок_майна|sort_items)(?:\s+|$)')
-def sort_items(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2 or not args[1].strip():
-        bot.reply_to(message, f"⚙️ Вкажи коди предметів через пробіл!\nПриклад: <code>/порядок_майна bmw villa rolex</code>\nВартість послуги: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    new_order = args[1].lower().split()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['reorder']:
-        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['reorder'])
-    update_user_field(user_id, "inventory_order", ",".join(new_order))
-    bot.reply_to(message, "📦 Порядок речей у профілі успішно відсортовано!", parse_mode="HTML")
-
-
-# 5. 🏢 СОРТУВАННЯ БІЗНЕСІВ (/порядок_бізнесів kebab lavka)
-@bot.message_handler(regexp=r'^[/#!]?(?:порядок_бізнесів|sort_biz)(?:\s+|$)')
-def sort_businesses(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split(maxsplit=1)
-
-    if len(args) < 2 or not args[1].strip():
-        bot.reply_to(message, f"⚙️ Вкажи коди бізнесів через пробіл!\nПриклад: <code>/порядок_бізнесів kebab lavka hotel</code>\nВартість перестановки: <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    new_order = args[1].lower().split()
-    balance = get_user_balance(user_id)
-
-    if balance < PRICES['reorder']:
-        bot.reply_to(message, f"💸 Перестановка коштує <b>{PRICES['reorder']:,} грн</b>.", parse_mode="HTML")
-        return
-
-    update_user_balance(user_id, -PRICES['reorder'])
-    update_user_field(user_id, "biz_order", ",".join(new_order))
-    bot.reply_to(message, "💼 Порядок бізнесів у каталозі успішно оновлено!", parse_mode="HTML")
+    if msg_count > 1000: return "Місцева Легенда 👑"
+    if msg_count > 500: return "Завзятий Дописувач 🔥"
+    if msg_count > 100: return "Чатер 💬"
+    return "Новачок 🐣"
 
 
 # -------------------------------------------------------------------
-# 🪪 3. ПРОФІЛЬ (ВИПРАВЛЕНО ТАКОЖ)
+# 🪪 2. ВІДОБРАЖЕННЯ ПРОФІЛЮ
 # -------------------------------------------------------------------
 
 @bot.message_handler(regexp=r'^[/#!]?(?:профіль|profile)(?:\s+|$)')
 def show_user_profile(message):
-    # (весь код профілю далі залишається без змін)
     if is_user_banned(message.from_user.id): return
 
     chat_id = message.chat.id
@@ -396,22 +262,22 @@ def show_user_profile(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # 1. Беремо статистику, баланс + кастомні дані кастомізації
+                # 1. Дані користувача з теми
                 cursor.execute("""
-                    SELECT count, balance, gender, custom_nick, custom_title, custom_photo, inventory_order, biz_order 
+                    SELECT count, balance, gender 
                     FROM stats WHERE user_id = %s
                 """, (user.id,))
                 stats_res = cursor.fetchone()
                 
-                # 2. Беремо майно з інвентарю
+                # 2. Інвентар
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
                 inventory_res = cursor.fetchall()
 
-                # 3. Беремо бізнеси користувача
+                # 3. Бізнеси
                 cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user.id,))
                 biz_res = cursor.fetchall()
                 
-                # 4. Перевіряємо шлюб
+                # 4. Шлюб
                 cursor.execute("""
                     SELECT s1.name, s2.name, m.user1_id, m.user2_id 
                     FROM marriages m
@@ -423,54 +289,44 @@ def show_user_profile(message):
                 
             conn.close()
 
-        # Розпаковка отриманих даних
-        msg_count = stats_res[0] if stats_res else 0
-        balance = stats_res[1] if stats_res else 0
-        gender = stats_res[2] if stats_res else "Невідомо"
-        custom_nick = stats_res[3] if stats_res else None
-        custom_title = stats_res[4] if stats_res else None
-        custom_photo = stats_res[5] if stats_res else None
-        inv_order_raw = stats_res[6] if stats_res else ""
-        biz_order_raw = stats_res[7] if stats_res else ""
+        # Розпаковка даних
+        msg_count = stats_res[0] if stats_res and stats_res[0] else 0
+        balance = stats_res[1] if stats_res and stats_res[1] else 0
+        gender = stats_res[2] if stats_res and stats_res[2] else "Невідомо"
 
-        # Визначення імені та рангу
-        display_name = custom_nick if custom_nick else user.first_name
-        clean_name = display_name.replace("<", "&lt;").replace(">", "&gt;")
-        
-        rank = get_rank_title(msg_count)
+        # Ім'я та ранг
+        clean_name = user.first_name.replace("<", "&lt;").replace(">", "&gt;")
+        rank = safe_get_rank(msg_count)
         gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
-        title_text = f"👑 <b>Титул:</b> <code>{custom_title}</code>\n" if custom_title else ""
 
-        # 🏢 Сортування та підрахунок БІЗНЕСІВ
+        # Словники-заглушки
+        biz_dict = globals().get('BUSINESSES', {})
+        shop_dict = globals().get('SHOP_ITEMS', {})
+
+        # 🏢 Підрахунок БІЗНЕСІВ
         owned_biz_codes = [r[0] for r in biz_res]
         biz_counts = {}
         total_biz_value = 0
         total_passive_income = 0
 
         for b_code in owned_biz_codes:
-            if b_code in BUSINESSES:
-                biz = BUSINESSES[b_code]
-                biz_counts[b_code] = biz_counts.get(b_code, 0) + 1
-                total_biz_value += biz["price"]
-                total_passive_income += biz["income"]
-
-        # Пріоритет сортування бізнесів
-        custom_biz_order = [b.strip() for b in biz_order_raw.split(",") if b.strip()]
-        sorted_biz_codes = sorted(biz_counts.keys(), key=lambda x: custom_biz_order.index(x) if x in custom_biz_order else 999)
+            biz_counts[b_code] = biz_counts.get(b_code, 0) + 1
+            if b_code in biz_dict:
+                total_biz_value += biz_dict[b_code].get("price", 0)
+                total_passive_income += biz_dict[b_code].get("income", 0)
 
         if not biz_counts:
             biz_text = "<i>Безробітний 😴</i>"
         else:
             biz_list = []
-            for b_code in sorted_biz_codes:
-                b_name = BUSINESSES[b_code]["name"]
-                b_count = biz_counts[b_code]
+            for b_code, b_count in biz_counts.items():
+                b_name = biz_dict[b_code]["name"] if b_code in biz_dict else b_code.upper()
                 c_str = f" x{b_count}" if b_count > 1 else ""
                 biz_list.append(f"{b_name}{c_str}")
             biz_text = ", ".join(biz_list)
             if len(biz_text) > 100: biz_text = biz_text[:95] + "..."
 
-        # 📦 Сортування та підрахунок МАЙНА (РЕЧЕЙ)
+        # 📦 Підрахунок МАЙНА
         total_property_value = 0
         item_counts = {}
         item_names_map = {}
@@ -478,26 +334,21 @@ def show_user_profile(message):
         for code, name in inventory_res:
             item_counts[code] = item_counts.get(code, 0) + 1
             item_names_map[code] = name
-            if code in SHOP_ITEMS:
-                total_property_value += SHOP_ITEMS[code]["price"]
-
-        # Пріоритет сортування речей
-        custom_inv_order = [i.strip() for i in inv_order_raw.split(",") if i.strip()]
-        sorted_item_codes = sorted(item_counts.keys(), key=lambda x: custom_inv_order.index(x) if x in custom_inv_order else 999)
+            if code in shop_dict:
+                total_property_value += shop_dict[code].get("price", 0)
 
         if not item_counts:
             property_text = "<i>Тільки шкарпетки й мобільник 📱</i>"
         else:
             property_list = []
-            for code in sorted_item_codes:
+            for code, i_count in item_counts.items():
                 i_name = item_names_map[code]
-                i_count = item_counts[code]
                 c_str = f" x{i_count}" if i_count > 1 else ""
                 property_list.append(f"{i_name}{c_str}")
             property_text = ", ".join(property_list)
             if len(property_text) > 100: property_text = property_text[:95] + "..."
 
-        # 💍 Формуємо статус шлюбу
+        # 💍 Шлюб
         if marriage_res:
             name1, name2, u1_id, u2_id = marriage_res
             spouse_name = name2 if user.id == u1_id else name1
@@ -508,11 +359,10 @@ def show_user_profile(message):
         # Загальний капітал
         total_net_worth = balance + total_property_value + total_biz_value
 
-        # 📜 Формування картки профілю
+        # 📜 Формування картки
         profile_card = (
             f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
             f"───────────────────────\n"
-            f"{title_text}"
             f"{gender_icon} <b>Ранг у чаті:</b> <code>{rank}</code>\n"
             f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
             f"───────────────────────\n"
@@ -528,22 +378,19 @@ def show_user_profile(message):
             f"🚬 <i>База даних СБУ оновлена. Перевірку пройдено.</i>"
         )
 
-        # 📸 ВИЗНАЧЕННЯ АВАТАРКИ ПРОФІЛЮ
+        # 📸 Стандартна аватарка з профілю Telegram
         final_photo = None
+        try:
+            photos = bot.get_user_profile_photos(user.id, limit=1)
+            if photos and photos.total_count > 0:
+                final_photo = photos.photos[0][-1].file_id
+        except Exception:
+            pass
+        
+        if not final_photo:
+            final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
 
-        if custom_photo:
-            final_photo = custom_photo
-        else:
-            try:
-                photos = bot.get_user_profile_photos(user.id, limit=1)
-                if photos.total_count > 0:
-                    final_photo = photos.photos[0][-1].file_id
-                else:
-                    final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
-            except Exception:
-                final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
-
-        # Відправка зібраного профілю
+        # Відправка
         bot.send_photo(
             chat_id, 
             photo=final_photo, 
@@ -554,8 +401,7 @@ def show_user_profile(message):
 
     except Exception as e:
         print(f"Помилка створення профілю: {e}")
-        bot.reply_to(message, "❌ Не вдалося згенерувати твій паспорт активів. База даних підвисла.")
-
+        bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
 
 # ===================================================================
 # ⚙️ НАЛАШТУВАННЯ ТА ІНІЦІАЛІЗАЦІЯ (Додайте це у ваш основний файл)
