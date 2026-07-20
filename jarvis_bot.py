@@ -206,8 +206,221 @@ def handle_voice(message):
 
 
 # ===================================================================
-# 🪪 КАРТКА ПРОФІЛЮ (БЕЗ КАСТОМІЗАЦІЇ)
+# 🎰 ІГРИ ТА АЗАРТ (Казино, Слоти, Дуелі)
 # ===================================================================
+
+# 1. 🎲 КЛАСИЧНЕ КАЗИНО (/казино [ставка] [червоне/чорне/число])
+@bot.message_handler(regexp=r'^[/#!]?(?:казино|casino)(?:\s+|$)')
+def casino_game(message):
+    if is_user_banned(message.from_user.id): return
+    ensure_user_in_db(message.from_user)
+    user_id = message.from_user.id
+    
+    args = message.text.split()
+    if len(args) < 3:
+        bot.reply_to(message, "❌ **Формат:** `/казино [ставка] [червоне/чорне/число 0-36]`\nПриклад: `/казино 5000 червоне`", parse_mode="Markdown")
+        return
+
+    try:
+        bet = int(args[1])
+        choice = args[2].lower()
+    except ValueError:
+        bot.reply_to(message, "❌ Ставка має бути числом!")
+        return
+
+    if bet <= 0:
+        bot.reply_to(message, "❌ Ставка має бути більшою за 0!")
+        return
+
+    balance = get_user_balance(user_id)
+    if balance < bet:
+        bot.reply_to(message, f"💸 У тебе немає стільки грошей! Твій баланс: **{balance:,} грн**.", parse_mode="Markdown")
+        return
+
+    # Рулетка
+    number = random.randint(0, 36)
+    color = "зелене" if number == 0 else ("червоне" if number % 2 != 0 else "чорне")
+
+    win = False
+    multiplier = 2
+
+    if choice in ["червоне", "чорне"]:
+        if choice == color:
+            win = True
+            win_amount = bet * multiplier
+    elif choice.isdigit():
+        target_num = int(choice)
+        if 0 <= target_num <= 36:
+            multiplier = 36
+            if target_num == number:
+                win = True
+                win_amount = bet * multiplier
+        else:
+            bot.reply_to(message, "❌ Число має бути від 0 до 36!")
+            return
+    else:
+        bot.reply_to(message, "❌ Обирай: `червоне`, `чорне` або число `0-36`!")
+        return
+
+    if win:
+        profit = win_amount - bet
+        update_user_balance(user_id, profit)
+        bot.reply_to(message, f"🎰 Випало: **{number} ({color.upper()})**!\n🎉 **ПЕРЕМОГА!** Виграш: **+{win_amount:,} грн**!", parse_mode="Markdown")
+    else:
+        update_user_balance(user_id, -bet)
+        bot.reply_to(message, f"🎰 Випало: **{number} ({color.upper()})**.\n❌ **ПРОГРАШ!** Ти втратив **{bet:,} грн**.", parse_mode="Markdown")
+
+
+# 2. 🎰 СЛОТИ (/слот [ставка])
+@bot.message_handler(regexp=r'^[/#!]?(?:слот|слоти|slot)(?:\s+|$)')
+def slots_game(message):
+    if is_user_banned(message.from_user.id): return
+    ensure_user_in_db(message.from_user)
+    user_id = message.from_user.id
+    
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ **Формат:** `/слот [ставка]`", parse_mode="Markdown")
+        return
+
+    try:
+        bet = int(args[1])
+    except ValueError:
+        bot.reply_to(message, "❌ Ставка має бути числом!")
+        return
+
+    if bet <= 0: return
+
+    balance = get_user_balance(user_id)
+    if balance < bet:
+        bot.reply_to(message, f"💸 Не вистачає кешу! Твій баланс: **{balance:,} грн**.", parse_mode="Markdown")
+        return
+
+    # Запускаємо анімований кубик-слоти від Telegram
+    msg = bot.send_dice(message.chat.id, emoji='🎰', reply_to_message_id=message.message_id)
+    value = msg.dice.value  # Значення від 1 до 64
+    
+    # Визначення виграшу за значенням dice у Telegram:
+    # 64 - 💎💎💎 (Джекпот x10)
+    # 1, 22, 43 - Три однакові 777 або іконки (x5)
+    # Деякі комбінації - пара (x1.5)
+    
+    time.sleep(2) # Пауза поки крутиться слот
+    
+    if value == 64:
+        win_amount = bet * 10
+        update_user_balance(user_id, win_amount - bet)
+        bot.reply_to(message, f"🚨 **ДЖЕКПОТ!** 🎰💎💎💎\nТвій виграш: **+{win_amount:,} грн**!", parse_mode="Markdown")
+    elif value in [1, 22, 43]:
+        win_amount = bet * 5
+        update_user_balance(user_id, win_amount - bet)
+        bot.reply_to(message, f"🔥 **3 в ряд!** Виграш: **+{win_amount:,} грн**!", parse_mode="Markdown")
+    elif value in [16, 32, 48]: # Збіг 2 елементів
+        win_amount = int(bet * 1.5)
+        update_user_balance(user_id, win_amount - bet)
+        bot.reply_to(message, f"✨ **Пара!** Малий виграш: **+{win_amount:,} грн**!", parse_mode="Markdown")
+    else:
+        update_user_balance(user_id, -bet)
+        bot.reply_to(message, f"💀 **НЕ ВДАЛОСЯ!** Слот забрав **{bet:,} грн**.", parse_mode="Markdown")
+
+
+# 3. ⚔️ ПВП ДУЕЛЬ НА ГРОШІ (/дуель [ставка] у відповідь)
+PENDING_DUELS = {}
+
+@bot.message_handler(regexp=r'^[/#!]?(?:дуель|duel)(?:\s+|$)')
+def start_duel(message):
+    if is_user_banned(message.from_user.id): return
+    if not message.reply_to_message or message.reply_to_message.from_user.is_bot:
+        bot.reply_to(message, "❌ Зроби реплай на повідомлення суперника!")
+        return
+
+    challenger = message.from_user
+    opponent = message.reply_to_message.from_user
+
+    if challenger.id == opponent.id:
+        bot.reply_to(message, "❌ Не можна викликати самого себе!")
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ **Вкажи ставку:** `/дуель 10000`", parse_mode="Markdown")
+        return
+
+    try:
+        bet = int(args[1])
+    except ValueError:
+        return
+
+    if bet <= 0: return
+
+    if get_user_balance(challenger.id) < bet:
+        bot.reply_to(message, "💸 У тебе немає стільки грошей!")
+        return
+
+    if get_user_balance(opponent.id) < bet:
+        bot.reply_to(message, f"💸 У {opponent.first_name} немає стільки грошей!")
+        return
+
+    # Зберігаємо виклики
+    PENDING_DUELS[opponent.id] = {
+        "challenger_id": challenger.id,
+        "challenger_name": challenger.first_name,
+        "opponent_name": opponent.first_name,
+        "bet": bet,
+        "time": time.time()
+    }
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("⚔️ Прийняти дуель", callback_data=f"accept_duel_{challenger.id}"),
+        types.InlineKeyboardButton("🏃 Втекти", callback_data=f"decline_duel_{challenger.id}")
+    )
+
+    bot.reply_to(message, f"⚔️ **ДУЕЛЬ!** {challenger.first_name} викликає {opponent.first_name} на дуель!\n💰 Ставка: **{bet:,} грн**", parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(('accept_duel_', 'decline_duel_')))
+def handle_duel_callback(call):
+    opponent_id = call.from_user.id
+    
+    if opponent_id not in PENDING_DUELS:
+        bot.answer_callback_query(call.id, "❌ Дуель застаріла або не призначена тобі!", show_alert=True)
+        return
+
+    duel_data = PENDING_DUELS[opponent_id]
+    challenger_id = duel_data["challenger_id"]
+    bet = duel_data["bet"]
+
+    if call.data.startswith('decline_duel_'):
+        del PENDING_DUELS[opponent_id]
+        bot.edit_message_text("🏃 Дуель скасована. Переляк взяв своє!", call.message.chat.id, call.message.message_id)
+        return
+
+    # Перевіряємо баланси ще раз
+    if get_user_balance(challenger_id) < bet or get_user_balance(opponent_id) < bet:
+        bot.edit_message_text("❌ У когось із учасників закінчилися гроші!", call.message.chat.id, call.message.message_id)
+        del PENDING_DUELS[opponent_id]
+        return
+
+    # Бій
+    winner_id = random.choice([challenger_id, opponent_id])
+    loser_id = opponent_id if winner_id == challenger_id else challenger_id
+    
+    winner_name = duel_data["challenger_name"] if winner_id == challenger_id else duel_data["opponent_name"]
+    loser_name = duel_data["opponent_name"] if winner_id == challenger_id else duel_data["challenger_name"]
+
+    update_user_balance(winner_id, bet)
+    update_user_balance(loser_id, -bet)
+
+    del PENDING_DUELS[opponent_id]
+
+    bot.edit_message_text(
+        f"🎯 **РЕЗУЛЬТАТ ДУЕЛІ:**\n\n"
+        f"👑 **Переможець:** {winner_name} (+{bet:,} грн)\n"
+        f"💀 **Програв:** {loser_name} (-{bet:,} грн)",
+        call.message.chat.id, call.message.message_id, parse_mode="Markdown"
+    )
+
 
 # -------------------------------------------------------------------
 # 🛠 1. ДОПОМІЖНІ ФУНКЦІЇ БАЗИ ДАНИХ ТА ПЕРЕВІРОК
@@ -1364,8 +1577,29 @@ def show_all_commands(message):
 
 
 # ===================================================================
-# 💍 СИСТЕМА ОДРУЖЕННЯ / СТВОРЕННЯ БАНДИТСЬКОГО СОЮЗУ
+# 💍 СИСТЕМА ОДРУЖЕННЯ ТА СІМЕЙНОГО БЮДЖЕТУ
 # ===================================================================
+
+def get_marriage_pair(user_id):
+    """Повертає spouse_id та унікальний pair_key для спільного банку"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user1_id, user2_id FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                res = cursor.fetchone()
+            conn.close()
+        if res:
+            u1, u2 = res
+            pair_key = f"{min(u1, u2)}_{max(u1, u2)}"
+            spouse_id = u2 if user_id == u1 else u1
+            return spouse_id, pair_key
+    except Exception as e:
+        print(f"Помилка get_marriage_pair: {e}")
+    return None, None
+
+
+# 1. 💍 ПРОПОЗИЦІЯ ОДРУЖЕННЯ
 @bot.message_handler(commands=['marry', 'одруження', 'шлюб'])
 def propose_marriage(message):
     if is_user_banned(message.from_user.id): return
@@ -1452,51 +1686,183 @@ def handle_marriage_callbacks(call):
                 with conn.cursor() as cursor:
                     # Записуємо щасливу пару в базу
                     cursor.execute("INSERT INTO marriages (user1_id, user2_id) VALUES (%s, %s)", (user1_id, user2_id))
-                conn.commit()
+                    
+                    # Створюємо сімейний банк
+                    pair_key = f"{min(user1_id, user2_id)}_{max(user1_id, user2_id)}"
+                    cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0) ON CONFLICT DO NOTHING", (pair_key,))
+                    conn.commit()
                 conn.close()
                 
             bot.edit_message_text(
                 "🎉 <b>НОВИЙ БАНДИТСЬКИЙ СОЮЗ!</b> 🥂\n\n"
                 "Драго офіційно оголошує вас сім'єю!\n"
-                "Тепер ви — одне кримінальне угруповання. Гірко! 💋", 
+                "Тепер ви — одне кримінальне угруповання. Гірко! 💋\n\n"
+                "💡 <i>Вам доступний сімейний банк: <code>/спільний_баланс</code> та <code>/поповнити_банк [сума]</code></i>", 
                 call.message.chat.id, 
                 call.message.message_id, 
                 parse_mode="HTML"
             )
         except Exception as e:
-            bot.answer_callback_query(call.id, f"Помилка БД (можливо хтось уже встиг розписатися): {e}", show_alert=True)
+            bot.answer_callback_query(call.id, f"Помилка БД: {e}", show_alert=True)
 
-# Команда для розлучення
-@bot.message_handler(commands=['divorce', 'розлучення'])
-def divorce_command(message):
+
+# 2. 🎁 ПОДАРУВАТИ ГРОШІ ПАРТНЕРУ (/подарувати [сума])
+@bot.message_handler(commands=['gift', 'подарувати'])
+def gift_to_spouse(message):
     if is_user_banned(message.from_user.id): return
-    
     user_id = message.from_user.id
+    spouse_id, _ = get_marriage_pair(user_id)
+
+    if not spouse_id:
+        bot.reply_to(message, "💔 Ти ж самотній вовк, кому дарувати?")
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ <b>Вкажи суму:</b> <code>/подарувати 25000</code>", parse_mode="HTML")
+        return
+
+    try:
+        amount = int(args[1])
+    except ValueError:
+        bot.reply_to(message, "❌ Сума має бути числом!")
+        return
+
+    if amount <= 0: return
+
+    if get_user_balance(user_id) < amount:
+        bot.reply_to(message, "💸 У тебе немає стільки грошей!")
+        return
+
+    update_user_balance(user_id, -amount)
+    update_user_balance(spouse_id, amount)
+
+    bot.reply_to(message, f"🎁 <b>Романтика!</b> Ти подарував своїй другій половинці <b>{amount:,} грн</b>! ❤️", parse_mode="HTML")
+
+
+# 3. 🏦 СПІЛЬНИЙ БАЛАНС ПАРИ (/спільний_баланс)
+@bot.message_handler(commands=['family_bank', 'спільний_баланс', 'семейный_бюджет'])
+def show_family_bank(message):
+    if is_user_banned(message.from_user.id): return
+    user_id = message.from_user.id
+    spouse_id, pair_key = get_marriage_pair(user_id)
+
+    if not spouse_id:
+        bot.reply_to(message, "💔 Спочатку знайди собі пару через <code>/одруження</code>!", parse_mode="HTML")
+        return
+
     try:
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
-                record = cursor.fetchone()
-                
-                if not record:
-                    bot.reply_to(message, "🤡 Ти й так самотній вовк! З ким ти розлучатися зібрався?")
-                    conn.close()
-                    return
-                
-                # Видаляємо запис про шлюб
-                cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
-            conn.commit()
+                cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                res = cursor.fetchone()
+                if not res:
+                    cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0)", (pair_key,))
+                    conn.commit()
+                    bank_bal = 0
+                else:
+                    bank_bal = res[0]
             conn.close()
-            
+
         bot.reply_to(
             message, 
-            "✂️ <b>СІМ'Я РОЗПАЛАСЯ!</b>\nДраго порвав ваші паспорти. Ви офіційно вільні, спільні меми поділені, тарілки розбиті.", 
+            f"👩‍❤️‍👨 <b>СІМЕЙНИЙ СЕЙФ</b>\n"
+            f"───────────────────────\n"
+            f"💰 У банку пари лежить: <b>{bank_bal:,} грн</b>\n\n"
+            f"📥 <i>Закинути гроші: <code>/поповнити_банк [сума]</code></i>", 
             parse_mode="HTML"
         )
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка БД: {e}")
 
+
+# 4. 📥 ПОПОВНЕННЯ СІМЕЙНОГО БАНКУ (/поповнити_банк [сума])
+@bot.message_handler(commands=['add_family_bank', 'поповнити_банк'])
+def add_family_bank(message):
+    if is_user_banned(message.from_user.id): return
+    user_id = message.from_user.id
+    spouse_id, pair_key = get_marriage_pair(user_id)
+
+    if not spouse_id:
+        bot.reply_to(message, "💔 Спочатку знайди собі пару!")
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ <b>Формат:</b> <code>/поповнити_банк 50000</code>", parse_mode="HTML")
+        return
+
+    try:
+        amount = int(args[1])
+    except ValueError:
+        bot.reply_to(message, "❌ Сума має бути числом!")
+        return
+
+    if amount <= 0: return
+
+    if get_user_balance(user_id) < amount:
+        bot.reply_to(message, "💸 Брак коштів на гаманці!")
+        return
+
+    update_user_balance(user_id, -amount)
+    
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
+            conn.commit()
+        conn.close()
+
+    bot.reply_to(message, f"🏦 Ти закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
+
+
+# 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
+@bot.message_handler(commands=['divorce', 'розлучення'])
+def divorce_command(message):
+    if is_user_banned(message.from_user.id): return
+    
+    user_id = message.from_user.id
+    spouse_id, pair_key = get_marriage_pair(user_id)
+
+    if not spouse_id:
+        bot.reply_to(message, "🤡 Ти й так самотній вовк! З ким ти розлучатися зібрався?")
+        return
+
+    try:
+        shared_money = 0
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Беремо гроші зі спільного банку
+                if pair_key:
+                    cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                    res = cursor.fetchone()
+                    if res: shared_money = res[0]
+
+                # Видаляємо запис про шлюб та сімейний банк
+                cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                if pair_key:
+                    cursor.execute("DELETE FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                conn.commit()
+            conn.close()
+
+        # Поділ банку 50/50
+        if shared_money > 0:
+            half = shared_money // 2
+            update_user_balance(user_id, half)
+            update_user_balance(spouse_id, half)
+            div_text = f"\n⚖️ Спільний банк <b>{shared_money:,} грн</b> поділено 50/50: по <b>{half:,} грн</b> кожному!"
+        else:
+            div_text = ""
+
+        bot.reply_to(
+            message, 
+            f"✂️ <b>СІМ'Я РОЗПАЛАСЯ!</b>\nДраго порвав ваші паспорти. Ви офіційно вільні.{div_text}", 
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка БД: {e}")
 
 # ===================================================================
 # 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
