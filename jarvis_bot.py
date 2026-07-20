@@ -228,11 +228,11 @@ def update_user_field(user_id, field_name, value):
 
 
 # -------------------------------------------------------------------
-# 🏷 2. КОМАНДИ НАЛАШТУВАННЯ КАСТОМІЗАЦІЇ (З ВИПРАВЛЕНИМИ РЕГЕКСАМИ)
+# 🏷 2. КОМАНДИ НАЛАШТУВАННЯ КАСТОМІЗАЦІЇ (ВИПРАВЛЕНИЙ РЕГЕКС)
 # -------------------------------------------------------------------
 
 # 1. 🏷 ЗМІНА ТИТУЛУ (/титул Король Оболоні)
-@bot.message_handler(regexp=r'^(?i)[/!]?(?:титул|set_title)(?:\s+|$)')
+@bot.message_handler(regexp=r'^[/#!]?(?:титул|set_title)(?:\s+|$)')
 def set_custom_title(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
@@ -255,7 +255,7 @@ def set_custom_title(message):
 
 
 # 2. 📛 ЗМІНА ІМЕНІ / НІКУ (/нік Лютий)
-@bot.message_handler(regexp=r'^(?i)[/!]?(?:нік|set_nick)(?:\s+|$)')
+@bot.message_handler(regexp=r'^[/#!]?(?:нік|set_nick)(?:\s+|$)')
 def set_custom_nick(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
@@ -285,13 +285,10 @@ def set_custom_photo(message):
     user_id = message.from_user.id
     
     photo_url = None
-    # 1. Якщо це фото з підписом
     if message.photo:
         photo_url = message.photo[-1].file_id
-    # 2. Якщо це реплай на фото
     elif message.reply_to_message and message.reply_to_message.photo:
         photo_url = message.reply_to_message.photo[-1].file_id
-    # 3. Якщо надали посилання в тексті
     else:
         text_content = message.text or message.caption or ""
         args = text_content.split(maxsplit=1)
@@ -313,7 +310,7 @@ def set_custom_photo(message):
 
 
 # 4. 🏎 СОРТУВАННЯ МАЙНА (/порядок_майна bmw villa)
-@bot.message_handler(regexp=r'^(?i)[/!]?(?:порядок_майна|sort_items)(?:\s+|$)')
+@bot.message_handler(regexp=r'^[/#!]?(?:порядок_майна|sort_items)(?:\s+|$)')
 def sort_items(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
@@ -336,7 +333,7 @@ def sort_items(message):
 
 
 # 5. 🏢 СОРТУВАННЯ БІЗНЕСІВ (/порядок_бізнесів kebab lavka)
-@bot.message_handler(regexp=r'^(?i)[/!]?(?:порядок_бізнесів|sort_biz)(?:\s+|$)')
+@bot.message_handler(regexp=r'^[/#!]?(?:порядок_бізнесів|sort_biz)(?:\s+|$)')
 def sort_businesses(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
@@ -359,11 +356,12 @@ def sort_businesses(message):
 
 
 # -------------------------------------------------------------------
-# 🪪 3. ГОЛОВНА ВІДОБРАЖУВАЛЬНА ФУНКЦІЯ ПАСПОРТА/ПРОФІЛЮ
+# 🪪 3. ПРОФІЛЬ (ВИПРАВЛЕНО ТАКОЖ)
 # -------------------------------------------------------------------
 
-@bot.message_handler(regexp=r'^(?i)[/!]?(?:профіль|profile)(?:\s+|$)')
+@bot.message_handler(regexp=r'^[/#!]?(?:профіль|profile)(?:\s+|$)')
 def show_user_profile(message):
+    # (весь код профілю далі залишається без змін)
     if is_user_banned(message.from_user.id): return
 
     chat_id = message.chat.id
