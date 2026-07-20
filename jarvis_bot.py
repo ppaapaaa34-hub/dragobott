@@ -512,8 +512,8 @@ def handle_property_photo_view(call):
         f"↩️ <i>Щоб повернутися до повного списку активів, напиши /майно ще раз.</i>"
     )
     
+    # 1. Пробуємо оновити існуюче фото (якщо ми вже в режимі перегляду фото)
     try:
-        # Варіант 1: Якщо повідомлення вже містить медіа (фото), просто оновлюємо його
         media = types.InputMediaPhoto(media=item_url, caption=view_text, parse_mode="HTML")
         bot.edit_message_media(
             chat_id=call.message.chat.id,
@@ -521,20 +521,42 @@ def handle_property_photo_view(call):
             media=media,
             reply_markup=call.message.reply_markup
         )
-    except Exception as e:
-        # Варіант 2: Якщо списку активів було надіслано текстом, видаляємо його і відправляємо повноцінне фото
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-            bot.send_photo(
-                chat_id=call.message.chat.id,
-                photo=item_url,
-                caption=view_text,
-                reply_markup=call.message.reply_markup,
-                parse_mode="HTML"
-            )
-        except Exception as inner_e:
-            print(f"Помилка виведення фото: {inner_e}")
+        return
+    except Exception:
+        pass  # Якщо це було текстове повідомлення, переходимо до кроку 2
 
+    # 2. Якщо це було текстове повідомлення — надсилаємо нове фото ПЕРЕД тим, як видалити старе
+    try:
+        bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=item_url,
+            caption=view_text,
+            reply_markup=call.message.reply_markup,
+            parse_mode="HTML"
+        )
+        # Видаляємо старе текстове повідомлення ТІЛЬКИ після успішної відправки фото
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        print(f"Помилка відправки photo_url ({item_url}): {e}")
+        
+        # 3. Резервний варіант (FALLBACK): Якщо Telegram відхилив посилання на фото,
+        # ми НЕ видаляємо повідомлення, а просто оновлюємо текст і додаємо кнопку з посиланням на фото!
+        fallback_markup = types.InlineKeyboardMarkup()
+        
+        # Переносимо всі існуючі кнопки
+        if call.message.reply_markup:
+            fallback_markup.keyboard = call.message.reply_markup.keyboard
+            
+        # Додаємо кнопку безпосередньо на відкриття картинки в браузері/телеграмі
+        fallback_markup.add(types.InlineKeyboardButton(text="🔗 Відкрити фото товару", url=item_url))
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"🖼 <b>[Завантаження фото]</b>\n\n{view_text}",
+            reply_markup=fallback_markup,
+            parse_mode="HTML"
+        )
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
