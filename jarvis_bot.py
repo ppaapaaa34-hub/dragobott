@@ -185,6 +185,120 @@ def handle_voice(message):
         bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
 
 # ===================================================================
+# 🪪 КРАСИВИЙ ПОВНИЙ ПРОФІЛЬ КОРИСТУВАЧА (/profile, /профіль)
+# ===================================================================
+@bot.message_handler(commands=['profile', 'профіль'])
+def show_user_profile(message):
+    if is_user_banned(message.from_user.id): return
+
+    chat_id = message.chat.id
+    user = message.from_user
+    
+    # Якщо адмін робить реплай, можна подивитися профіль іншого юзера
+    if message.reply_to_message:
+        user = message.reply_to_message.from_user
+
+    bot.send_chat_action(chat_id, 'upload_photo')
+    ensure_user_in_db(user)
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # 1. Беремо статистику та баланс
+                cursor.execute("SELECT count, balance, gender FROM stats WHERE user_id = %s", (user.id,))
+                stats_res = cursor.fetchone()
+                
+                # 2. Беремо майно
+                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
+                inventory_res = cursor.fetchall()
+                
+                # 3. Перевіряємо шлюб
+                cursor.execute("""
+                    SELECT s1.name, s2.name, m.user1_id, m.user2_id 
+                    FROM marriages m
+                    JOIN stats s1 ON m.user1_id = s1.user_id
+                    JOIN stats s2 ON m.user2_id = s2.user_id
+                    WHERE m.user1_id = %s OR m.user2_id = %s
+                """, (user.id, user.id))
+                marriage_res = cursor.fetchone()
+                
+            conn.close()
+
+        # Розбираємо отримані дані
+        msg_count = stats_res[0] if stats_res else 0
+        balance = stats_res[1] if stats_res else 0
+        gender = stats_res[2] if stats_res else "Невідомо"
+        
+        # Визначаємо ранг і гендерну іконку
+        rank = get_rank_title(msg_count)
+        gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
+        
+        # Рахуємо майно
+        total_property_value = 0
+        item_counts = {}
+        for code, name in inventory_res:
+            item_counts[name] = item_counts.get(name, 0) + 1
+            if code in SHOP_ITEMS:
+                total_property_value += SHOP_ITEMS[code]["price"]
+                
+        # Формуємо рядок шлюбу
+        if marriage_res:
+            name1, name2, u1_id, u2_id = marriage_res
+            spouse_name = name2 if user.id == u1_id else name1
+            marriage_status = f"💍 У шлюбі з <b>{spouse_name.replace('<', '&lt;').replace('>', '&gt;')}</b>"
+        else:
+            marriage_status = "🐺 Статус: <i>Самотній вовк</i>"
+
+        # Формуємо красивий список майна
+        if not item_counts:
+            property_text = "<i>Тільки шкарпетки й мобільник 📱</i>"
+        else:
+            property_list = []
+            for name, count in item_counts.items():
+                c_str = f" x{count}" if count > 1 else ""
+                property_list.append(f"{name}{c_str}")
+            property_text = ", ".join(property_list)
+            if len(property_text) > 120:  # Щоб не розносило екран
+                property_text = property_text[:115] + "..."
+
+        # Збираємо фінальний текст картки профілю
+        clean_name = user.first_name.replace("<", "&lt;").replace(">", "&gt;")
+        
+        profile_card = (
+            f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
+            f"───────────────────────\n"
+            f"{gender_icon} <b>Ранг у чаті:</b> <code>{rank}</code>\n"
+            f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
+            f"───────────────────────\n"
+            f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>\n"
+            f"💰 <b>Цінність активів:</b> <code>{total_property_value:,} грн</code>\n"
+            f"📦 <b>Майно:</b> {property_text}\n"
+            f"───────────────────────\n"
+            f"{marriage_status}\n"
+            f"───────────────────────\n"
+            f"🚬 <i>База даних СБУ оновлена. Перевірку пройдено.</i>"
+        )
+
+        # 📸 МАГІЯ: Витягуємо реальну аватарку юзера з Telegram
+        photos = bot.get_user_profile_photos(user.id, limit=1)
+        
+        if photos.total_count > 0:
+            # Якщо аватарка є, беремо її найбільший розмір
+            file_id = photos.photos[0][-1].file_id
+            bot.send_photo(chat_id, photo=file_id, caption=profile_card, parse_mode="HTML", reply_to_message_id=message.message_id)
+        else:
+            # Якщо аватарки немає, кидаємо красиву заглушку з інтернету
+            no_avatar_url = "https://i.ibb.co/5G1v5f2/no-avatar.jpg" 
+            bot.send_photo(chat_id, photo=no_avatar_url, caption=profile_card, parse_mode="HTML", reply_to_message_id=message.message_id)
+
+    except Exception as e:
+        print(f"Помилка створення профілю: {e}")
+        bot.reply_to(message, "❌ Не вдалося згенерувати твій паспорт активів. База даних підвисла.")
+
+
+
+# ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
 # ===================================================================
 
