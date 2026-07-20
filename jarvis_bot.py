@@ -1035,107 +1035,29 @@ def sell_business(message):
 
 
 # ===================================================================
-# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
-# ===================================================================
-def generate_inventory_ai_image(bought_codes):
-    """Безкоштовно генерує єдину картинку з усім майном через Pollinations (Flux)"""
-    if not bought_codes:
-        return None
-        
-    ai_descriptions = []
-    for code in bought_codes:
-        if code in SHOP_ITEMS:
-            ai_descriptions.append(SHOP_ITEMS[code]["ai_desc"])
-            
-    if not ai_descriptions:
-        return None
-        
-    items_prompt = ", ".join(ai_descriptions)
-    full_prompt = (
-        f"A cinematic high quality photo showing a collection in one scene: {items_prompt}. "
-        f"4k resolution, ultra detailed, modern luxury style"
-    )
-    
-    try:
-        encoded_prompt = requests.utils.quote(full_prompt)
-        seed = random.randint(1, 999999)
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
-        
-        response = requests.get(image_url, timeout=120)
-        
-        if response.status_code == 200:
-            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
-                return None
-                
-            img = Image.open(io.BytesIO(response.content)).convert("RGB")
-            bio = io.BytesIO()
-            bio.name = 'inventory_art.jpg'
-            img.save(bio, 'JPEG', quality=95)
-            bio.seek(0)
-            return bio
-    except Exception as e:
-        print(f"Помилка генерації майна через Pollinations: {e}")
-        
-    return None
-
-import random
-
-# ===================================================================
-# 🎭 МОДУЛЬ РП-КОМАНД З КАРТИНКАМИ / ГІФКАМИ (БЕЗ СЛЕШІВ)
+# 🎭 РП-КОМАНДИ З АВТОМАТИЧНОЮ AI-ГЕНЕРАЦІЄЮ КАРТИНОК
 # ===================================================================
 
-RP_COMMANDS = {
+RP_DATA = {
     'обняти': {
         'emoji': '🤗',
-        'phrases': [
-            "міцно обіймає та не хоче відпускати",
-            "тепло обіймає за плечі",
-            "пригортає до себе"
-        ],
-        'gifs': [
-            "https://media.tenor.com/kCZ3To2VnigAAAAC/hug-anime.gif",
-            "https://media.tenor.com/3mr1P3233pAAAAAC/hug-anime.gif",
-            "https://media.tenor.com/sX_20PqfV4AAAAAC/anime-hug.gif"
-        ]
+        'phrase': 'міцно обіймає',
+        'prompt': 'anime hug two friends, wholesome, detailed art, cute, high quality'
     },
     'поцілувати': {
         'emoji': '💋',
-        'phrases': [
-            "ніжно цілує у щоку",
-            "палко цілує в губи",
-            "залишає солодкий поцілунок"
-        ],
-        'gifs': [
-            "https://media.tenor.com/dn_KuO3x1L4AAAAC/anime-kiss.gif",
-            "https://media.tenor.com/v42R0fhS30AAAAAC/kiss-in-the-mouth-anime.gif",
-            "https://media.tenor.com/F0_S8L4Oq_AAAAAC/kiss-anime.gif"
-        ]
+        'phrase': 'ніжно цілує',
+        'prompt': 'anime romantic kiss, emotional, aesthetic, masterpiece, highly detailed'
     },
     'вдарити': {
         'emoji': '👊',
-        'phrases': [
-            "дає потужного ляща",
-            "записує хук справа",
-            "дає легкого штовхана"
-        ],
-        'gifs': [
-            "https://media.tenor.com/eU13A92S4yAAAAAC/anime-slap.gif",
-            "https://media.tenor.com/4g_f1_32x3IAAAAC/anime-punch.gif",
-            "https://media.tenor.com/K_r_a8S_U48AAAAC/hit-anime.gif"
-        ]
+        'phrase': 'дає потужного ляща',
+        'prompt': 'anime funny slap action scene, dynamic pose, high quality, comedy'
     },
     'похвалити': {
         'emoji': '👏',
-        'phrases': [
-            "хвалить за чудову роботу",
-            "підбадьорливо ляскає по плечу",
-            "каже, що це найкращий результат"
-        ],
-        'gifs': [
-            "https://media.tenor.com/N41L942E27AAAAAC/pat-head-anime.gif",
-            "https://media.tenor.com/E62wP_3x_P0AAAAC/anime-pat.gif",
-            "https://media.tenor.com/Y7B14xN7mB4AAAAC/head-pat-anime.gif"
-        ]
+        'phrase': 'гладить по голові та хвалить',
+        'prompt': 'anime headpat wholesome, cute smile, gentle, detailed art'
     }
 }
 
@@ -1143,49 +1065,56 @@ def get_user_mention(user):
     name = user.first_name.replace('<', '&lt;').replace('>', '&gt;')
     return f'<a href="tg://user?id={user.id}">{name}</a>'
 
-# Реагує на звичайні слова (і з /!#, і повністю без них)
-@bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().lstrip('/#!.') in RP_COMMANDS else False)
-def handle_rp_action(message):
+# Реагує на звичайні слова "обняти", "поцілувати" тощо (як із /!#, так і без них)
+@bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().lstrip('/#!.') in RP_DATA else False)
+def handle_rp_ai_action(message):
     if is_user_banned(message.from_user.id): return
     
-    # Витягаємо чисте слово в нижньому регістрі
     cmd = message.text.split()[0].lower().lstrip('/#!.')
-    rp_data = RP_COMMANDS.get(cmd)
-    
-    if not rp_data: return
+    data = RP_DATA.get(cmd)
+    if not data: return
+
+    # Перевірка на реплай
+    if not message.reply_to_message:
+        bot.reply_to(message, "⚠️ Зроби <b>реплай</b> на повідомлення того, до кого хочеш застосувати дію!", parse_mode="HTML")
+        return
 
     sender = message.from_user
-    sender_mention = get_user_mention(sender)
+    target = message.reply_to_message.from_user
     
-    emoji = rp_data['emoji']
-    random_phrase = random.choice(rp_data['phrases'])
-    random_gif = random.choice(rp_data['gifs'])
+    if sender.id == target.id:
+        bot.reply_to(message, "🤡 Навіщо робити це із самим собою? Знайди когось іншого!", parse_mode="HTML")
+        return
 
-    # Перевірка на наявність реплаю
-    if message.reply_to_message:
-        target = message.reply_to_message.from_user
+    sender_mention = get_user_mention(sender)
+    target_mention = get_user_mention(target)
+
+    # Сповіщаємо чат про генерацію
+    status_msg = bot.reply_to(message, "🎨 <i>Малюю картинку... Зачекай секунду!</i>", parse_mode="HTML")
+
+    try:
+        # Генеруємо унікальне посилання на зображення через AI
+        encoded_prompt = urllib.parse.quote(data['prompt'])
+        seed = random.randint(1, 999999) # Випадкове зерно для нової картинки
         
-        if target.id == sender.id:
-            bot.reply_to(message, "🤡 Навіщо робити це із самим собою? Знайди когось іншого!", parse_mode="HTML")
-            return
-            
-        target_mention = get_user_mention(target)
-        caption_text = f"{emoji} {sender_mention} {random_phrase} {target_mention}!"
-        
-        # Відправляємо анімацію з підписом
-        try:
-            bot.send_animation(
-                message.chat.id, 
-                animation=random_gif, 
-                caption=caption_text, 
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            # Якщо гіфку не вдалося завантажити, надсилаємо просто текст
-            bot.send_message(message.chat.id, caption_text, parse_mode="HTML")
-            
-    else:
-        bot.reply_to(message, "⚠️ Зроби <b>реплай</b> на повідомлення того, до кого хочеш застосувати дію!", parse_mode="HTML")
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=800&height=600&nologo=true&seed={seed}"
+
+        caption_text = f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!"
+
+        # Відправляємо згенеровану картинку
+        bot.send_photo(
+            message.chat.id,
+            photo=image_url,
+            caption=caption_text,
+            parse_mode="HTML"
+        )
+        # Видаляємо статус «Малюю картинку...»
+        bot.delete_message(message.chat.id, status_msg.message_id)
+
+    except Exception as e:
+        print(f"Помилка генерації зображення: {e}")
+        # Якщо генерація зламалася — просто надсилаємо текст
+        bot.edit_message_text(f"{data['emoji']} {sender_mention} {data['phrase']} {target_mention}!", message.chat.id, status_msg.message_id, parse_mode="HTML")
     
 
 
