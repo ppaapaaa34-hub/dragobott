@@ -211,11 +211,15 @@ def show_user_profile(message):
                 cursor.execute("SELECT count, balance, gender FROM stats WHERE user_id = %s", (user.id,))
                 stats_res = cursor.fetchone()
                 
-                # 2. Беремо майно
+                # 2. Беремо майно (з інвентарю)
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
                 inventory_res = cursor.fetchall()
+
+                # 3. Беремо бізнеси користувача
+                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user.id,))
+                biz_res = cursor.fetchall()
                 
-                # 3. Перевіряємо шлюб
+                # 4. Перевіряємо шлюб
                 cursor.execute("""
                     SELECT s1.name, s2.name, m.user1_id, m.user2_id 
                     FROM marriages m
@@ -227,7 +231,7 @@ def show_user_profile(message):
                 
             conn.close()
 
-        # Розбираємо отримані дані
+        # Розбираємо основні дані
         msg_count = stats_res[0] if stats_res else 0
         balance = stats_res[1] if stats_res else 0
         gender = stats_res[2] if stats_res else "Невідомо"
@@ -236,13 +240,38 @@ def show_user_profile(message):
         rank = get_rank_title(msg_count)
         gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
         
-        # Рахуємо майно
+        # 📦 Рахуємо майно з магазину
         total_property_value = 0
         item_counts = {}
         for code, name in inventory_res:
             item_counts[name] = item_counts.get(name, 0) + 1
             if code in SHOP_ITEMS:
                 total_property_value += SHOP_ITEMS[code]["price"]
+
+        # 🏢 Рахуємо бізнеси, пасивний дохід та їх вартість
+        owned_biz_codes = [r[0] for r in biz_res]
+        biz_counts = {}
+        total_biz_value = 0
+        total_passive_income = 0
+
+        for b_code in owned_biz_codes:
+            if b_code in BUSINESSES:
+                biz = BUSINESSES[b_code]
+                biz_counts[biz["name"]] = biz_counts.get(biz["name"], 0) + 1
+                total_biz_value += biz["price"]
+                total_passive_income += biz["income"]
+
+        # Формуємо красивий рядок бізнесів
+        if not biz_counts:
+            biz_text = "<i>Безробітний 😴</i>"
+        else:
+            biz_list = []
+            for b_name, b_count in biz_counts.items():
+                c_str = f" x{b_count}" if b_count > 1 else ""
+                biz_list.append(f"{b_name}{c_str}")
+            biz_text = ", ".join(biz_list)
+            if len(biz_text) > 100:
+                biz_text = biz_text[:95] + "..."
                 
         # Формуємо рядок шлюбу
         if marriage_res:
@@ -261,12 +290,15 @@ def show_user_profile(message):
                 c_str = f" x{count}" if count > 1 else ""
                 property_list.append(f"{name}{c_str}")
             property_text = ", ".join(property_list)
-            if len(property_text) > 120:  # Щоб не розносило екран
-                property_text = property_text[:115] + "..."
+            if len(property_text) > 100:
+                property_text = property_text[:95] + "..."
 
         # Збираємо фінальний текст картки профілю
         clean_name = user.first_name.replace("<", "&lt;").replace(">", "&gt;")
         
+        # Розрахунок загального капіталу (готівка + майно + бізнеси)
+        total_net_worth = balance + total_property_value + total_biz_value
+
         profile_card = (
             f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
             f"───────────────────────\n"
@@ -274,8 +306,11 @@ def show_user_profile(message):
             f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
             f"───────────────────────\n"
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>\n"
-            f"💰 <b>Цінність активів:</b> <code>{total_property_value:,} грн</code>\n"
-            f"📦 <b>Майно:</b> {property_text}\n"
+            f"📈 <b>Пасивний дохід:</b> <code>+{total_passive_income:,} грн/год</code>\n"
+            f"💰 <b>Загальний капітал:</b> <code>{total_net_worth:,} грн</code>\n"
+            f"───────────────────────\n"
+            f"💼 <b>Бізнеси:</b> {biz_text}\n"
+            f"📦 <b>Речі:</b> {property_text}\n"
             f"───────────────────────\n"
             f"{marriage_status}\n"
             f"───────────────────────\n"
