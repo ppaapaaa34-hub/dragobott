@@ -1081,7 +1081,7 @@ def generate_inventory_ai_image(bought_codes):
 import random
 
 # ===================================================================
-# 🎭 МОДУЛЬ РП-КОМАНД З КАРТИНКАМИ / ГІФКАМИ
+# 🎭 МОДУЛЬ РП-КОМАНД З КАРТИНКАМИ / ГІФКАМИ (БЕЗ СЛЕШІВ)
 # ===================================================================
 
 RP_COMMANDS = {
@@ -1143,11 +1143,13 @@ def get_user_mention(user):
     name = user.first_name.replace('<', '&lt;').replace('>', '&gt;')
     return f'<a href="tg://user?id={user.id}">{name}</a>'
 
-@bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().strip('/#!.') in RP_COMMANDS else False)
+# Реагує на звичайні слова (і з /!#, і повністю без них)
+@bot.message_handler(func=lambda msg: True if msg.text and msg.text.split()[0].lower().lstrip('/#!.') in RP_COMMANDS else False)
 def handle_rp_action(message):
     if is_user_banned(message.from_user.id): return
     
-    cmd = message.text.split()[0].lower().strip('/#!.')
+    # Витягаємо чисте слово в нижньому регістрі
+    cmd = message.text.split()[0].lower().lstrip('/#!.')
     rp_data = RP_COMMANDS.get(cmd)
     
     if not rp_data: return
@@ -1159,7 +1161,7 @@ def handle_rp_action(message):
     random_phrase = random.choice(rp_data['phrases'])
     random_gif = random.choice(rp_data['gifs'])
 
-    # Якщо робиться реплай на повідомлення
+    # Перевірка на наявність реплаю
     if message.reply_to_message:
         target = message.reply_to_message.from_user
         
@@ -1170,7 +1172,7 @@ def handle_rp_action(message):
         target_mention = get_user_mention(target)
         caption_text = f"{emoji} {sender_mention} {random_phrase} {target_mention}!"
         
-        # Відправляємо гіфку з підписом
+        # Відправляємо анімацію з підписом
         try:
             bot.send_animation(
                 message.chat.id, 
@@ -1179,7 +1181,7 @@ def handle_rp_action(message):
                 parse_mode="HTML"
             )
         except Exception as e:
-            # Якщо раптом гіфка не завантажилася — відправляємо просто текст
+            # Якщо гіфку не вдалося завантажити, надсилаємо просто текст
             bot.send_message(message.chat.id, caption_text, parse_mode="HTML")
             
     else:
