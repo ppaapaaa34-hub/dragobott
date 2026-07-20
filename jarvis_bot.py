@@ -300,105 +300,23 @@ def show_user_profile(message):
 
 
 # ===================================================================
-# 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
+# 💼 ІНТЕРАКТИВНЕ МАЙНО З КНОПКАМИ ТА ФОТОКАРТКАМИ
 # ===================================================================
 
-# Асортимент нашого чорного ринку (код товару: [Назва, Ціна, Категорія])
-SHOP_ITEMS = {
-    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 60000, "cat": "Електроніка"},
-    "pc": {"name": "🖥️ ПК на RTX 5090", "price": 150000, "cat": "Електроніка"},
-    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини"},
-    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини"},
-    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки"},
-    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки"},
-    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки"},
-    "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість"},
-    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість"},
-    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс"}
+# Словник з прямими посиланнями на красиві зображення твоїх товарів
+ITEM_IMAGES = {
+    "iphone": "https://i.ibb.co/vxs4yRC/iphone16.jpg",
+    "pc": "https://i.ibb.co/N6T4Xf0/rtx5090.jpg",
+    "capybara": "https://i.ibb.co/r2dtMcy/capybara.jpg",
+    "tiger": "https://i.ibb.co/3M3zH1V/tiger.jpg",
+    "jiga": "https://i.ibb.co/L6Qx0g2/jiga.jpg",
+    "bmw": "https://i.ibb.co/zH9XmGz/bmwm5.jpg",
+    "porsche": "https://i.ibb.co/QpHbDY4/porsche911.jpg",
+    "flat": "https://i.ibb.co/kQv1qVn/flat.jpg",
+    "villa": "https://i.ibb.co/C2n1hYn/villa.jpg",
+    "yacht": "https://i.ibb.co/qy0M8z2/yacht.jpg"
 }
 
-# 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
-@bot.message_handler(commands=['shop', 'магазин'])
-def show_shop(message):
-    if is_user_banned(message.from_user.id): return
-    
-    shop_text = [
-        "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
-        "<i>За кожне смс я кидаю тобі пару гривень. Зібрав капітал? Купуй жирні ніштяки!</i>\n",
-        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити jiga</i>)\n"
-    ]
-    
-    # Групуємо товари за категоріями для краси
-    categories = {}
-    for code, item in SHOP_ITEMS.items():
-        cat = item["cat"]
-        if cat not in categories: categories[cat] = []
-        categories[cat].append(f"• <code>{code}</code> — <b>{item['name']}</b> | 💰 <code>{item['price']:,} грн</code>")
-        
-    for cat, items in categories.items():
-        shop_text.append(f"📦 <b>{cat.upper()}:</b>")
-        shop_text.extend(items)
-        shop_text.append("")
-        
-    bot.reply_to(message, "\n".join(shop_text), parse_mode="HTML")
-
-# 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
-@bot.message_handler(commands=['buy', 'купити'])
-def buy_item(message):
-    if is_user_banned(message.from_user.id): return
-    
-    args = message.text.split()
-    if len(args) < 2:
-        bot.reply_to(message, "⚠️ Код товару хто писати буде? Наприклад: <code>/купити bmw</code>", parse_mode="HTML")
-        return
-        
-    item_code = args[1].lower().strip()
-    
-    if item_code not in SHOP_ITEMS:
-        bot.reply_to(message, "🤡 Ти щось переплутав, бариго. Такого товару на моєму ринку немає! Глянь в `/магазин`.")
-        return
-        
-    item = SHOP_ITEMS[item_code]
-    user_id = message.from_user.id
-    
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Перевіряємо баланс
-                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                res = cursor.fetchone()
-                current_balance = res[0] if res else 0
-                
-                if current_balance < item["price"]:
-                    shortage = item["price"] - current_balance
-                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на Porsche не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
-                    conn.close()
-                    return
-                    
-                # Знімаємо бабки
-                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
-                # Додаємо в інвентар (обов'язково пишемо item_code, щоб потім вибирати картинку)
-                cursor.execute(
-                    "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
-                    (user_id, item_code, item["name"], item["cat"])
-                )
-            conn.commit()
-            conn.close()
-            
-        bot.reply_to(
-            message, 
-            f"🎉 <b>УСПІШНА УГОДА! ОЛІГАРХ НА ЗВ'ЯЗКУ!</b> 🎉\n\n"
-            f"Ти успішно купив: <b>{item['name']}</b> за <code>{item['price']:,} грн</code>!\n"
-            f"Майно внесено до реєстру СБУ. Перевір свій статус через `/майно`.", 
-            parse_mode="HTML"
-        )
-        
-    except Exception as e:
-        print(f"Помилка купівлі: {e}")
-        bot.reply_to(message, "❌ Щось термінал барахлить, база даних відхилила транзакцію.")
-
-# 💼 👑 ОНОВЛЕНЕ ГАРНЕ МАЙНО ТА БАЛАНС (/money, /balance, /майно, /гаманець, /баланс)
 @bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
 def show_inventory(message):
     if is_user_banned(message.from_user.id): return
@@ -410,45 +328,16 @@ def show_inventory(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо баланс
                 cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
                 res = cursor.fetchone()
                 balance = res[0] if res else 0
                 
-                # Беремо список речей (додав вибірку item_code для визначення картинки)
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
                 items = cursor.fetchall()
             conn.close()
             
         clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
         
-        # Словник з прямими посиланнями на красиві зображення твоїх товарів
-        # Заміни ці тестові лінки на свої реальні картинки за потреби!
-        ITEM_IMAGES = {
-            "iphone": "https://i.ibb.co/vxs4yRC/iphone16.jpg",
-            "pc": "https://i.ibb.co/N6T4Xf0/rtx5090.jpg",
-            "capybara": "https://i.ibb.co/r2dtMcy/capybara.jpg",
-            "tiger": "https://i.ibb.co/3M3zH1V/tiger.jpg",
-            "jiga": "https://i.ibb.co/L6Qx0g2/jiga.jpg",
-            "bmw": "https://i.ibb.co/zH9XmGz/bmwm5.jpg",
-            "porsche": "https://i.ibb.co/QpHbDY4/porsche911.jpg",
-            "flat": "https://i.ibb.co/kQv1qVn/flat.jpg",
-            "villa": "https://i.ibb.co/C2n1hYn/villa.jpg",
-            "yacht": "https://i.ibb.co/qy0M8z2/yacht.jpg"
-        }
-        
-        # Визначаємо, яку головну картинку майна підвантажити в прев'ю
-        # Робимо перевірку від найдорожчого майна до найдешевшого
-        preview_link = ""
-        check_order = ["yacht", "villa", "porsche", "bmw", "tiger", "flat", "pc", "iphone", "capybara", "jiga"]
-        
-        for code in check_order:
-            if any(row[0] == code for row in items):
-                if code in ITEM_IMAGES:
-                    # Зашиваємо посилання у невидимий HTML-символ
-                    preview_link = f'<a href="{ITEM_IMAGES[code]}">‌</a>'
-                    break
-
         response = [
             f"👑 <b>ФІНАНСОВИЙ АУДІТ АКТИВІВ</b> 👑",
             f"👤 <b>Власник:</b> {clean_name.upper()}\n",
@@ -456,16 +345,21 @@ def show_inventory(message):
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>",
         ]
         
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        
         if not items:
             response.append(f"────────────────────")
             response.append("🎰 <b>Статус:</b> <i>Повний голяк. Тільки шкарпетки й телефон, з якого ти пишеш. Бігом на заробітки! 🏃‍♂️</i>")
+            # Якщо майна немає, надсилаємо просто текстом
+            bot.reply_to(message, "\n".join(response), parse_mode="HTML")
         else:
-            # Рахуємо загальну вартість майна в інвентарі
             total_property_value = 0
             item_counts = {}
+            unique_items = {} # Для кнопок: зберігаємо коди та імена речей, які є у юзера
             
             for code, name in items:
                 item_counts[name] = item_counts.get(name, 0) + 1
+                unique_items[code] = name
                 if code in SHOP_ITEMS:
                     total_property_value += SHOP_ITEMS[code]["price"]
             
@@ -478,16 +372,67 @@ def show_inventory(message):
                 response.append(f" ╰┈➤ {name}{count_str}")
                 
             response.append(f"────────────────────")
-            response.append("😎 <i>Вся братва в чаті заздрить твоїм статкам!</i>")
-
-        # З'єднуємо невидимий лінк з текстом, щоб Telegram красиво вивів картинку під повідомленням
-        final_text = preview_link + "\n".join(response)
-        
-        bot.reply_to(message, final_text, parse_mode="HTML")
+            response.append("📸 <i>Натисни на кнопку нижче, щоб глянути фотку свого майна!</i>")
+            
+            # 🔘 Створюємо кнопки для кожної унікальної купленої речі
+            for code, name in unique_items.items():
+                # Обрізаємо емодзі для тексту кнопки, якщо хочеться чистіший вигляд
+                btn = types.InlineKeyboardButton(text=f"📷 {name}", callback_data=f"view_prop_{code}_{user_id}")
+                markup.add(btn)
+                
+            bot.reply_to(message, "\n".join(response), reply_markup=markup, parse_mode="HTML")
         
     except Exception as e:
         print(f"Помилка виведення майна: {e}")
         bot.reply_to(message, "❌ Не вдалося зчитати дані з твого гаманця.")
+
+# 🎮 ОБРОБНИК КЛІКІВ ПО КНОПКАХ МАЙНА
+@bot.callback_query_handler(func=lambda call: call.data.startswith('view_prop_'))
+def handle_property_photo_view(call):
+    # Приклад data: view_prop_bmw_5512316636
+    parts = call.data.split('_')
+    item_code = parts[2]
+    owner_id = int(parts[3])
+    
+    # Захист: тільки той, чиє це майно, може клацати по кнопках
+    if call.from_user.id != owner_id:
+        bot.answer_callback_query(call.id, "🛑 Це не твої кишені! Перевір своє майно командою /майно", show_alert=True)
+        return
+        
+    bot.answer_callback_query(call.id) # Прибираємо годинничок з кнопки
+    
+    if item_code not in ITEM_IMAGES or item_code not in SHOP_ITEMS:
+        return
+        
+    item_url = ITEM_IMAGES[item_code]
+    item_name = SHOP_ITEMS[item_code]["name"]
+    item_price = SHOP_ITEMS[item_code]["price"]
+    
+    # Створюємо невидиме посилання на фото, щоб підмінити текст
+    photo_preview = f'<a href="{item_url}">‌</a>'
+    
+    # Текст картки перегляду речі
+    view_text = (
+        f"{photo_preview}"
+        f"📊 <b>ОГЛЯД МАЙНА: {item_name.upper()}</b>\n"
+        f"────────────────────\n"
+        f"💵 <b>Ринкова ціна:</b> <code>{item_price:,} грн</code>\n"
+        f"🗂 <b>Категорія:</b> {SHOP_ITEMS[item_code]['cat']}\n"
+        f"────────────────────\n"
+        f"↩️ <i>Щоб повернутися до повного списку активів, напиши /майно ще раз.</i>"
+    )
+    
+    try:
+        # Зберігаємо ті самі кнопки під фотографією, щоб можна було перемикатися далі
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=view_text,
+            reply_markup=call.message.reply_markup,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Помилка оновлення картки фото: {e}")
 
 
 # ===================================================================
