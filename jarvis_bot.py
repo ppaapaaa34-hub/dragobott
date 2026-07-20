@@ -344,21 +344,22 @@ def generate_inventory_ai_image(bought_codes):
     return None
 
 # ===================================================================
-# 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно)
+# 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
 
-# Асортимент ринку: [Код: {Назва, Ціна, Категорія, Опис для AI}]
+# Оновлений асортимент ринку: [Код: {Назва, Ціна, Категорія, Опис для AI}]
 SHOP_ITEMS = {
-    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 60000, "cat": "Електроніка", "ai_desc": "latest iPhone 16 Pro Max"},
-    "pc": {"name": "🖥️ ПК на RTX 5090", "price": 150000, "cat": "Електроніка", "ai_desc": "futuristic gaming PC with glowing RTX 5090"},
-    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara"},
-    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic pet tiger"},
-    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки", "ai_desc": "classic VAZ 2107 car"},
-    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки", "ai_desc": "black sports car BMW M5 F90"},
-    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки", "ai_desc": "racing Porsche 911 GT3 RS"},
+    "rolex": {"name": "⌚ Золотий Rolex Daytona", "price": 85000, "cat": "Аксесуари", "ai_desc": "luxurious golden Rolex watch on a velvet pillow"},
+    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara wearing a small gold chain"},
+    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic big pet tiger"},
+    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки", "ai_desc": "tuned classic VAZ 2107 car"},
+    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки", "ai_desc": "black aggressive sports car BMW M5 F90"},
+    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки", "ai_desc": "racing lime Porsche 911 GT3 RS"},
+    "bugatti": {"name": "⚡ Bugatti Chiron", "price": 45000000, "cat": "Тачки", "ai_desc": "hypercar Bugatti Chiron"},
+    "copier": {"name": "🚁 Вертоліт Eurocopter", "price": 18000000, "cat": "Транспорт", "ai_desc": "private luxury black helicopter"},
     "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість", "ai_desc": "Soviet-style apartment building"},
-    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість", "ai_desc": "luxury modern mansion"},
-    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht"}
+    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість", "ai_desc": "luxury modern mansion with pool"},
+    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"}
 }
 
 # 🛠️ АВТОМАТИЧНА ПЕРЕВІРКА ТА СТВОРЕННЯ ТАБЛИЦІ В БД
@@ -440,7 +441,7 @@ def show_shop(message):
     shop_text = [
         "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
         "<i>За кожне смс я кидаю тобі пару гривень. Зібрав капітал? Купуй жирні ніштяки!</i>\n",
-        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити jiga</i>)\n"
+        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити rolex</i>)\n"
     ]
     
     categories = {}
@@ -509,6 +510,118 @@ def buy_item(message):
         print(f"Помилка купівлі: {e}")
         bot.reply_to(message, f"❌ Не вдалося здійснити покупку: <code>{str(e)[:100]}</code>", parse_mode="HTML")
 
+# 💸 КОМАНДА: ПЕРЕДАТИ ГРОШІ ІНШОМУ ГРАВЦЮ (/pay, /передати, /переказ, /дати)
+@bot.message_handler(commands=['pay', 'передати', 'переказ', 'дати'])
+def transfer_money(message):
+    if is_user_banned(message.from_user.id): return
+
+    sender_id = message.from_user.id
+    args = message.text.split()
+    
+    amount = None
+    target_user_id = None
+    target_user_name = None
+
+    # Варіант A: Відповіддю на повідомлення (Reply) -> /передати 5000
+    if message.reply_to_message:
+        if len(args) < 2:
+            bot.reply_to(message, "⚠️ Вкажи суму переказу! Наприклад: <code>/передати 5000</code> (у відповідь на повідомлення)", parse_mode="HTML")
+            return
+        try:
+            amount = int(args[1])
+        except ValueError:
+            bot.reply_to(message, "🤡 Сума має бути цілим числом!")
+            return
+
+        target_user_id = message.reply_to_message.from_user.id
+        target_user_name = message.reply_to_message.from_user.first_name
+
+    # Варіант B: Через юзернейм -> /передати 5000 @username
+    else:
+        if len(args) < 3:
+            bot.reply_to(message, "💡 <b>Як передати бабки:</b>\n1. Відповісти на чиєсь повідомлення: <code>/передати 1000</code>\n2. Або за юзернеймом: <code>/передати 1000 @username</code>", parse_mode="HTML")
+            return
+        try:
+            amount = int(args[1])
+        except ValueError:
+            bot.reply_to(message, "🤡 Сума має бути цілим числом!")
+            return
+
+        username_arg = args[2].replace("@", "").strip()
+        
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT user_id, first_name FROM stats WHERE LOWER(username) = LOWER(%s)", (username_arg,))
+                    res = cursor.fetchone()
+                    if res:
+                        target_user_id = res[0]
+                        target_user_name = res[1] or username_arg
+                conn.close()
+        except Exception as e:
+            print(f"Помилка пошуку юзера: {e}")
+
+        if not target_user_id:
+            bot.reply_to(message, f"❌ Не знайшов у базі гравця <code>@{username_arg}</code>. Хай він спочатку напише щось у чат!", parse_mode="HTML")
+            return
+
+    # Перевірки безпеки
+    if amount <= 0:
+        bot.reply_to(message, "🤡 Ти кого надурити хочеш? Сума повинна бути більшою за 0!")
+        return
+
+    if sender_id == target_user_id:
+        bot.reply_to(message, "🧠 Переводити гроші самому собі? Сильно.")
+        return
+
+    # Транзакція в БД
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Перевіряємо баланс відправника
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (sender_id,))
+                res = cursor.fetchone()
+                sender_balance = res[0] if res else 0
+
+                if sender_balance < amount:
+                    bot.reply_to(
+                        message, 
+                        f"💸 <b>Неймовірний фінансовий крах!</b>\n"
+                        f"У тебе немає <code>{amount:,} грн</code>. Твій баланс: <code>{sender_balance:,} грн</code>.", 
+                        parse_mode="HTML"
+                    )
+                    conn.close()
+                    return
+
+                # Знімаємо у відправника
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (amount, sender_id))
+                
+                # Зараховуємо отримувачу
+                cursor.execute("""
+                    INSERT INTO stats (user_id, balance) VALUES (%s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
+                """, (target_user_id, amount))
+
+            conn.commit()
+            conn.close()
+
+        clean_sender = message.from_user.first_name.replace("<", "&lt;").replace(">", "&gt;")
+        clean_target = target_user_name.replace("<", "&lt;").replace(">", "&gt;")
+
+        bot.reply_to(
+            message,
+            f"🤝 <b>БРАТВА УГОДИ ДОТРИМУЄТЬСЯ!</b>\n\n"
+            f"👤 <b>{clean_sender}</b> переказав 💸 <code>{amount:,} грн</code> ➔ 👤 <b>{clean_target}</b>!\n"
+            f"<i>Транзакція пройшла через пацанський банк.</i>",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        print(f"Помилка переказу: {e}")
+        bot.reply_to(message, f"❌ Помилка під час транзакції: <code>{str(e)[:100]}</code>", parse_mode="HTML")
+
 # 💼 👑 МАЙНО ТА ПРОФІЛЬ (/money, /balance, /майно, /гаманець, /баланс, /профіль)
 @bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс', 'профіль', 'profile'])
 def show_inventory(message):
@@ -571,14 +684,14 @@ def show_inventory(message):
         
         caption_text = "\n".join(response)
 
-        # Відправляємо проміжне повідомлення
+        # Проміжне повідомлення
         status_msg = bot.reply_to(
             message, 
             "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
             parse_mode="HTML"
         )
 
-        # Генерація картини
+        # Генерація картинки
         photo_bio = generate_inventory_ai_image(unique_codes)
 
         if photo_bio:
