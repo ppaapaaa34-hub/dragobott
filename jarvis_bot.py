@@ -16,21 +16,17 @@ import psycopg2
 import discord
 from discord.ext import commands
 
-# ==================== НАЛАШТУВАННЯ ТА ЗМІННІ ОТОЧЕННЯ ====================
-DATABASE_URL = os.environ.get('DATABASE_URL')
-API_ID = int(os.environ.get('API_ID', 12345678))
-API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
-DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
-TELEGRAM_CHAT_ID = -1003428241218  # ID вашого чату
 
-# ==================== БАЗА ДАНИХ (PostgreSQL) ====================
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+# Підключаємося до БД
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
+# 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
 
+# Створення та авто-оновлення таблиць при запуску
 try:
     with db_lock:
         conn = get_db_connection()
@@ -39,13 +35,13 @@ try:
             cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
                 user_id BIGINT PRIMARY KEY,
                 name TEXT,
-                count INTEGER DEFAULT 0,
-                gender TEXT DEFAULT 'чоловіча',
+                count INTEGER,
+                gender TEXT,
                 in_chat BOOLEAN DEFAULT TRUE,
                 balance BIGINT DEFAULT 0
             )""")
             
-            # Колонки для профілю
+            # 🛠 ДОДАЄМО ВСІ НЕОБХІДНІ КОЛОНКИ ДЛЯ КАСТОМІЗАЦІЇ ТА ПРОФІЛЮ
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_nick VARCHAR(50) DEFAULT NULL;")
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_title VARCHAR(50) DEFAULT NULL;")
@@ -53,7 +49,7 @@ try:
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS inventory_order TEXT DEFAULT NULL;")
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS biz_order TEXT DEFAULT NULL;")
             
-            # 2. Таблиці гри
+            # 2. Таблиця майна (Монополія)
             cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT,
@@ -61,17 +57,23 @@ try:
                 item_name TEXT,
                 item_category TEXT
             )""")
+            
+            # 3. Таблиця бізнесів
             cursor.execute("""CREATE TABLE IF NOT EXISTS user_businesses (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT,
                 biz_code TEXT
             )""")
+
+            # 4. Таблиця шлюбів
             cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
                 user1_id BIGINT,
                 user2_id BIGINT,
                 UNIQUE(user1_id),
                 UNIQUE(user2_id)
             )""")
+
+            # 5. Таблиця банів
             cursor.execute("""CREATE TABLE IF NOT EXISTS banned_users (
                 user_id BIGINT PRIMARY KEY
             )""")
@@ -82,7 +84,18 @@ try:
 except Exception as e:
     print(f"Помилка створення/оновлення таблиць: {e}")
 
-# ==================== ІНІЦІАЛІЗАЦІЯ БОТА ТА AI ====================
+# ==================== НАЛАШТУВАННЯ ====================
+API_ID = int(os.environ.get('API_ID', 12345678))
+API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
+# ======================================================
+
+DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
+# Сюди впиши ID твого Телеграм-чату, куди бот має кидати анонси стрімів:
+TELEGRAM_CHAT_ID = -1003428241218  # Заміни на реальний ID свого чату
+
+
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -91,6 +104,7 @@ generation_config = {
     "temperature": 0.85,
 }
 
+# Залиш тільки цей блок
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -98,9 +112,9 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-# 💡 ВИПРАВЛЕНО: актуальна версія gemini-1.5-flash замість неіснуючої 2.5
+
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
+    model_name="gemini-2.5-flash",
     generation_config=generation_config,
     safety_settings=safety_settings,
     system_instruction=(
@@ -113,10 +127,14 @@ model = genai.GenerativeModel(
     )
 )
 
+# Пам'ять чатів
 bot_chats = {}
+
+# Пам'ять для МЕМНИХ НОВИН
 RECENT_MESSAGES = []
 MAX_HISTORY_LIMIT = 30
 
+# 🧠 ОЧИЩЕННЯ ПАМ'ЯТІ GEMINI
 def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
@@ -130,6 +148,7 @@ def run_dummy_server():
     httpd = HTTPServer(("", port), SimpleHTTPRequestHandler)
     httpd.serve_forever()
 
+# 🚫 ПЕРЕВІРКА НА БАН
 def is_user_banned(user_id):
     try:
         with db_lock:
@@ -141,402 +160,6 @@ def is_user_banned(user_id):
             return result
     except Exception:
         return False
-
-def ensure_user_in_db(user):
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user.id,))
-                res = cursor.fetchone()
-                if not res:
-                    cursor.execute("""
-                        INSERT INTO stats (user_id, name, count, gender, in_chat, balance)
-                        VALUES (%s, %s, 0, 'чоловіча', TRUE, 1000)
-                    """, (user.id, user.first_name))
-                    conn.commit()
-                    gender = 'чоловіча'
-                else:
-                    gender = res[0] or 'чоловіча'
-            conn.close()
-            return gender
-    except Exception as e:
-        print(f"Помилка БД в ensure_user_in_db: {e}")
-        return 'чоловіча'
-
-# ==================== ОЗВУЧКА ГОЛОСОМ (Edge-TTS) ====================
-async def generate_voice_file(text, output_path):
-    communicate = edge_tts.Communicate(text, "uk-UA-OstapNeural")
-    await communicate.save(output_path)
-
-def send_voice_reply(chat_id, text, reply_to_id=None):
-    try:
-        filename = f"voice_{chat_id}_{int(time.time())}.ogg"
-        asyncio.run(generate_voice_file(text, filename))
-        with open(filename, 'rb') as voice:
-            bot.send_voice(chat_id, voice, reply_to_message_id=reply_to_id)
-        if os.path.exists(filename):
-            os.remove(filename)
-    except Exception as e:
-        print(f"Помилка озвучки: {e}")
-        bot.send_message(chat_id, text, reply_to_message_id=reply_to_id)
-
-# ==================== СОННІ / SLEEPERS ====================
-@bot.message_handler(commands=['sleepers', 'сонні'])
-def show_sleepers(message):
-    if is_user_banned(message.from_user.id): return
-    chat_id = message.chat.id
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT name FROM stats WHERE in_chat = FALSE OR count = 0 LIMIT 10")
-                rows = cursor.fetchall()
-            conn.close()
-        
-        if not rows:
-            bot.reply_to(message, "💤 Сонних братків не виявлено! Всі пашуть на базар.")
-            return
-
-        names = ", ".join([r[0] for r in rows if r[0]])
-        response_text = f"😴 <b>СПИСОК СОННИКІВ ЧАТУ:</b>\n\n{names}\n\n<i>— Драго прийде за вашими душами!</i>"
-        bot.send_message(chat_id, response_text, parse_mode="HTML")
-    except Exception as e:
-        print(f"Помилка пошуку сонних: {e}")
-        bot.reply_to(message, "❌ Щось розвідка СБУ підкачала. Не зміг дістати список соньків.")
-
-# ==================== МЕМНІ НОВИНИ ====================
-@bot.message_handler(commands=['news', 'новини'])
-def generate_chat_news(message):
-    if is_user_banned(message.from_user.id): return
-    chat_id = message.chat.id
-    
-    if not RECENT_MESSAGES:
-        bot.reply_to(message, "📰 Свіжих пліток немає! Ви ще занадто мало понаписували в чат. Пишіть більше!")
-        return
-
-    status_msg = bot.reply_to(message, "🗞️ <i>Драго верстає палаючий випуск мемних новин чату...</i>", parse_mode="HTML")
-    bot.send_chat_action(chat_id, 'typing')
-
-    history_context = "\n".join(RECENT_MESSAGES)
-    prompt = f"""
-    Ти — Драго, зухвалий гумористичний ШІ-журналіст і бот-бандит.
-    Проаналізуй останні повідомлення з чату та напиши смішний, абсурдний випуск "Кримінально-Мемних Новин Чату".
-
-    Контекст останніх переписок:
-    {history_context}
-
-    Вимоги:
-    1. Вигадай гучну мемну назву випуску новин.
-    2. Розпиши 2-3 "сенсаційні" події, висмикнуті з тексту чату (підколюй конкретних авторів, вигадуй плітки).
-    3. Додай прогноз погоди або курс валют чату в пацанському стилі.
-    4. Обов'язково закінчи думку повністю, не обривай речення!
-    5. Стиль: український молодіжний сленг, міцні слівця, дотепна іронія.
-    6. Використовуй HTML-теги для красивого форматування (<b>bold</b>, <i>italic</i>, <code>code</code>).
-    """
-
-    try:
-        response = model.generate_content(prompt)
-        news_text = response.text
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg.message_id,
-            text=f"📰 <b>СПЕЦВИПУСК НОВИН ВІД ДРАГО</b> 📰\n\n{news_text}",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        print(f"Помилка генерації новин: {e}")
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg.message_id,
-            text="❌ <b>Друкарська машинка згоріла!</b> (Помилка генерації новин).",
-            parse_mode="HTML"
-        )
-
-# ==================== ЕКОНОМІКА ТА КАЗИНО ====================
-def get_user_balance(user_id):
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                res = cursor.fetchone()
-            conn.close()
-        return res[0] if res else 0
-    except Exception:
-        return 0
-
-def update_user_balance(user_id, amount):
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO stats (user_id, balance) VALUES (%s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance
-                """, (user_id, amount))
-                conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення балансу: {e}")
-
-@bot.message_handler(commands=['casino', 'казино', 'рулетка'])
-def play_casino(message):
-    if is_user_banned(message.from_user.id): return
-    args = message.text.split()
-    if len(args) < 3:
-        bot.reply_to(
-            message, 
-            "🎰 <b>ЯК ГРАТИ В РУЛЕТКУ:</b>\n"
-            "• <code>/казино [ставка] [червоне/чорне]</code> (виграш x2)\n"
-            "• <code>/казино [ставка] [число від 0 до 36]</code> (виграш x36)\n\n"
-            "Приклад: <code>/казино 1000 червоне</code>", 
-            parse_mode="HTML"
-        )
-        return
-
-    try:
-        bet = int(args[1])
-    except ValueError:
-        bot.reply_to(message, "🤡 Ставка має бути цілим числом!")
-        return
-
-    user_id = message.from_user.id
-    balance = get_user_balance(user_id)
-
-    if bet <= 0 or bet > balance:
-        bot.reply_to(message, f"💸 Недостатньо бабок! Твій баланс: <code>{balance:,} грн</code>", parse_mode="HTML")
-        return
-
-    choice = args[2].lower()
-    reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
-    blacks = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]
-    spin = random.randint(0, 36)
-    
-    if spin == 0:
-        spin_color, spin_emoji = "зелене (зеро)", "🟢"
-    elif spin in reds:
-        spin_color, spin_emoji = "червоне", "🔴"
-    else:
-        spin_color, spin_emoji = "чорне", "⚫"
-
-    won = False
-    win_amount = 0
-
-    if choice in ['червоне', 'red', 'червоний']:
-        if spin in reds: won, win_amount = True, bet * 2
-    elif choice in ['чорне', 'black', 'чорний']:
-        if spin in blacks: won, win_amount = True, bet * 2
-    elif choice.isdigit():
-        target_num = int(choice)
-        if 0 <= target_num <= 36 and spin == target_num:
-            won, win_amount = True, bet * 36
-
-    if won:
-        profit = win_amount - bet
-        update_user_balance(user_id, profit)
-        res_msg = f"🎰 Випало: {spin_emoji} <b>{spin} ({spin_color})</b>\n🎉 <b>ТИ ВИГРАВ!</b> +<code>{profit:,} грн</code>!\n💳 Баланс: <code>{balance + profit:,} грн</code>"
-    else:
-        update_user_balance(user_id, -bet)
-        res_msg = f"🎰 Випало: {spin_emoji} <b>{spin} ({spin_color})</b>\n💀 <b>ПРОБЛИСКУ НЕ СТАЛОСЯ!</b> -<code>{bet:,} грн</code>.\n💳 Залишок: <code>{balance - bet:,} грн</code>"
-
-    bot.reply_to(message, res_msg, parse_mode="HTML")
-
-@bot.message_handler(commands=['slot', 'слот', 'слоти'])
-def play_slots(message):
-    if is_user_banned(message.from_user.id): return
-    args = message.text.split()
-    bet = int(args[1]) if len(args) >= 2 and args[1].isdigit() else 1000
-    user_id = message.from_user.id
-    balance = get_user_balance(user_id)
-
-    if bet <= 0 or bet > balance:
-        bot.reply_to(message, f"💸 Недостатньо коштів! Баланс: <code>{balance:,} грн</code>", parse_mode="HTML")
-        return
-
-    slot_msg = bot.send_dice(message.chat.id, emoji='🎰', reply_to_message_id=message.message_id)
-    dice_value = slot_msg.dice.value
-    win_multiplier = 0
-
-    if dice_value == 64: win_multiplier = 10
-    elif dice_value in [1, 22, 43]: win_multiplier = 5
-    elif dice_value in [16, 32, 48]: win_multiplier = 2
-
-    time.sleep(2)
-    if win_multiplier > 0:
-        profit = (bet * win_multiplier) - bet
-        update_user_balance(user_id, profit)
-        bot.reply_to(message, f"🔥 <b>ДЖЕКПОТ! X{win_multiplier}!</b>\n+<code>{profit:,} грн</code>!\n💳 Баланс: <code>{balance + profit:,} грн</code>", parse_mode="HTML")
-    else:
-        update_user_balance(user_id, -bet)
-        bot.reply_to(message, f"📉 Нічого не випало!\n-<code>{bet:,} грн</code>.\n💳 Залишок: <code>{balance - bet:,} грн</code>", parse_mode="HTML")
-
-@bot.message_handler(commands=['duel', 'дуель'])
-def initiate_duel(message):
-    if is_user_banned(message.from_user.id): return
-    if not message.reply_to_message:
-        bot.reply_to(message, "⚠️ Зроби реплай на повідомлення суперника!")
-        return
-
-    user1 = message.from_user
-    user2 = message.reply_to_message.from_user
-
-    if user1.id == user2.id or user2.id == bot.get_me().id:
-        bot.reply_to(message, "🛑 Неможливо викликати цього гравця.")
-        return
-
-    args = message.text.split()
-    bet = int(args[1]) if len(args) >= 2 and args[1].isdigit() else 5000
-
-    if get_user_balance(user1.id) < bet or get_user_balance(user2.id) < bet:
-        bot.reply_to(message, f"💸 У когось з учасників немає необхідних <code>{bet:,} грн</code>!", parse_mode="HTML")
-        return
-
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("🎯 ПРИЙНЯТИ", callback_data=f"duel_accept_{user1.id}_{user2.id}_{bet}"),
-        types.InlineKeyboardButton("🐔 ВТІКТИ", callback_data=f"duel_decline_{user1.id}_{user2.id}_{bet}")
-    )
-    bot.send_message(
-        message.chat.id, 
-        f"⚔️ <b>ДУЕЛЬ!</b>\n👤 <b>{user1.first_name}</b> викликає 👤 <b>{user2.first_name}</b>!\n💰 Ставка: <code>{bet:,} грн</code>!",
-        reply_markup=markup, parse_mode="HTML"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('duel_'))
-def handle_duel_callbacks(call):
-    _, action, u1_id, u2_id, bet = call.data.split('_')
-    u1_id, u2_id, bet = int(u1_id), int(u2_id), int(bet)
-
-    if call.from_user.id != u2_id:
-        bot.answer_callback_query(call.id, "🛑 Це виклик не для тебе!", show_alert=True)
-        return
-
-    if action == 'decline':
-        bot.edit_message_text("🐔 Дуель скасовано. Суперник втік!", call.message.chat.id, call.message.message_id)
-        return
-
-    if action == 'accept':
-        if get_user_balance(u1_id) < bet or get_user_balance(u2_id) < bet:
-            bot.edit_message_text("❌ Ставка більше не покривається балансом!", call.message.chat.id, call.message.message_id)
-            return
-
-        winner_id = random.choice([u1_id, u2_id])
-        loser_id = u2_id if winner_id == u1_id else u1_id
-        update_user_balance(loser_id, -bet)
-        update_user_balance(winner_id, bet)
-
-        bot.edit_message_text(
-            f"⚔️ <b>ДУЕЛЬ ЗАВЕРШЕНА!</b>\n🏆 Переможець отримав <code>+{bet:,} грн</code>!", 
-            call.message.chat.id, call.message.message_id, parse_mode="HTML"
-        )
-
-# ==================== 🍕 МЕНЮ ЇЖІ ====================
-FOOD_MENU = {
-    "pizza": {"name": "🍕 Пацанська Піца", "price": 450},
-    "shawarma": {"name": "🌯 Подвійна Шаурма", "price": 220},
-    "burger": {"name": "🍔 Соковитий Чізбургер", "price": 320},
-    "beer": {"name": "🍺 Холодне Пінне (1л)", "price": 150}
-}
-
-@bot.message_handler(commands=['menu', 'меню'])
-def show_food_menu(message):
-    if is_user_banned(message.from_user.id): return
-    text = ["🍽 <b>РЕСТОРАН ВІД ДРАГО</b> 🍽\n"]
-    for code, item in FOOD_MENU.items():
-        text.append(f"• <b>{item['name']}</b> — <code>{item['price']} грн</code> (/order_{code})")
-    bot.reply_to(message, "\n".join(text), parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text and m.text.startswith('/order_'))
-def order_food(message):
-    if is_user_banned(message.from_user.id): return
-    food_code = message.text.replace('/order_', '').strip().lower()
-    if food_code not in FOOD_MENU: return
-
-    item = FOOD_MENU[food_code]
-    user_id = message.from_user.id
-    if get_user_balance(user_id) < item['price']:
-        bot.reply_to(message, "💸 Немає бабок на перекус!")
-        return
-
-    update_user_balance(user_id, -item['price'])
-    bot.reply_to(message, f"🛵 Подано <b>{item['name']}</b>! Списано <code>-{item['price']} грн</code>.", parse_mode="HTML")
-
-# ==================== ГОЛОВНИЙ ОБРОБНИК (AI CHAT) ====================
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def handle_all_messages(message):
-    if is_user_banned(message.from_user.id): return
-
-    user = message.from_user
-    chat_id = message.chat.id
-    text = message.text
-
-    gender = ensure_user_in_db(user)
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE stats SET count = count + 1, balance = balance + %s, in_chat = TRUE, name = %s
-                    WHERE user_id = %s;
-                """, (random.randint(5, 25), user.first_name, user.id))
-                conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка запису статистики: {e}")
-
-    RECENT_MESSAGES.append(f"{user.first_name}: {text}")
-    if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT: RECENT_MESSAGES.pop(0)
-
-    bot_id = bot.get_me().id
-    is_reply_to_bot = (message.reply_to_message and message.reply_to_message.from_user.id == bot_id)
-    is_mentioned = any(word in text.lower() for word in ['драго', 'drago', 'дракон']) or (f"@{bot.get_me().username}" in text)
-
-    if message.chat.type in ['group', 'supergroup'] and not (is_reply_to_bot or is_mentioned):
-        return
-
-    voice_requested = any(w in text.lower() for w in ['скажи', 'озвуч', 'голосове', 'проговори'])
-    bot.send_chat_action(chat_id, 'record_voice' if voice_requested else 'typing')
-
-    try:
-        gemini_chat = get_gemini_chat(chat_id)
-        prompt = f"Користувач {user.first_name} (стать: {gender}) каже: {text}"
-        response = gemini_chat.send_message(prompt)
-        reply_text = response.text
-
-        if voice_requested:
-            send_voice_reply(chat_id, reply_text, reply_to_id=message.message_id)
-        else:
-            bot.reply_to(message, reply_text)
-
-    except Exception as e:
-        print(f"Помилка Gemini: {e}")
-        # Автоочищення завислого чату при виникненні помилки
-        if chat_id in bot_chats:
-            del bot_chats[chat_id]
-        bot.reply_to(message, "Мій мозок тимчасово підкипів (перезавантажую матрицю). Спробуй ще раз!")
-
-def run_discord():
-    try:
-        intents = discord.Intents.default()
-        discord_bot = commands.Bot(command_prefix="!", intents=intents)
-        if DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
-            discord_bot.run(DISCORD_TOKEN)
-    except Exception as e:
-        print(f"Помилка запуску Discord: {e}")
-
-# ==================== ЗАПУСК ====================
-if __name__ == '__main__':
-    print("🚀 Запуск сервера Драго...")
-    
-    threading.Thread(target=run_dummy_server, daemon=True).start()
-    print("🌐 Keep-Alive HTTP Сервер запущено.")
-
-    threading.Thread(target=run_discord, daemon=True).start()
-    print("🎮 Discord бот запущено.")
-
-    print("🤖 Telegram бот Драго успішно запущений!")
-    bot.infinity_polling(timeout=60, long_polling_timeout=30)
 
 
 # ===================================================================
@@ -2112,6 +1735,99 @@ def ensure_user_in_db(user) -> str:
 
 
 # ===================================================================
+# 🕵️ КОМАНДА /dossier (Секретне досьє СБУ)
+# ===================================================================
+@bot.message_handler(commands=['dossier', 'досьє'])
+def generate_sbu_dossier(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    chat_id = message.chat.id
+    
+    # Перевіряємо, чи це реплай
+    if not message.reply_to_message:
+        bot.reply_to(message, "⚠️ Бро, команду треба писати у відповідь на повідомлення того, на кого збираємо компромат!")
+        return
+
+    target_user = message.reply_to_message.from_user
+    
+    # Бот не робить досьє на себе
+    if target_user.id == bot.get_me().id:
+        bot.reply_to(message, "🛑 На співробітників СБУ досьє засекречено. Відхилено.")
+        return
+
+    # Збираємо дані підозрюваного з бази
+    ensure_user_in_db(target_user)
+    gender = get_user_gender(target_user.id)
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT count FROM stats WHERE user_id = %s", (target_user.id,))
+                result = cursor.fetchone()
+                msg_count = result[0] if result else 0
+            conn.close()
+    except Exception as e:
+        print(f"Помилка БД в досьє: {e}")
+        msg_count = "Невідомо"
+
+    status_msg = bot.reply_to(message, "🕵️‍♂️ <i>Драго відкриває архіви СБУ... Збираю компромат...</i>", parse_mode="HTML")
+    bot.send_chat_action(chat_id, 'typing')
+
+    # Формуємо промпт для ШІ
+    target_name = target_user.first_name or "Анонім"
+    
+    prompt = f"""
+    Ти — Драго, зухвалий, саркастичний капітан СБУ і бот-бандит. 
+    Твоє завдання — скласти жартівливе, абсурдне гумористичне "кримінальне досьє" на учасника чату.
+    
+    ⚠️ ВАЖЛИВО: Це дружня гра! Тут немає реальних образ чи загрози. 
+    Генеруй текст вільно, не обривай вирок на півслові, допиши рапорт до самого кінця!
+    
+    Дані підозрюваного:
+    - Ім'я: {target_name}
+    - Стать: {gender}
+    - Рівень балакучості: {msg_count}
+    
+    Напиши досьє у вигляді офіційного, але дуже смішного рапорту. 
+    Обов'язково вигадай кримінальну кличку (позивний).
+    Опиши абсурдні злочини (наприклад: крадіжка мемів, лінь, ігнор братви).
+    Додай пункти: "Особливі прикмети" та "Вирок від Драго".
+    Пиши українською мовою, використовуй пацанський сленг, жорстку іронію.
+    НІКОЛИ не використовуй маркдаун-символи (зірочки *, підкреслення).
+    """
+
+    try:
+        # Відправляємо запит до Gemini
+        response = model.generate_content(prompt)
+        dossier_text = response.text
+        
+        # ВІДКОРИГОВАНО: Теги <b> замінено на зірочки * для режиму Markdown
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"📂 *ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}*\n\n{dossier_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"📂 ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}\n\n{dossier_text}"
+            )
+    except Exception as e:
+        print(f"Помилка генерації досьє: {e}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="❌ *Збій системи СБУ!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй пізніше.",
+            parse_mode="Markdown"
+        )
+
+
+# ===================================================================
 # 🖼️ КОМАНДА /generate
 # ===================================================================
 @bot.message_handler(commands=['generate'])
@@ -2788,6 +2504,66 @@ def show_friend_menu(message):
     except Exception as e:
         print(f"Помилка при виклику меню: {e}")
         bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
+
+# ===================================================================
+# 📰 МЕМНІ НОВИНИ ВІД ДРАГО НА БАЗІ GEMINI (/news)
+# ===================================================================
+@bot.message_handler(commands=['news', 'новини'])
+def generate_chat_news(message):
+    chat_id = message.chat.id
+    
+    if len(RECENT_MESSAGES) < 5:
+        bot.reply_to(
+            message, 
+            "🤫 *Драго ще не назбирав достатньо компромату!* Поактивнічайте трохи в чаті, і я зроблю вам гарячий випуск новин.",
+            parse_mode="Markdown"
+        )
+        return
+        
+    status_msg = bot.reply_to(message, "🔥 <i>Драго дістає брудну білизну чату та пише свіжий випуск новин...</i>", parse_mode="HTML")
+    bot.send_chat_action(chat_id, 'typing')
+    
+    formatted_history = "\n".join([f"- {msg['user']}: {msg['text']}" for msg in RECENT_MESSAGES])
+    
+    prompt = f"""
+    Ти — Драго, зухвалий, саркастичний, харизматичний бот-бандит, який веде кримінальний чат.
+    Твоє завдання — написати короткий, суперсмішний випуск "жовтої преси" або "мемних новин" на основі останніх повідомлень у чаті.
+    Будь іронічним, використовуй молодіжний сленг, трохи підколюй учасників (але без відвертої злоби чи жорстокої токсичності).
+    Вигадай абсурдні сенсації, теорії змови або "кримінальні розслідування" на основі того, про що त्यांनी писали.
+    
+    Ось історія останніх повідомлень у чаті:
+    {formatted_history}
+    
+    Напиши короткий випуск новин (3-4 пункти) українською мовою. Обов'язково використовуй емодії та виділяй імена.
+    В кінці додай фірмову бандитську фразу від Драго.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        news_text = response.text
+        
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ <b>СПЕЦВИПУСК ДРАГО-NEWS</b> ⚡️\n\n{news_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ СПЕЦВИПУСК ДРАГО-NEWS ⚡️\n\n{news_text}"
+            )
+            
+    except Exception as e:
+        print(f"Помилка генерації новин через Gemini: {e}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="❌ *Чорт, зв'язок обірвався!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй трохи пізніше!",
+            parse_mode="Markdown"
+        )
 
 
 # ===================================================================
