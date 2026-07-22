@@ -2418,12 +2418,109 @@ def show_friend_menu(message):
 # 🔫 ГРА "МАФІЯ" (Братва проти СБУ)
 # ===================================================================
 
+# Допоміжні функції для перевірки статусу гри
+def check_win(chat_id):
+    game = mafia_games[chat_id]
+    alive = game['alive']
+    roles = game['roles']
+    
+    mafia_alive = sum(1 for pid in alive if roles[pid] == 'Братва (Мафія)')
+    mirni_alive = len(alive) - mafia_alive
+    
+    if mafia_alive == 0:
+        return 'mirni'
+    elif mafia_alive >= mirni_alive:
+        return 'mafia'
+    return None
+
+def start_night(chat_id):
+    game = mafia_games[chat_id]
+    game['state'] = 'night'
+    game['night_actions'] = {'mafia': None, 'sbu': None}
+    
+    bot.send_message(
+        chat_id, 
+        "🌃 <b>МІСТО ЗАСИНАЄ...</b>\n\nУсі розійшлися по норах. Братва виходить на полювання, СБУ шукає сліди.\n\n<i>(Мафія та СБУ роблять вибір у ПП з ботом)</i>", 
+        parse_mode="HTML"
+    )
+    
+    # Відправляємо кнопки живим активам у ПП
+    for pid in game['alive']:
+        role = game['roles'][pid]
+        if role in ['Братва (Мафія)', 'Агент СБУ (Комісар)']:
+            markup = types.InlineKeyboardMarkup()
+            for target_id in game['alive']:
+                if target_id != pid: # Не можна вибрати себе
+                    target_name = game['players'][target_id]
+                    cb_data = f"night_{chat_id}_{target_id}"
+                    markup.add(types.InlineKeyboardButton(target_name, callback_data=cb_data))
+            
+            try:
+                if role == 'Братва (Мафія)':
+                    bot.send_message(pid, "🔫 <b>Вибери, кого братва завалить цієї ночі:</b>", reply_markup=markup, parse_mode="HTML")
+                elif role == 'Агент СБУ (Комісар)':
+                    bot.send_message(pid, "🕵️‍♂️ <b>Вибери, кого пробити по базі СБУ:</b>", reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                pass # Якщо користувач не запустив бота в ПП
+
+def process_night(chat_id):
+    game = mafia_games[chat_id]
+    
+    # Вбиваємо жертву мафії
+    killed_id = game['night_actions']['mafia']
+    if killed_id and killed_id in game['alive']:
+        game['alive'].remove(killed_id)
+        killed_name = game['players'][killed_id]
+        killed_msg = f"💀 Вночі братва розстріляла <b>{killed_name}</b>!"
+    else:
+        killed_msg = "🤷‍♂️ Вночі ніхто не постраждав (Мафія проспала або жертва вже мертва)."
+
+    # Перевіряємо чи хтось виграв
+    winner = check_win(chat_id)
+    if winner:
+        finish_game(chat_id, winner, killed_msg)
+        return
+
+    # Якщо гра триває, починаємо день
+    game['state'] = 'day'
+    game['day_votes'] = {}
+    
+    markup = types.InlineKeyboardMarkup()
+    for pid in game['alive']:
+        cb_data = f"dayvote_{chat_id}_{pid}"
+        markup.add(types.InlineKeyboardButton(game['players'][pid], callback_data=cb_data))
+    
+    bot.send_message(
+        chat_id, 
+        f"☀️ <b>РАНОК НА РАЙОНІ</b>\n\n{killed_msg}\n\nЧас знайти крису! Голосуйте, кого посадити на пляшку (за ґрати):", 
+        reply_markup=markup, 
+        parse_mode="HTML"
+    )
+
+def finish_game(chat_id, winner, extra_msg=""):
+    game = mafia_games[chat_id]
+    roles_text = "\n".join([f"{name} — {game['roles'][pid]}" for pid, name in game['players'].items()])
+    
+    if winner == 'mafia':
+        result = "🏴 <b>БРАТВА ПЕРЕМОГЛА!</b> Місто під їхнім контролем."
+    else:
+        result = "👮‍♂️ <b>СБУ ТА РОБОТЯГИ ПЕРЕМОГЛИ!</b> Мафію знищено."
+        
+    bot.send_message(
+        chat_id, 
+        f"{extra_msg}\n\n{result}\n\n<b>Хто був ким:</b>\n{roles_text}", 
+        parse_mode="HTML"
+    )
+    del mafia_games[chat_id]
+
+# ==================== КОМАНДИ ====================
+
 @bot.message_handler(commands=['mafia', 'мафія'])
 def start_mafia_lobby(message):
     if is_user_banned(message.from_user.id): return
     
     chat_id = message.chat.id
-    if chat_id in mafia_games and mafia_games[chat_id]['state'] != 'finished':
+    if chat_id in mafia_games:
         bot.reply_to(message, "⚠️ Розбірки вже почалися або йде збір! Пиши /join щоб приєднатися.")
         return
 
@@ -2431,86 +2528,156 @@ def start_mafia_lobby(message):
         'state': 'lobby',
         'players': {message.from_user.id: message.from_user.first_name},
         'roles': {},
-        'alive': []
+        'alive': [],
+        'night_actions': {'mafia': None, 'sbu': None},
+        'day_votes': {}
     }
     
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🔫 Приєднатися", callback_data="mafia_join"))
     
-    bot.send_message(
-        chat_id, 
-        "🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nБратва ділить район, СБУ шиє справи. Натискай кнопку, щоб сісти за стіл!", 
-        reply_markup=markup, 
-        parse_mode="HTML"
-    )
+    bot.send_message(chat_id, "🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nБратва ділить район, СБУ шиє справи. Натискай кнопку!", reply_markup=markup, parse_mode="HTML")
 
-@bot.callback_query_handler(func=lambda call: call.data == "mafia_join")
-def join_mafia(call):
-    chat_id = call.message.chat.id
-    user_id = call.from_user.id
-    user_name = call.from_user.first_name
-
-    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
-        bot.answer_callback_query(call.id, "Гра вже йде або не створена!", show_alert=True)
-        return
-
-    if user_id in mafia_games[chat_id]['players']:
-        bot.answer_callback_query(call.id, "Ти вже в ділі, чекай!", show_alert=True)
-        return
-
-    mafia_games[chat_id]['players'][user_id] = user_name
-    players_count = len(mafia_games[chat_id]['players'])
-    
-    bot.answer_callback_query(call.id, "Тебе записано!")
-    bot.edit_message_text(
-        f"🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nВже за столом: {players_count} чол.\n(Мінімум треба 4 для старту).\n\n<i>Старт через команду /start_mafia</i>",
-        chat_id,
-        call.message.message_id,
-        reply_markup=call.message.reply_markup,
-        parse_mode="HTML"
-    )
+@bot.message_handler(commands=['stop_mafia', 'зупинити_мафію'])
+def stop_mafia_game_cmd(message):
+    if is_user_banned(message.from_user.id): return
+    chat_id = message.chat.id
+    if chat_id in mafia_games:
+        del mafia_games[chat_id]
+        bot.reply_to(message, "🛑 <b>РОЗБІРКИ СКАСОВАНО!</b>\nСБУ накрило точку, братва розбіглася.", parse_mode="HTML")
+    else:
+        bot.reply_to(message, "🤡 Яку мафію зупиняти? Ніхто навіть не збирався!")
 
 @bot.message_handler(commands=['start_mafia'])
 def start_mafia_game(message):
     if is_user_banned(message.from_user.id): return
     
     chat_id = message.chat.id
-    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
-        return
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby': return
 
     players = mafia_games[chat_id]['players']
     if len(players) < 4:
         bot.reply_to(message, "🤡 Мало людей! Треба хоча б 4 пацана для нормальної стрілянини.")
         return
 
-    mafia_games[chat_id]['state'] = 'night'
     player_ids = list(players.keys())
     random.shuffle(player_ids)
 
-    # Розподіл ролей
     roles = {}
     roles[player_ids[0]] = 'Братва (Мафія)'
     roles[player_ids[1]] = 'Агент СБУ (Комісар)'
-    
     for pid in player_ids[2:]:
         roles[pid] = 'Роботяга (Мирний)'
 
     mafia_games[chat_id]['roles'] = roles
     mafia_games[chat_id]['alive'] = player_ids.copy()
 
-    # Розсилка ролей в ПП
     for pid, role in roles.items():
         try:
             bot.send_message(pid, f"🎭 Твоя роль у цій катці: <b>{role}</b>!\nТсс, нікому не кажи.", parse_mode="HTML")
         except Exception:
             bot.send_message(chat_id, f"⚠️ Не зміг написати одному з гравців у ПП! Хай напише боту /start.")
 
-    bot.send_message(
-        chat_id, 
-        "🌃 <b>МІСТО ЗАСИНАЄ...</b>\n\nУсі розійшлися по норах. Братва виходить на полювання, СБУ шукає сліди.\n\n<i>(Гравці з активними ролями роблять вибір у себе в ПП з ботом - чекаємо на їхні дії)</i>", 
-        parse_mode="HTML"
+    start_night(chat_id)
+
+# ==================== КОЛБЕКИ (КНОПКИ) ====================
+
+@bot.callback_query_handler(func=lambda call: call.data == "mafia_join")
+def join_mafia(call):
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
+        bot.answer_callback_query(call.id, "Гра вже йде або не створена!", show_alert=True)
+        return
+    if user_id in mafia_games[chat_id]['players']:
+        bot.answer_callback_query(call.id, "Ти вже в ділі!", show_alert=True)
+        return
+
+    mafia_games[chat_id]['players'][user_id] = call.from_user.first_name
+    bot.answer_callback_query(call.id, "Тебе записано!")
+    bot.edit_message_text(
+        f"🚬 <b>ЗБІР НА РОЗБІРКИ</b>\n\nЗа столом: {len(mafia_games[chat_id]['players'])} чол.\n(Мінімум 4).\n<i>Старт: /start_mafia</i>",
+        chat_id, call.message.message_id, reply_markup=call.message.reply_markup, parse_mode="HTML"
     )
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("night_"))
+def handle_night_action(call):
+    _, chat_id, target_id = call.data.split("_")
+    chat_id, target_id = int(chat_id), int(target_id)
+    user_id = call.from_user.id
+    
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'night':
+        bot.answer_callback_query(call.id, "Зараз не ніч або гра закінчилась!", show_alert=True)
+        return
+        
+    game = mafia_games[chat_id]
+    if user_id not in game['alive']: return
+    
+    role = game['roles'][user_id]
+    target_name = game['players'][target_id]
+
+    if role == 'Братва (Мафія)':
+        game['night_actions']['mafia'] = target_id
+        bot.edit_message_text(f"🔫 Ти обрав завалити: <b>{target_name}</b>.", user_id, call.message.message_id, parse_mode="HTML")
+    elif role == 'Агент СБУ (Комісар)':
+        game['night_actions']['sbu'] = target_id
+        target_role = game['roles'][target_id]
+        is_mafia = "❗️ Це МАФІЯ!" if target_role == 'Братва (Мафія)' else "✅ Це звичайний роботяга."
+        bot.edit_message_text(f"🕵️‍♂️ Ти перевірив <b>{target_name}</b>.\nРезультат: {is_mafia}", user_id, call.message.message_id, parse_mode="HTML")
+
+    # Перевіряємо чи всі активи зробили хід
+    mafia_alive = any(game['roles'][p] == 'Братва (Мафія)' for p in game['alive'])
+    sbu_alive = any(game['roles'][p] == 'Агент СБУ (Комісар)' for p in game['alive'])
+    
+    mafia_done = not mafia_alive or game['night_actions']['mafia'] is not None
+    sbu_done = not sbu_alive or game['night_actions']['sbu'] is not None
+
+    if mafia_done and sbu_done:
+        process_night(chat_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("dayvote_"))
+def handle_day_vote(call):
+    _, chat_id, target_id = call.data.split("_")
+    chat_id, target_id = int(chat_id), int(target_id)
+    user_id = call.from_user.id
+    
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'day':
+        bot.answer_callback_query(call.id, "Голосування не активне!", show_alert=True)
+        return
+        
+    game = mafia_games[chat_id]
+    if user_id not in game['alive']:
+        bot.answer_callback_query(call.id, "Мертві не голосують!", show_alert=True)
+        return
+        
+    game['day_votes'][user_id] = target_id
+    bot.answer_callback_query(call.id, f"Голос прийнято за {game['players'][target_id]}!")
+    
+    # Якщо всі живі проголосували
+    if len(game['day_votes']) == len(game['alive']):
+        votes = list(game['day_votes'].values())
+        # Знаходимо того, в кого найбільше голосів
+        vote_counts = {i: votes.count(i) for i in votes}
+        max_votes = max(vote_counts.values())
+        lynched = [k for k, v in vote_counts.items() if v == max_votes]
+        
+        if len(lynched) == 1:
+            lynched_id = lynched[0]
+            game['alive'].remove(lynched_id)
+            lynch_name = game['players'][lynched_id]
+            lynch_role = game['roles'][lynched_id]
+            msg = f"⚖️ Більшістю голосів за ґрати відправляється <b>{lynch_name}</b>!\nВін був: <i>{lynch_role}</i>"
+        else:
+            msg = "⚖️ Голоси розділилися! Ніхто не сів."
+            
+        bot.send_message(chat_id, msg, parse_mode="HTML")
+        
+        winner = check_win(chat_id)
+        if winner:
+            finish_game(chat_id, winner)
+        else:
+            start_night(chat_id)
 
 # ===================================================================
 # 📰 МЕМНІ НОВИНИ ВІД ДРАГО НА БАЗІ GEMINI (/news)
