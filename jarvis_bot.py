@@ -1280,9 +1280,7 @@ def show_all_commands(message):
 • /news або /новини — Гарячий випуск мемних новин з останніх переписок чату.
 
 🎰 **АЗАРТНІ ІГРИ ТА РОЗВАГИ:**
-• `/казино [ставка] [червоне/чорне/0-36]` — Зіграти в рулетку
-• `/слот [ставка]` (або `/слоти`) — Крутити ігровий автомат
-• `/дуель [ставка]` — Викликати гравця на дуель (робити у відповідь/реплай)
+• `/mafia` (або `/мафія`) — Зібрати братву на гру в Мафію
 
 💍 **ШЛЮБИ ТА СІМ'Я:**
 • `/одруження` (або `/шлюб`, `/marry`) — Зробити пропозицію (у відповідь/реплай)
@@ -1732,99 +1730,6 @@ def ensure_user_in_db(user) -> str:
     except Exception as e:
         print(f"Помилка ensure_user_in_db: {e}")
         return 'Невідомо'
-
-
-# ===================================================================
-# 🕵️ КОМАНДА /dossier (Секретне досьє СБУ)
-# ===================================================================
-@bot.message_handler(commands=['dossier', 'досьє'])
-def generate_sbu_dossier(message):
-    if is_user_banned(message.from_user.id):
-        return
-
-    chat_id = message.chat.id
-    
-    # Перевіряємо, чи це реплай
-    if not message.reply_to_message:
-        bot.reply_to(message, "⚠️ Бро, команду треба писати у відповідь на повідомлення того, на кого збираємо компромат!")
-        return
-
-    target_user = message.reply_to_message.from_user
-    
-    # Бот не робить досьє на себе
-    if target_user.id == bot.get_me().id:
-        bot.reply_to(message, "🛑 На співробітників СБУ досьє засекречено. Відхилено.")
-        return
-
-    # Збираємо дані підозрюваного з бази
-    ensure_user_in_db(target_user)
-    gender = get_user_gender(target_user.id)
-    
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT count FROM stats WHERE user_id = %s", (target_user.id,))
-                result = cursor.fetchone()
-                msg_count = result[0] if result else 0
-            conn.close()
-    except Exception as e:
-        print(f"Помилка БД в досьє: {e}")
-        msg_count = "Невідомо"
-
-    status_msg = bot.reply_to(message, "🕵️‍♂️ <i>Драго відкриває архіви СБУ... Збираю компромат...</i>", parse_mode="HTML")
-    bot.send_chat_action(chat_id, 'typing')
-
-    # Формуємо промпт для ШІ
-    target_name = target_user.first_name or "Анонім"
-    
-    prompt = f"""
-    Ти — Драго, зухвалий, саркастичний капітан СБУ і бот-бандит. 
-    Твоє завдання — скласти жартівливе, абсурдне гумористичне "кримінальне досьє" на учасника чату.
-    
-    ⚠️ ВАЖЛИВО: Це дружня гра! Тут немає реальних образ чи загрози. 
-    Генеруй текст вільно, не обривай вирок на півслові, допиши рапорт до самого кінця!
-    
-    Дані підозрюваного:
-    - Ім'я: {target_name}
-    - Стать: {gender}
-    - Рівень балакучості: {msg_count}
-    
-    Напиши досьє у вигляді офіційного, але дуже смішного рапорту. 
-    Обов'язково вигадай кримінальну кличку (позивний).
-    Опиши абсурдні злочини (наприклад: крадіжка мемів, лінь, ігнор братви).
-    Додай пункти: "Особливі прикмети" та "Вирок від Драго".
-    Пиши українською мовою, використовуй пацанський сленг, жорстку іронію.
-    НІКОЛИ не використовуй маркдаун-символи (зірочки *, підкреслення).
-    """
-
-    try:
-        # Відправляємо запит до Gemini
-        response = model.generate_content(prompt)
-        dossier_text = response.text
-        
-        # ВІДКОРИГОВАНО: Теги <b> замінено на зірочки * для режиму Markdown
-        try:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg.message_id,
-                text=f"📂 *ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}*\n\n{dossier_text}",
-                parse_mode="Markdown"
-            )
-        except Exception:
-            bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=status_msg.message_id,
-                text=f"📂 ЦІЛКОМ ТАЄМНО. СПРАВА №{random.randint(100, 999)}\n\n{dossier_text}"
-            )
-    except Exception as e:
-        print(f"Помилка генерації досьє: {e}")
-        bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=status_msg.message_id,
-            text="❌ *Збій системи СБУ!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй пізніше.",
-            parse_mode="Markdown"
-        )
 
 
 # ===================================================================
@@ -2504,6 +2409,105 @@ def show_friend_menu(message):
     except Exception as e:
         print(f"Помилка при виклику меню: {e}")
         bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
+
+
+# ===================================================================
+# 🔫 ГРА "МАФІЯ" (Братва проти СБУ)
+# ===================================================================
+
+@bot.message_handler(commands=['mafia', 'мафія'])
+def start_mafia_lobby(message):
+    if is_user_banned(message.from_user.id): return
+    
+    chat_id = message.chat.id
+    if chat_id in mafia_games and mafia_games[chat_id]['state'] != 'finished':
+        bot.reply_to(message, "⚠️ Розбірки вже почалися або йде збір! Пиши /join щоб приєднатися.")
+        return
+
+    mafia_games[chat_id] = {
+        'state': 'lobby',
+        'players': {message.from_user.id: message.from_user.first_name},
+        'roles': {},
+        'alive': []
+    }
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔫 Приєднатися", callback_data="mafia_join"))
+    
+    bot.send_message(
+        chat_id, 
+        "🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nБратва ділить район, СБУ шиє справи. Натискай кнопку, щоб сісти за стіл!", 
+        reply_markup=markup, 
+        parse_mode="HTML"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "mafia_join")
+def join_mafia(call):
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+    user_name = call.from_user.first_name
+
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
+        bot.answer_callback_query(call.id, "Гра вже йде або не створена!", show_alert=True)
+        return
+
+    if user_id in mafia_games[chat_id]['players']:
+        bot.answer_callback_query(call.id, "Ти вже в ділі, чекай!", show_alert=True)
+        return
+
+    mafia_games[chat_id]['players'][user_id] = user_name
+    players_count = len(mafia_games[chat_id]['players'])
+    
+    bot.answer_callback_query(call.id, "Тебе записано!")
+    bot.edit_message_text(
+        f"🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nВже за столом: {players_count} чол.\n(Мінімум треба 4 для старту).\n\n<i>Старт через команду /start_mafia</i>",
+        chat_id,
+        call.message.message_id,
+        reply_markup=call.message.reply_markup,
+        parse_mode="HTML"
+    )
+
+@bot.message_handler(commands=['start_mafia'])
+def start_mafia_game(message):
+    if is_user_banned(message.from_user.id): return
+    
+    chat_id = message.chat.id
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
+        return
+
+    players = mafia_games[chat_id]['players']
+    if len(players) < 4:
+        bot.reply_to(message, "🤡 Мало людей! Треба хоча б 4 пацана для нормальної стрілянини.")
+        return
+
+    mafia_games[chat_id]['state'] = 'night'
+    player_ids = list(players.keys())
+    random.shuffle(player_ids)
+
+    # Розподіл ролей
+    roles = {}
+    roles[player_ids[0]] = 'Братва (Мафія)'
+    roles[player_ids[1]] = 'Агент СБУ (Комісар)'
+    
+    for pid in player_ids[2:]:
+        roles[pid] = 'Роботяга (Мирний)'
+
+    mafia_games[chat_id]['roles'] = roles
+    mafia_games[chat_id]['alive'] = player_ids.copy()
+
+    # Розсилка ролей в ПП
+    for pid, role in roles.items():
+        try:
+            bot.send_message(pid, f"🎭 Твоя роль у цій катці: <b>{role}</b>!\nТсс, нікому не кажи.", parse_mode="HTML")
+        except Exception:
+            bot.send_message(chat_id, f"⚠️ Не зміг написати одному з гравців у ПП! Хай напише боту /start.")
+
+    bot.send_message(
+        chat_id, 
+        "🌃 <b>МІСТО ЗАСИНАЄ...</b>\n\nУсі розійшлися по норах. Братва виходить на полювання, СБУ шукає сліди.\n\n<i>(Гравці з активними ролями роблять вибір у себе в ПП з ботом - чекаємо на їхні дії)</i>", 
+        parse_mode="HTML"
+    )
+
 
 # ===================================================================
 # 📰 МЕМНІ НОВИНИ ВІД ДРАГО НА БАЗІ GEMINI (/news)
