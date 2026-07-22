@@ -134,6 +134,9 @@ bot_chats = {}
 RECENT_MESSAGES = []
 MAX_HISTORY_LIMIT = 30
 
+# Пам'ять для гри Мафія
+mafia_games = {}
+
 # 🧠 ОЧИЩЕННЯ ПАМ'ЯТІ GEMINI
 def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
