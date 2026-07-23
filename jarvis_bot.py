@@ -132,7 +132,7 @@ safety_settings = [
 
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
+    model_name="gemini-1.5-flash",
     generation_config=generation_config,
     safety_settings=safety_settings,
     system_instruction=(
@@ -2109,6 +2109,64 @@ def update_user_balance(user_id, amount):
 
 
 # ===================================================================
+# 📊 ТОП АКТИВНОСТІ (Стиль бота Соняшник)
+# ===================================================================
+
+@bot.message_handler(commands=['top', 'stats', 'топ'])
+def show_chat_activity(message):
+    if is_user_banned(message.from_user.id): return
+    chat_id = message.chat.id
+    
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Беремо топ 10 активних у чаті
+                cursor.execute("SELECT name, count FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
+                rows = cursor.fetchall()
+                
+                # Загальна сума повідомлень усього чату
+                cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
+                total_messages = cursor.fetchone()[0] or 0
+            conn.close()
+
+        if not rows or total_messages == 0:
+            bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
+            return
+
+        # Шапка
+        chat_title = message.chat.title or "цьому чаті"
+        chat_title_clean = chat_title.replace("<", "&lt;").replace(">", "&gt;")
+        
+        response = [
+            f"📊 <b>Топ найактивніших учасників в {chat_title_clean}:</b>\n"
+        ]
+
+        # Іконки топу
+        medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+        for idx, (name, count) in enumerate(rows):
+            icon = medals[idx] if idx < len(medals) else "▫️"
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+            
+            # Вираховуємо відсоток від загальної кількості
+            percent = (count / total_messages) * 100 if total_messages > 0 else 0
+            
+            # Чистий вивід у стилі Соняшника
+            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> <i>({percent:.1f}%)</i>")
+
+        # Підвал
+        response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
+        
+        bot.reply_to(message, "\n".join(response), parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка виведення топу: {e}")
+        bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
+
+
+# ===================================================================
 # 🛠️ ДОПОМІЖНІ ФУНКЦІЇ
 # ===================================================================
 def html_escape(text):
@@ -2316,6 +2374,173 @@ def search_music(message):
         )
 
 # ===================================================================
+# 🍔 МЕНЮ ДОБРОГО ДРУГА (/menu або /меню)
+# ===================================================================
+@bot.message_handler(commands=['menu', 'меню'])
+def show_friend_menu(message):
+    chat_id = message.chat.id
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        menu_text = (
+            "🍔 <b>МЕНЮ ДОБРОГО ДРУГА</b> 🍕\n\n"
+            "Зголоднів, бро? Чи просто хочеться закинути в себе щось нереально соковите? "
+            "Твій вірний кент Драго вже про все подбав! 😎\n\n"
+            "Тримай посилання на наше гаряче меню. Переходь, вибирай найкращі смаколики "
+            "та влаштуй своїм смаковим рецепторам справжнє свято! 🚀\n\n"
+            "<i>Смачного, тигр! 🐯👇</i>"
+        )
+        markup = types.InlineKeyboardMarkup()
+        btn_menu = types.InlineKeyboardButton(
+            text="📖 Відкрити Меню 🍽️", 
+            url="https://expz.menu/64562137-fa19-4413-9b90-d2dba1c697fa"
+        )
+        markup.add(btn_menu)
+        bot.reply_to(message, menu_text, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Помилка при виклику меню: {e}")
+        bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
+
+
+# ===================================================================
+# 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото через Gemini)
+# ===================================================================
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    user = message.from_user
+    caption = message.caption or ""
+    
+    ensure_user_in_db(user)
+    gender = get_user_gender(user.id)
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
+                    (user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка оновлення статів фото: {e}")
+
+    is_mentioned = False
+    if chat_type in ['group', 'supergroup']:
+        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
+        first_word = caption.split()[0].lower() if caption.split() else ""
+        if (first_word in trigger_words
+                or f"@{bot.get_me().username}" in caption
+                or (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id)):
+            is_mentioned = True
+            for word in trigger_words:
+                if caption.lower().startswith(word):
+                    caption = caption[len(word):].strip()
+                    break
+    else:
+        is_mentioned = True
+
+    if not is_mentioned:
+        return
+
+    gender_hint = ""
+    if gender == 'Дівчина':
+        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга', 'красуня' тощо] "
+    elif gender == 'Хлопець':
+        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
+
+    status_msg = None
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        status_msg = bot.reply_to(message, "Так-так, Драго протирає очі й дивиться на твою картинку... 👀")
+
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        image_data = {"data": downloaded_file, "mime_type": "image/jpeg"}
+
+        system_prompt = (
+            f"{gender_hint}Тобі надіслали фото. Проаналізуй, що на ньому зображено. "
+            f"Якщо користувач залишив підпис до фото, він тут: '{caption}'. "
+            "Дай коротку, дотепну, зухвалу або іронічну відповідь у стилі Драго на основі того, що ти бачиш на зображенні!"
+        )
+
+        response = model.generate_content([system_prompt, image_data])
+
+        try:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
+        except Exception:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
+
+    except Exception as e:
+        print(f"Помилка аналізу фото: {e}")
+        if status_msg:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Ой, у мене лінзи запітніли, не зміг роздивитися це фото.")
+
+
+# ===================================================================
+# 👋 Обробник входу/виходу учасників
+# ===================================================================
+@bot.chat_member_handler()
+def handle_member_updates(message: types.ChatMemberUpdated):
+    user = message.new_chat_member.user
+    
+    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ
+    if (message.new_chat_member.status in ['member', 'administrator', 'restricted']
+            and not user.is_bot):
+        gender = ensure_user_in_db(user)
+        name = user.first_name
+        
+        # Повертаємо його в активні списки
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = TRUE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при поверненні юзера: {e}")
+            
+        if gender == 'Дівчина':
+            greeting = f"Вітаємо в чаті, <b>{name}</b>! 🤍\nРадий бачити тебе тут!"
+        elif gender == 'Хлопець':
+            greeting = f"Йо, <b>{name}</b>, вітаємо в чаті! 🤝\nРадий бачити тебе тут, бро!"
+        else:
+            greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
+        bot.send_message(message.chat.id, greeting, parse_mode="HTML")
+
+    # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
+    elif (message.old_chat_member.status in ['member', 'administrator', 'restricted']
+          and message.new_chat_member.status in ['left', 'kicked']):
+        name = message.old_chat_member.user.first_name
+        
+        # ВИКРЕСЛЮЄМО З ТОПІВ
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при виході юзера: {e}")
+
+        goodbyes = [
+            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
+            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
+            f"<b>{name}</b> покинув чат. Схоже, не витримав нашого рівня інтелекту... 🧠",
+            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії!"
+        ]
+        bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
+
+
+
+# ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ (ШІ ЧАТ ТА ЛІЧИЛЬНИК)
 # ===================================================================
 
@@ -2384,19 +2609,27 @@ def handle_all_text_messages(message):
             bot.reply_to(message, "Шось у мене мізки закипіли... Повтори пізніше, бро.")
 
 
+# Підвал
+        response.append(f"\n💬 <b>Усього повідомлень у чаті:</b> <code>{total_messages:,}</code>")
+
+        bot.reply_to(message, "\n".join(response), parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка виведення топу: {e}")
+        bot.reply_to(message, "❌ Помилка завантаження статистики.")
+
+
 # ===================================================================
-# 🚀 ЗАПУСК БОТА ТА ПОТОКІВ
+# 🚀 ЗАПУСК БОТА ТА ВСІХ СЕРВІСІВ
 # ===================================================================
 if __name__ == '__main__':
-    # 1. Запускаємо HTTP-сервер для Keep-Alive (наприклад, для Render/Railway) у фоновому потоці
+    # 1. Запуск Dummy HTTP сервера (для Render/Koyeb) у фоновому потоці
     threading.Thread(target=run_dummy_server, daemon=True).start()
-
-    # 2. Запускаємо Discord-агента у фоновому потоці
+    
+    # 2. Запуск Discord бота у фоновому потоці
     threading.Thread(target=run_discord, daemon=True).start()
 
-    # 3. Запускаємо основний цикл Telegram бота
-    print("🚀 Бот Драго успішно запущений і готовий до роботи!")
-    try:
-        bot.infinity_polling(skip_pending=True)
-    except Exception as e:
-        print(f"❌ Помилка в роботі бота: {e}")
+    print("🤖 Бот Драго успішно запущений і чекає на повідомлення!")
+    
+    # 3. Запуск Telegram бота
+    bot.infinity_polling(skip_pending=True)
