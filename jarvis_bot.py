@@ -1,122 +1,100 @@
 import os
-import io
-import re
-import html
+import base64
+import requests
 import time
 import random
-import base64
+import io
 import threading
 import asyncio
-import requests
-import urllib.request
-import urllib.parse
+import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
-
 import telebot
 from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import psycopg2
-import edge_tts
 import discord
 from discord.ext import commands
 
-# ==================== НАЛАШТУВАННЯ БАЗИ ДАНИХ ====================
+
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
+# Підключаємося до БД
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 # 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
 
-def html_escape(text):
-    """Допоміжна функція для безпечного екранування спецсимволів у HTML"""
-    if not text:
-        return ""
-    return html.escape(str(text))
-
 # Створення та авто-оновлення таблиць при запуску
 try:
     with db_lock:
         conn = get_db_connection()
-        try:
-            with conn.cursor() as cursor:
-                # 1. Таблиця статистики
-                cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
-                    user_id BIGINT PRIMARY KEY,
-                    name TEXT,
-                    count INTEGER DEFAULT 0,
-                    gender TEXT,
-                    in_chat BOOLEAN DEFAULT TRUE,
-                    balance BIGINT DEFAULT 0
-                )""")
-                
-                # 🛠 ДОДАЄМО ВСІ НЕОБХІДНІ КОЛОНКИ ДЛЯ КАСТОМІЗАЦІЇ ТА ПРОФІЛЮ
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS username VARCHAR(100) DEFAULT NULL;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_nick VARCHAR(50) DEFAULT NULL;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_title VARCHAR(50) DEFAULT NULL;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_photo TEXT DEFAULT NULL;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS inventory_order TEXT DEFAULT NULL;")
-                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS biz_order TEXT DEFAULT NULL;")
-                
-                # 2. Таблиця майна (Монополія)
-                cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT,
-                    item_code TEXT,
-                    item_name TEXT,
-                    item_category TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )""")
-                
-                # 3. Таблиця бізнесів
-                cursor.execute("""CREATE TABLE IF NOT EXISTS user_businesses (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    biz_code VARCHAR(50) NOT NULL,
-                    last_collect TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )""")
-
-                # 4. Таблиця шлюбів
-                cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
-                    user1_id BIGINT,
-                    user2_id BIGINT,
-                    UNIQUE(user1_id),
-                    UNIQUE(user2_id)
-                )""")
-
-                # 5. Таблиця банів
-                cursor.execute("""CREATE TABLE IF NOT EXISTS banned_users (
-                    user_id BIGINT PRIMARY KEY
-                )""")
-
-                # 6. Таблиця сімейного банку (shared_wallets)
-                cursor.execute("""CREATE TABLE IF NOT EXISTS shared_wallets (
-                    pair_id VARCHAR(100) PRIMARY KEY,
-                    balance BIGINT DEFAULT 0
-                )""")
-
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        with conn.cursor() as cursor:
+            # 1. Таблиця статистики
+            cursor.execute("""CREATE TABLE IF NOT EXISTS stats (
+                user_id BIGINT PRIMARY KEY,
+                name TEXT,
+                count INTEGER,
+                gender TEXT,
+                in_chat BOOLEAN DEFAULT TRUE,
+                balance BIGINT DEFAULT 0
+            )""")
             
+            # 🛠 ДОДАЄМО ВСІ НЕОБХІДНІ КОЛОНКИ ДЛЯ КАСТОМІЗАЦІЇ ТА ПРОФІЛЮ
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS balance BIGINT DEFAULT 0;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_nick VARCHAR(50) DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_title VARCHAR(50) DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_photo TEXT DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS inventory_order TEXT DEFAULT NULL;")
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS biz_order TEXT DEFAULT NULL;")
+            
+            # 2. Таблиця майна (Монополія)
+            cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                item_code TEXT,
+                item_name TEXT,
+                item_category TEXT
+            )""")
+            
+            # 3. Таблиця бізнесів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS user_businesses (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                biz_code TEXT
+            )""")
+
+            # 4. Таблиця шлюбів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS marriages (
+                user1_id BIGINT,
+                user2_id BIGINT,
+                UNIQUE(user1_id),
+                UNIQUE(user2_id)
+            )""")
+
+            # 5. Таблиця банів
+            cursor.execute("""CREATE TABLE IF NOT EXISTS banned_users (
+                user_id BIGINT PRIMARY KEY
+            )""")
+
+        conn.commit()
+        conn.close()
     print("✅ База даних успішно оновлена та готова до роботи!")
 except Exception as e:
-    print(f"❌ Помилка створення/оновлення таблиць: {e}")
+    print(f"Помилка створення/оновлення таблиць: {e}")
 
-# ==================== НАЛАШТУВАННЯ ЗМІННИХ ====================
+# ==================== НАЛАШТУВАННЯ ====================
 API_ID = int(os.environ.get('API_ID', 12345678))
-API_HASH = os.environ.get('API_HASH', '')
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', '')
-TELEGRAM_CHAT_ID = -1003428241218  # ID вашого Телеграм-чату
+API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
+# ======================================================
+
+DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
+# Сюди впиши ID твого Телеграм-чату, куди бот має кидати анонси стрімів:
+TELEGRAM_CHAT_ID = -1003428241218  # Заміни на реальний ID свого чату
+
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
@@ -126,12 +104,14 @@ generation_config = {
     "temperature": 0.85,
 }
 
+# Залиш тільки цей блок
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
+
 
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
@@ -159,17 +139,12 @@ mafia_games = {}
 
 # 🧠 ОЧИЩЕННЯ ПАМ'ЯТІ GEMINI
 def get_gemini_chat(chat_id):
-    try:
-        if chat_id not in bot_chats:
-            bot_chats[chat_id] = model.start_chat(history=[])
-        else:
-            if len(bot_chats[chat_id].history) > 30:
-                bot_chats[chat_id] = model.start_chat(history=[])
-        return bot_chats[chat_id]
-    except Exception as e:
-        print(f"⚠️ Помилка ініціалізації Gemini чату {chat_id}: {e}")
+    if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
-        return bot_chats[chat_id]
+    else:
+        if len(bot_chats[chat_id].history) > 30:
+            bot_chats[chat_id] = model.start_chat(history=[])
+    return bot_chats[chat_id]
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
@@ -181,14 +156,12 @@ def is_user_banned(user_id):
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (user_id,))
-                    return bool(cursor.fetchone())
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"❌ Помилка перевірки бану користувача {user_id}: {e}")
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (user_id,))
+                result = bool(cursor.fetchone())
+            conn.close()
+            return result
+    except Exception:
         return False
 
 
@@ -196,23 +169,20 @@ def is_user_banned(user_id):
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    voice_file = f"drago_voice_{chat_id}.ogg"
     try:
+        voice_file = f"drago_voice_{chat_id}.ogg"
         communicate = edge_tts.Communicate(text_to_speak, "uk-UA-OstapNeural", rate="+15%")
         asyncio.run(communicate.save(voice_file))
         
         with open(voice_file, 'rb') as f:
             bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
             
+        if os.path.exists(voice_file):
+            os.remove(voice_file)
+            
     except Exception as e:
         print(f"Помилка озвучки TTS: {e}")
         bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
-    finally:
-        if os.path.exists(voice_file):
-            try:
-                os.remove(voice_file)
-            except Exception:
-                pass
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
@@ -243,90 +213,32 @@ def handle_voice(message):
 # 🛠 1. ДОПОМІЖНІ ФУНКЦІЇ БАЗИ ДАНИХ ТА ПЕРЕВІРОК
 # -------------------------------------------------------------------
 
-def get_user_balance(user_id):
-    """Отримує поточний баланс користувача з бази"""
+def ensure_user_in_db(user):
+    """Гарантує, що користувач є в базі stats"""
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    return res[0] if res and res[0] is not None else 0
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"Помилка get_user_balance: {e}")
-        return 0
-
-def update_user_balance(user_id, amount):
-    """Змінює баланс користувача на вказану суму (може бути + або -)"""
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO stats (user_id, balance) VALUES (%s, %s)
-                        ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
-                    """, (user_id, amount))
-                    conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"Помилка update_user_balance: {e}")
-
-def get_rank_title(count):
-    """Визначає ранг користувача за кількістю повідомлень"""
-    if count >= 10000: return "Бог Чату ⚡"
-    if count >= 5000: return "Легенда СБУ 👑"
-    if count >= 2500: return "Авторитет 🚬"
-    if count >= 1000: return "Місцева Легенда 👑"
-    if count >= 500: return "Завзятий Дописувач 🔥"
-    if count >= 100: return "Чатер 💬"
-    if count >= 20: return "Місцевий 🚶"
-    return "Новачок 🐣"
-
-def safe_get_rank(msg_count):
-    return get_rank_title(msg_count)
-
-def ensure_user_in_db(user) -> str:
-    """Гарантує, що користувач є в базі stats та заповнює його дані"""
-    if not user:
-        return 'Невідомо'
-    user_id = user.id
-    name = user.first_name or "Без імені"
-    username = user.username
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
-                    row = cursor.fetchone()
-                    if row is None:
-                        gender = analyze_gender_from_user(user)
-                        cursor.execute(
-                            "INSERT INTO stats (user_id, name, count, gender, username, balance) VALUES (%s, %s, 0, %s, %s, 0)",
-                            (user_id, name, gender, username)
-                        )
-                        conn.commit()
-                        return gender
-                    else:
-                        cursor.execute("UPDATE stats SET name = %s, username = %s WHERE user_id = %s", (name, username, user_id))
-                        conn.commit()
-                        return row[0]
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO stats (user_id, name, count)
+                    VALUES (%s, %s, 0)
+                    ON CONFLICT (user_id) DO UPDATE 
+                    SET name = EXCLUDED.name;
+                """, (user.id, user.first_name))
+                conn.commit()
+            conn.close()
     except Exception as e:
         print(f"Помилка ensure_user_in_db: {e}")
-        return 'Невідомо'
+
+def safe_get_rank(msg_count):
+    """Резервний підрахунок рангу, якщо немає зовнішньої get_rank_title"""
+    if 'get_rank_title' in globals():
+        return get_rank_title(msg_count)
+    
+    if msg_count > 1000: return "Місцева Легенда 👑"
+    if msg_count > 500: return "Завзятий Дописувач 🔥"
+    if msg_count > 100: return "Чатер 💬"
+    return "Новачок 🐣"
 
 
 # -------------------------------------------------------------------
@@ -349,34 +261,33 @@ def show_user_profile(message):
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    # 1. Дані користувача з теми
-                    cursor.execute("""
-                        SELECT count, balance, gender 
-                        FROM stats WHERE user_id = %s
-                    """, (user.id,))
-                    stats_res = cursor.fetchone()
-                    
-                    # 2. Інвентар
-                    cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
-                    inventory_res = cursor.fetchall()
+            with conn.cursor() as cursor:
+                # 1. Дані користувача з теми
+                cursor.execute("""
+                    SELECT count, balance, gender 
+                    FROM stats WHERE user_id = %s
+                """, (user.id,))
+                stats_res = cursor.fetchone()
+                
+                # 2. Інвентар
+                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
+                inventory_res = cursor.fetchall()
 
-                    # 3. Бізнеси
-                    cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user.id,))
-                    biz_res = cursor.fetchall()
-                    
-                    # 4. Шлюб
-                    cursor.execute("""
-                        SELECT s1.name, s2.name, m.user1_id, m.user2_id 
-                        FROM marriages m
-                        JOIN stats s1 ON m.user1_id = s1.user_id
-                        JOIN stats s2 ON m.user2_id = s2.user_id
-                        WHERE m.user1_id = %s OR m.user2_id = %s
-                    """, (user.id, user.id))
-                    marriage_res = cursor.fetchone()
-            finally:
-                conn.close()
+                # 3. Бізнеси
+                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user.id,))
+                biz_res = cursor.fetchall()
+                
+                # 4. Шлюб
+                cursor.execute("""
+                    SELECT s1.name, s2.name, m.user1_id, m.user2_id 
+                    FROM marriages m
+                    JOIN stats s1 ON m.user1_id = s1.user_id
+                    JOIN stats s2 ON m.user2_id = s2.user_id
+                    WHERE m.user1_id = %s OR m.user2_id = %s
+                """, (user.id, user.id))
+                marriage_res = cursor.fetchone()
+                
+            conn.close()
 
         # Розпаковка даних
         msg_count = stats_res[0] if stats_res and stats_res[0] else 0
@@ -384,8 +295,7 @@ def show_user_profile(message):
         gender = stats_res[2] if stats_res and stats_res[2] else "Невідомо"
 
         # Ім'я та ранг
-        raw_name = user.first_name or "Без імені"
-        clean_name = html.escape(raw_name.upper())
+        clean_name = user.first_name.replace("<", "&lt;").replace(">", "&gt;")
         rank = safe_get_rank(msg_count)
         gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
 
@@ -410,7 +320,7 @@ def show_user_profile(message):
         else:
             biz_list = []
             for b_code, b_count in biz_counts.items():
-                b_name = html.escape(biz_dict[b_code]["name"]) if b_code in biz_dict else html.escape(b_code.upper())
+                b_name = biz_dict[b_code]["name"] if b_code in biz_dict else b_code.upper()
                 c_str = f" x{b_count}" if b_count > 1 else ""
                 biz_list.append(f"{b_name}{c_str}")
             biz_text = ", ".join(biz_list)
@@ -423,7 +333,7 @@ def show_user_profile(message):
 
         for code, name in inventory_res:
             item_counts[code] = item_counts.get(code, 0) + 1
-            item_names_map[code] = html.escape(name or "Невідомий предмет")
+            item_names_map[code] = name
             if code in shop_dict:
                 total_property_value += shop_dict[code].get("price", 0)
 
@@ -442,7 +352,7 @@ def show_user_profile(message):
         if marriage_res:
             name1, name2, u1_id, u2_id = marriage_res
             spouse_name = name2 if user.id == u1_id else name1
-            marriage_status = f"💍 У шлюбі з <b>{html.escape(spouse_name or 'Анонім')}</b>"
+            marriage_status = f"💍 У шлюбі з <b>{spouse_name.replace('<', '&lt;').replace('>', '&gt;')}</b>"
         else:
             marriage_status = "🐺 Статус: <i>Самотній вовк</i>"
 
@@ -451,9 +361,9 @@ def show_user_profile(message):
 
         # 📜 Формування картки
         profile_card = (
-            f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name}</b>\n"
+            f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
             f"───────────────────────\n"
-            f"{gender_icon} <b>Ранг у чаті:</b> <code>{html.escape(rank)}</code>\n"
+            f"{gender_icon} <b>Ранг у чаті:</b> <code>{rank}</code>\n"
             f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
             f"───────────────────────\n"
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>\n"
@@ -491,7 +401,16 @@ def show_user_profile(message):
 
     except Exception as e:
         print(f"Помилка створення профілю: {e}")
-        bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
+
+# ===================================================================
+# ⚙️ НАЛАШТУВАННЯ ТА ІНІЦІАЛІЗАЦІЯ (Додайте це у ваш основний файл)
+# ===================================================================
+# Переконайтеся, що ці змінні вже визначені у вашому основному коді:
+# bot = telebot.TeleBot(TOKEN)
+# db_lock = threading.Lock()
+# def get_db_connection(): ...
+# def is_user_banned(user_id): ...
 
 # ===================================================================
 # 💼 СИСТЕМА БІЗНЕСІВ ТА ПАСИВНОГО ДОХОДУ
@@ -531,15 +450,40 @@ BUSINESSES = {
     }
 }
 
+# 🛠️ АВТОМАТИЧНЕ СТВОРЕННЯ ТАБЛИЦІ В БД
+def init_business_db():
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_businesses (
+                        id SERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        biz_code VARCHAR(50) NOT NULL,
+                        last_collect TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+            conn.commit()
+            conn.close()
+            print("✅ Таблиця user_businesses перевірена/створена.")
+    except Exception as e:
+        print(f"⚠️ Помилка ініціалізації БД бізнесів: {e}")
+
+init_business_db()
+
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО БІЗНЕСІВ ЧЕРЕЗ AI (Pollinations)
 def generate_business_ai_image(owned_biz_codes):
     """Генерує одну суцільну картинку, що показує всі бізнеси користувача разом"""
     if not owned_biz_codes:
         return None
         
+    # Збираємо описи для AI тільки для унікальних кодів
     unique_codes = list(set(owned_biz_codes))
     ai_descriptions = []
     
+    # Обмежуємо до 4 бізнесів, щоб картинка не була надто хаотичною
     for code in unique_codes[:4]:
         if code in BUSINESSES:
             ai_descriptions.append(BUSINESSES[code]["ai_desc"])
@@ -547,6 +491,7 @@ def generate_business_ai_image(owned_biz_codes):
     if not ai_descriptions:
         return None
         
+    # Формуємо промпт
     items_prompt = ", ".join(ai_descriptions)
     prompt = (
         f"A ultra-realistic cinematic wide shot photography representing a successful business empire ownership, "
@@ -555,16 +500,19 @@ def generate_business_ai_image(owned_biz_codes):
     
     try:
         encoded_prompt = requests.utils.quote(prompt)
+        # Використовуємо Flux модель для кращої деталізації
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 9999)}&model=flux&nologo=true"
         
         response = requests.get(image_url, timeout=30)
         
         if response.status_code == 200:
+            # Перевіряємо, чи це дійсно картинка, а не помилка JSON
             if "application/json" in response.headers.get("Content-Type", ""):
                 return None
             
+            # Обробляємо картинку через PIL, щоб переконатися в форматі
             img = Image.open(io.BytesIO(response.content))
-            img = img.convert("RGB")
+            img = img.convert("RGB") # Конвертуємо в RGB для сумісності
             
             bio = io.BytesIO()
             bio.name = 'business_empire.jpg'
@@ -572,51 +520,47 @@ def generate_business_ai_image(owned_biz_codes):
             bio.seek(0)
             return bio
         else:
+            print(f"⚠️ Pollinations повернув код: {response.status_code}")
             return None
     except Exception as e:
         print(f"⚠️ Помилка генерації AI фото: {e}")
         return None
-        
 
 # ===================================================================
-# 🏢 КОМАНДИ БОТА (БІЗНЕСИ)
+# 🏢 КОМАНДИ БОТА
 # ===================================================================
 
+# 🏢 КОМАНДА: МОЇ БІЗНЕСИ ТА КАТАЛОГ (/biz, /бізнеси)
 @bot.message_handler(commands=['biz', 'бізнеси', 'бизнесы'])
 def show_businesses(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     user_id = message.from_user.id
-    user_name = message.from_user.first_name or "Олігарх"
+    user_name = message.from_user.first_name
 
-    status_msg = bot.reply_to(
-        message, 
-        "⏳ <i>Зачекай, Драго підраховує твої активи та малює картинку імперії...</i>", 
-        parse_mode="HTML"
-    )
+    # Надсилаємо статус, бо генерація картинки займає час
+    status_msg = bot.reply_to(message, "⏳ <i>Зачекай, Драго підраховує твої активи та малює картинку імперії...</i>", parse_mode="HTML")
 
     try:
-        owned_rows = []
-        balance = 0
-        
+        # 1. Отримуємо дані з БД
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user_id,))
-                    owned_rows = cursor.fetchall()
-                    
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    balance = res[0] if res else 0
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                # Отримуємо бізнеси користувача
+                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user_id,))
+                owned_rows = cursor.fetchall()
+                
+                # Отримуємо баланс
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                balance = res[0] if res else 0
+            conn.close()
 
         owned_codes = [row[0] for row in owned_rows]
         
+        # 2. Формуємо текст
         text = [
-            f"👑 <b>БІЗНЕС-ІМПЕРІЯ:</b> {html.escape(user_name)}\n",
+            f"👑 <b>БІЗНЕС-ІМПЕРІЯ:</b> {user_name}\n",
             f"💳 Баланс: <code>{balance:,} грн</code>\n",
             "────────────────────",
             "📊 <b>КАТАЛОГ ТА ТВОЇ АКТИВИ:</b>\n"
@@ -626,16 +570,17 @@ def show_businesses(message):
         
         for code, biz in BUSINESSES.items():
             count = owned_codes.count(code)
+            
+            # Розрахунок доходу
             income_str = f"+{biz['income']:,} грн/год"
-            biz_name_clean = html.escape(biz['name'])
             
             if count > 0:
-                text.append(f"✅ <b>{biz_name_clean}</b> (<code>{code}</code>)")
+                text.append(f"✅ <b>{biz['name']}</b> (<code>{code}</code>)")
                 text.append(f" ├ 📈 Власність: <b>{count} шт.</b>")
                 text.append(f" └ 💰 Дохід: <code>{biz['income']*count:,} грн/год</code>\n")
                 total_income_per_hour += (biz['income'] * count)
             else:
-                text.append(f"⚪ {biz_name_clean} (<code>{code}</code>)")
+                text.append(f"⚪ {biz['name']} (<code>{code}</code>)")
                 text.append(f" ├ Ціна: <code>{biz['price']:,} грн</code>")
                 text.append(f" └ Дохід: <code>{income_str}</code>\n")
 
@@ -646,43 +591,25 @@ def show_businesses(message):
         
         caption_text = "\n".join(text)
 
+        # 3. Генеруємо AI картинку
         if owned_codes:
             photo = generate_business_ai_image(owned_codes)
             if photo:
-                try:
-                    bot.delete_message(message.chat.id, status_msg.message_id)
-                except Exception:
-                    pass
-                
-                bot.send_photo(
-                    message.chat.id, 
-                    photo=photo, 
-                    caption=caption_text, 
-                    parse_mode="HTML",
-                    reply_to_message_id=message.message_id
-                )
+                bot.delete_message(message.chat.id, status_msg.message_id)
+                bot.send_photo(message.chat.id, photo=photo, caption=caption_text, parse_mode="HTML")
                 return
 
+        # Якщо бізнесів немає або AI не спрацював — просто редагуємо текст
         bot.edit_message_text(caption_text, message.chat.id, status_msg.message_id, parse_mode="HTML")
 
     except Exception as e:
         print(f"❌ Помилка команди /бізнеси: {e}")
-        error_details = html.escape(str(e))
-        try:
-            bot.edit_message_text(
-                f"❌ Не вдалося завантажити дані про бізнес.\n<code>{error_details[:100]}</code>", 
-                message.chat.id, 
-                status_msg.message_id,
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
+        bot.edit_message_text(f"❌ Не вдалося завантажити дані про бізнес. Помилка БД.", message.chat.id, status_msg.message_id)
 
-
+# 🛒 КОМАНДА: КУПІВЛЯ БІЗНЕСУ (/купити_бізнес)
 @bot.message_handler(commands=['купити_бізнес', 'buy_biz'])
 def buy_business(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     args = message.text.split()
     if len(args) < 2:
@@ -700,36 +627,28 @@ def buy_business(message):
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    balance = res[0] if res else 0
+            with conn.cursor() as cursor:
+                # Перевірка балансу
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                balance = res[0] if res else 0
 
-                    if balance < biz["price"]:
-                        bot.reply_to(
-                            message, 
-                            f"💸 <b>Недостатньо грошей!</b>\n"
-                            f"Тобі треба <code>{biz['price']:,} грн</code>.\n"
-                            f"Зараз у тебе: <code>{balance:,} грн</code>.", 
-                            parse_mode="HTML"
-                        )
-                        return
+                if balance < biz["price"]:
+                    bot.reply_to(message, f"💸 <b>Недостатньо грошей!</b>\nТобі треба <code>{biz['price']:,} грн</code>.\nЗараз у тебе: <code>{balance:,} грн</code>.", parse_mode="HTML")
+                    conn.close()
+                    return
 
-                    cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (biz["price"], user_id))
-                    cursor.execute("INSERT INTO user_businesses (user_id, biz_code) VALUES (%s, %s)", (user_id, biz_code))
+                # Списання грошей та додавання бізнесу
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (biz["price"], user_id))
+                cursor.execute("INSERT INTO user_businesses (user_id, biz_code) VALUES (%s, %s)", (user_id, biz_code))
 
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+            conn.commit()
+            conn.close()
 
         bot.reply_to(
             message, 
             f"🎉 <b>ВІТАЄМО З УГОДОЮ!</b> 🎉\n\n"
-            f"Ти успішно купив бізнес: <b>{html.escape(biz['name'])}</b>!\n"
+            f"Ти успішно купив бізнес: <b>{biz['name']}</b>!\n"
             f"Гроші списано, власність оформлена.\n"
             f"📈 Дохід <code>+{biz['income']:,} грн/год</code> вже нараховується.\n"
             f"Не забудь збирати касу через `/зібрати`!", 
@@ -738,79 +657,87 @@ def buy_business(message):
         
     except Exception as e:
         print(f"❌ Помилка купівлі бізнесу: {e}")
-        bot.reply_to(message, f"❌ Помилка угоди: <code>{html.escape(str(e))[:100]}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка угоди. Спробуй пізніше.")
 
-
+# 💵 КОМАНДА: ЗБІР ПРИБУТКУ (/зібрати, /каса, /прибуток)
 @bot.message_handler(commands=['зібрати', 'каса', 'collect', 'прибуток'])
 def collect_business_income(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     user_id = message.from_user.id
 
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT id, biz_code, EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 
-                        FROM user_businesses 
-                        WHERE user_id = %s
-                    """, (user_id,))
-                    user_bizs = cursor.fetchall()
+            with conn.cursor() as cursor:
+                # Отримуємо всі бізнеси користувача та час, що минув (в годинах)
+                # EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 — рахує різницю в годинах
+                cursor.execute("""
+                    SELECT id, biz_code, EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 
+                    FROM user_businesses 
+                    WHERE user_id = %s
+                """, (user_id,))
+                user_bizs = cursor.fetchall()
 
-                    if not user_bizs:
-                        bot.reply_to(message, "💼 У тебе немає жодного бізнесу! Купи перший у `/бізнеси`.")
-                        return
+                if not user_bizs:
+                    bot.reply_to(message, "💼 У тебе немає жодного бізнесу! Купи перший у `/бізнеси`.")
+                    conn.close()
+                    return
 
-                    total_earned = 0
-                    biz_details = []
-                    time_limit_hours = 24.0
+                total_earned = 0
+                biz_details = []
+                # Ліміт накопичення — 24 години
+                time_limit_hours = 24.0
 
-                    for row in user_bizs:
-                        biz_id, biz_code, hours_passed = row[0], row[1], row[2]
-                        
-                        if biz_code in BUSINESSES:
-                            biz = BUSINESSES[biz_code]
-                            effective_hours = min(hours_passed or 0, time_limit_hours)
-                            
-                            if effective_hours >= 0.016:  # ~1 хвилина
-                                earned = int(effective_hours * biz["income"])
-                                total_earned += earned
-                                
-                                time_str = f"{int(effective_hours)}г {int((effective_hours % 1) * 60)}хв"
-                                biz_details.append(f"• <b>{html.escape(biz['name'])}</b> (за {time_str}): <code>+{earned:,} грн</code>")
-
-                    if total_earned <= 0:
-                        bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Бізнеси працюють, але прибуток ще не накопичився (зачекай хоча б хвилину).", parse_mode="HTML")
-                        return
-
-                    event_text = ""
-                    reputation_bonus = min(len(user_bizs) // 2, 10)
-                    rand_event = random.randint(1, 100) + reputation_bonus
+                for row in user_bizs:
+                    biz_id, biz_code, hours_passed = row[0], row[1], row[2]
                     
-                    if rand_event <= 8:
-                        penalty = int(total_earned * 0.15)
-                        total_earned -= penalty
-                        event_text = f"\n\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Прийшов штраф або хабар на <code>-{penalty:,} грн</code>! Відкупився..."
-                    elif rand_event >= 92:
-                        bonus = int(total_earned * 0.30)
-                        total_earned += bonus
-                        event_text = f"\n\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Наплив клієнтів приніс додаткові <code>+{bonus:,} грн</code>! Всі задоволені."
-                    elif rand_event == 50:
-                        total_earned = 0
-                        event_text = f"\n\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Касу намагалися віджати. Гроші довелося заховати, прибутку за цей період немає."
+                    if biz_code in BUSINESSES:
+                        biz = BUSINESSES[biz_code]
+                        
+                        # Застосовуємо ліміт часу
+                        effective_hours = min(hours_passed, time_limit_hours)
+                        
+                        # Потрібно хоча б 1 хвилина роботи (0.016 години)
+                        if effective_hours >= 0.016: 
+                            earned = int(effective_hours * biz["income"])
+                            total_earned += earned
+                            
+                            time_str = f"{int(effective_hours)}г {int((effective_hours%1)*60)}хв"
+                            biz_details.append(f"• <b>{biz['name']}</b> (за {time_str}): <code>+{earned:,} грн</code>")
 
-                    cursor.execute("UPDATE user_businesses SET last_collect = NOW() WHERE user_id = %s", (user_id,))
-                    cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (total_earned, user_id))
+                if total_earned <= 0:
+                    bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Бізнеси працюють, але прибуток ще не накопичився (зачекай хоча б хвилину).")
+                    conn.close()
+                    return
 
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+                # --- 🎲 Випадкові події (Пацанський рандом) ---
+                event_text = ""
+                # "Reputation" базується на вартості бізнесів
+                reputation_bonus = min(len(user_bizs) // 2, 10) # max 10% бонус
+                rand_event = random.randint(1, 100) + reputation_bonus
+                
+                if rand_event <= 8: # Податкова перевірка (Погано)
+                    penalty = int(total_earned * 0.15)
+                    total_earned -= penalty
+                    event_text = f"\n\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Прийшов штраф або хабар на <code>-{penalty:,} грн</code>! Відкупився..."
+                elif rand_event >= 92: # Ажіотаж (Добре)
+                    bonus = int(total_earned * 0.30)
+                    total_earned += bonus
+                    event_text = f"\n\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Наплив клієнтів приніс додаткові <code>+{bonus:,} грн</code>! Всі задоволені."
+                elif rand_event == 50: # Рейдерська атака (Дуже погано, але рідко)
+                    total_earned = 0
+                    event_text = f"\n\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Касу намагалися віджати. Гроші довелося заховати, прибутку за цей період немає."
+
+                # Оновлюємо час збору ТІЛЬКИ ДЛЯ ОБРОБЛЕНИХ БІЗНЕСІВ
+                # Але простіше оновити всім last_collect = NOW()
+                cursor.execute("UPDATE user_businesses SET last_collect = NOW() WHERE user_id = %s", (user_id,))
+                
+                # Додаємо гроші на баланс
+                cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (total_earned, user_id))
+
+            conn.commit()
+            conn.close()
 
         msg = [
             f"💰 <b>ЗБІР КАСИ ЗАВЕРШЕНО!</b> 💰\n",
@@ -823,13 +750,12 @@ def collect_business_income(message):
 
     except Exception as e:
         print(f"❌ Помилка збору прибутку: {e}")
-        bot.reply_to(message, f"❌ Помилка під час збору каси: <code>{html.escape(str(e))[:100]}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка під час збору каси. Спробуй пізніше.")
 
-
+# 🚮 КОМАНДА: ПРОДАЖ БІЗНЕСУ (/продати_бізнес)
 @bot.message_handler(commands=['продати_бізнес', 'sell_biz'])
 def sell_business(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     args = message.text.split()
     if len(args) < 2:
@@ -842,63 +768,64 @@ def sell_business(message):
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT id, biz_code, EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 "
-                        "FROM user_businesses WHERE user_id = %s AND biz_code = %s LIMIT 1", 
-                        (user_id, biz_code)
-                    )
-                    row = cursor.fetchone()
+            with conn.cursor() as cursor:
+                # Перевіряємо, чи є такий бізнес у користувача (беремо ID одного)
+                cursor.execute("SELECT id, biz_code FROM user_businesses WHERE user_id = %s AND biz_code = %s LIMIT 1", (user_id, biz_code))
+                row = cursor.fetchone()
 
-                    if not row:
-                        bot.reply_to(message, f"🤡 У тебе немає бізнесу з кодом <code>{html.escape(biz_code)}</code> для продажу!", parse_mode="HTML")
-                        return
-                    
-                    biz_id_to_sell, b_code, hours_passed = row[0], row[1], row[2]
-                    
-                    if biz_code in BUSINESSES:
-                        sell_price = int(BUSINESSES[biz_code]["price"] * 0.75)
-                        biz_name = BUSINESSES[biz_code]["name"]
-                        income_rate = BUSINESSES[biz_code]["income"]
-                    else:
-                        sell_price = 0
-                        biz_name = "Старий бізнес"
-                        income_rate = 0
+                if not row:
+                    bot.reply_to(message, f"🤡 У тебе немає бізнесу з кодом <code>{biz_code}</code> для продажу!")
+                    conn.close()
+                    return
+                
+                biz_id_to_sell = row[0]
+                
+                # Визначаємо ціну продажу (75% від номіналу)
+                if biz_code in BUSINESSES:
+                    sell_price = int(BUSINESSES[biz_code]["price"] * 0.75)
+                    biz_name = BUSINESSES[biz_code]["name"]
+                else:
+                    # Якщо бізнес старий і його нема в каталозі
+                    sell_price = 0
+                    biz_name = "Старий бізнес"
 
-                    effective_hours = min(max(hours_passed or 0, 0), 24.0)
-                    uncollected_income = int(effective_hours * income_rate)
-                    total_payout = sell_price + uncollected_income
+                # Збираємо касу перед продажем (автоматично)
+                cursor.execute("""
+                    UPDATE stats SET balance = balance + (
+                        SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 * income, 0)
+                        FROM user_businesses b JOIN (SELECT %s AS c, income FROM (VALUES %s) AS v(c, income)) AS v ON b.biz_code = v.c
+                        WHERE b.id = %s
+                    ) WHERE user_id = %s
+                """, (biz_code, tuple((k, v['income']) for k, v in BUSINESSES.items()), biz_id_to_sell, user_id))
+                # Цей SQL вище складний, простіше викликати collect_business_income(message) ДО продажу, 
+                # але це вимагає перебудови логіки. Залишимо автоматичний збір спрощеним:
+                cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (sell_price, user_id))
+                
+                # Видаляємо бізнес
+                cursor.execute("DELETE FROM user_businesses WHERE id = %s", (biz_id_to_sell,))
 
-                    cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (total_payout, user_id))
-                    cursor.execute("DELETE FROM user_businesses WHERE id = %s", (biz_id_to_sell,))
-
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+            conn.commit()
+            conn.close()
 
         bot.reply_to(
             message, 
             f"🚮 <b>БІЗНЕС ПРОДАНО!</b> 🚮\n\n"
-            f"Ти успішно продав: <b>{html.escape(biz_name)}</b>!\n"
-            f"Від продажу (та залишків каси) отримано: <code>{total_payout:,} грн</code>.\n"
+            f"Ти успішно продав: <b>{biz_name}</b>!\n"
+            f"Від продажу (та залишків каси) отримано: <code>{sell_price:,} грн</code>.\n"
             f"Кошти зараховані на твій баланс.", 
             parse_mode="HTML"
         )
         
     except Exception as e:
         print(f"❌ Помилка продажу бізнесу: {e}")
-        bot.reply_to(message, f"❌ Помилка під час продажу: <code>{html.escape(str(e))[:100]}</code>", parse_mode="HTML")
-
+        bot.reply_to(message, f"❌ Помилка під час продажу. Угода зірвалася.")
 
 
 # ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
 
+# Оновлений асортимент ринку: [Код: {Назва, Ціна, Категорія, Опис для AI}]
 SHOP_ITEMS = {
     "rolex": {"name": "⌚ Золотий Rolex Daytona", "price": 85000, "cat": "Аксесуари", "ai_desc": "luxurious golden Rolex watch on a velvet pillow"},
     "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara wearing a small gold chain"},
@@ -913,7 +840,34 @@ SHOP_ITEMS = {
     "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"}
 }
 
+# 🛠️ АВТОМАТИЧНА ПЕРЕВІРКА ТА СТВОРЕННЯ ТАБЛИЦІ В БД
+def init_inventory_db():
+    """Створює таблицю inventory в PostgreSQL, якщо вона відсутня"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS inventory (
+                        id SERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        item_code VARCHAR(50) NOT NULL,
+                        item_name VARCHAR(150) NOT NULL,
+                        item_category VARCHAR(50),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"⚠️ Помилка ініціалізації таблиці inventory: {e}")
+
+# Викликаємо автоматичну перевірку при старті бота
+init_inventory_db()
+
+# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
 def generate_inventory_ai_image(bought_codes):
+    """Генерує арт з усім майном через Pollinations AI з захистом від помилок"""
     if not bought_codes:
         return None
         
@@ -927,6 +881,7 @@ def generate_inventory_ai_image(bought_codes):
     if not ai_descriptions:
         return None
         
+    # Беремо до 5 головних речей для стабільної швидкості
     items_prompt = ", ".join(ai_descriptions[:5])
     full_prompt = (
         f"A cinematic high quality photo showing a wealthy owner collection in one scene: {items_prompt}. "
@@ -938,6 +893,7 @@ def generate_inventory_ai_image(bought_codes):
         seed = random.randint(1, 999999)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
         
+        # Таймаут 30 секунд
         response = requests.get(image_url, timeout=30)
         
         if response.status_code == 200:
@@ -955,10 +911,10 @@ def generate_inventory_ai_image(bought_codes):
         
     return None
 
+# 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
 @bot.message_handler(commands=['shop', 'магазин'])
 def show_shop(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     shop_text = [
         "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
@@ -969,9 +925,8 @@ def show_shop(message):
     categories = {}
     for code, item in SHOP_ITEMS.items():
         cat = item["cat"]
-        if cat not in categories: 
-            categories[cat] = []
-        categories[cat].append(f"• <code>{code}</code> — <b>{html.escape(item['name'])}</b> | 💰 <code>{item['price']:,} грн</code>")
+        if cat not in categories: categories[cat] = []
+        categories[cat].append(f"• <code>{code}</code> — <b>{item['name']}</b> | 💰 <code>{item['price']:,} грн</code>")
         
     for cat, items in categories.items():
         shop_text.append(f"📦 <b>{cat.upper()}:</b>")
@@ -980,10 +935,10 @@ def show_shop(message):
         
     bot.reply_to(message, "\n".join(shop_text), parse_mode="HTML")
 
+# 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
 @bot.message_handler(commands=['buy', 'купити'])
 def buy_item(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     args = message.text.split()
     if len(args) < 2:
@@ -1002,50 +957,41 @@ def buy_item(message):
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    current_balance = res[0] if res else 0
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                current_balance = res[0] if res else 0
+                
+                if current_balance < item["price"]:
+                    shortage = item["price"] - current_balance
+                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на Porsche не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
+                    conn.close()
+                    return
                     
-                    if current_balance < item["price"]:
-                        shortage = item["price"] - current_balance
-                        bot.reply_to(
-                            message, 
-                            f"💸 <b>Бідність — це не порок, але на {html.escape(item['name'])} не вистачає!</b>\n\n"
-                            f"Тобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", 
-                            parse_mode="HTML"
-                        )
-                        return
-
-                    cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
-                    cursor.execute(
-                        "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
-                        (user_id, item_code, item['name'], item['cat'])
-                    )
-                    conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
+                cursor.execute(
+                    "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
+                    (user_id, item_code, item["name"], item["cat"])
+                )
+            conn.commit()
+            conn.close()
             
         bot.reply_to(
             message, 
             f"🎉 <b>УСПІШНА УГОДА! ОЛІГАРХ НА ЗВ'ЯЗКУ!</b> 🎉\n\n"
-            f"Ти успішно купив: <b>{html.escape(item['name'])}</b> за <code>{item['price']:,} грн</code>!\n"
+            f"Ти успішно купив: <b>{item['name']}</b> за <code>{item['price']:,} грн</code>!\n"
             f"Майно внесено до реєстру СБУ. Перевір свій статус через `/майно`.", 
             parse_mode="HTML"
         )
         
     except Exception as e:
         print(f"Помилка купівлі: {e}")
-        bot.reply_to(message, f"❌ Не вдалося здійснити покупку: <code>{html.escape(str(e))[:100]}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Не вдалося здійснити покупку: <code>{str(e)[:100]}</code>", parse_mode="HTML")
 
+# 💸 КОМАНДА: ПЕРЕДАТИ ГРОШІ ІНШОМУ ГРАВЦЮ (/pay, /передати, /переказ, /дати)
 @bot.message_handler(commands=['pay', 'передати', 'переказ', 'дати'])
 def transfer_money(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     sender_id = message.from_user.id
     args = message.text.split()
@@ -1054,9 +1000,10 @@ def transfer_money(message):
     target_user_id = None
     target_user_name = None
 
+    # Варіант A: Відповіддю на повідомлення (Reply) -> /передати 5000
     if message.reply_to_message:
         if len(args) < 2:
-            bot.reply_to(message, "⚠️ Вкажи суму переказу! Наприклад: <code>/передати 5000</code>", parse_mode="HTML")
+            bot.reply_to(message, "⚠️ Вкажи суму переказу! Наприклад: <code>/передати 5000</code> (у відповідь на повідомлення)", parse_mode="HTML")
             return
         try:
             amount = int(args[1])
@@ -1067,15 +1014,10 @@ def transfer_money(message):
         target_user_id = message.reply_to_message.from_user.id
         target_user_name = message.reply_to_message.from_user.first_name
 
+    # Варіант B: Через юзернейм -> /передати 5000 @username
     else:
         if len(args) < 3:
-            bot.reply_to(
-                message, 
-                "💡 <b>Як передати бабки:</b>\n"
-                "1. Відповісти на чиєсь повідомлення: <code>/передати 1000</code>\n"
-                "2. Або за юзернеймом: <code>/передати 1000 @username</code>", 
-                parse_mode="HTML"
-            )
+            bot.reply_to(message, "💡 <b>Як передати бабки:</b>\n1. Відповісти на чиєсь повідомлення: <code>/передати 1000</code>\n2. Або за юзернеймом: <code>/передати 1000 @username</code>", parse_mode="HTML")
             return
         try:
             amount = int(args[1])
@@ -1088,22 +1030,21 @@ def transfer_money(message):
         try:
             with db_lock:
                 conn = get_db_connection()
-                try:
-                    with conn.cursor() as cursor:
-                        cursor.execute("SELECT user_id, name FROM stats WHERE LOWER(username) = LOWER(%s)", (username_arg,))
-                        res = cursor.fetchone()
-                        if res:
-                            target_user_id = res[0]
-                            target_user_name = res[1] or username_arg
-                finally:
-                    conn.close()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT user_id, first_name FROM stats WHERE LOWER(username) = LOWER(%s)", (username_arg,))
+                    res = cursor.fetchone()
+                    if res:
+                        target_user_id = res[0]
+                        target_user_name = res[1] or username_arg
+                conn.close()
         except Exception as e:
             print(f"Помилка пошуку юзера: {e}")
 
         if not target_user_id:
-            bot.reply_to(message, f"❌ Не знайшов у базі гравця <code>@{html.escape(username_arg)}</code>. Хай він спочатку напише щось у чат!", parse_mode="HTML")
+            bot.reply_to(message, f"❌ Не знайшов у базі гравця <code>@{username_arg}</code>. Хай він спочатку напише щось у чат!", parse_mode="HTML")
             return
 
+    # Перевірки безпеки
     if amount <= 0:
         bot.reply_to(message, "🤡 Ти кого надурити хочеш? Сума повинна бути більшою за 0!")
         return
@@ -1112,39 +1053,40 @@ def transfer_money(message):
         bot.reply_to(message, "🧠 Переводити гроші самому собі? Сильно.")
         return
 
+    # Транзакція в БД
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (sender_id,))
-                    res = cursor.fetchone()
-                    sender_balance = res[0] if res else 0
+            with conn.cursor() as cursor:
+                # Перевіряємо баланс відправника
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (sender_id,))
+                res = cursor.fetchone()
+                sender_balance = res[0] if res else 0
 
-                    if sender_balance < amount:
-                        bot.reply_to(
-                            message, 
-                            f"💸 <b>Неймовірний фінансовий крах!</b>\n"
-                            f"У тебе немає <code>{amount:,} грн</code>. Твій баланс: <code>{sender_balance:,} грн</code>.", 
-                            parse_mode="HTML"
-                        )
-                        return
+                if sender_balance < amount:
+                    bot.reply_to(
+                        message, 
+                        f"💸 <b>Неймовірний фінансовий крах!</b>\n"
+                        f"У тебе немає <code>{amount:,} грн</code>. Твій баланс: <code>{sender_balance:,} грн</code>.", 
+                        parse_mode="HTML"
+                    )
+                    conn.close()
+                    return
 
-                    cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (amount, sender_id))
-                    cursor.execute("""
-                        INSERT INTO stats (user_id, balance) VALUES (%s, %s)
-                        ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
-                    """, (target_user_id, amount))
+                # Знімаємо у відправника
+                cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (amount, sender_id))
+                
+                # Зараховуємо отримувачу
+                cursor.execute("""
+                    INSERT INTO stats (user_id, balance) VALUES (%s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
+                """, (target_user_id, amount))
 
-                    conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
+            conn.commit()
+            conn.close()
 
-        clean_sender = html.escape(message.from_user.first_name)
-        clean_target = html.escape(target_user_name)
+        clean_sender = message.from_user.first_name.replace("<", "&lt;").replace(">", "&gt;")
+        clean_target = target_user_name.replace("<", "&lt;").replace(">", "&gt;")
 
         bot.reply_to(
             message,
@@ -1156,34 +1098,32 @@ def transfer_money(message):
 
     except Exception as e:
         print(f"Помилка переказу: {e}")
-        bot.reply_to(message, f"❌ Помилка під час транзакції: <code>{html.escape(str(e))[:100]}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка під час транзакції: <code>{str(e)[:100]}</code>", parse_mode="HTML")
 
-@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
+# 💼 👑 МАЙНО ТА ПРОФІЛЬ (/money, /balance, /майно, /гаманець, /баланс, /профіль)
+@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс', 'профіль', 'profile'])
 def show_inventory(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "Користувач"
     status_msg = None
     
     try:
-        items = []
-        balance = 0
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    balance = res[0] if res else 0
-                    
-                    cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
-                    items = cursor.fetchall()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                # Баланс
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                balance = res[0] if res else 0
+                
+                # Майно
+                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
+                items = cursor.fetchall()
+            conn.close()
             
-        clean_name = html.escape(user_name)
+        clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
         
         response = [
             f"👑 <b>ФІНАНСОВИЙ АУДІТ АКТИВІВ</b> 👑",
@@ -1218,23 +1158,23 @@ def show_inventory(message):
         
         for name, count in item_counts.items():
             count_str = f" <code>[x{count}]</code>" if count > 1 else ""
-            response.append(f" ╰┈➤ {html.escape(name)}{count_str}")
+            response.append(f" ╰┈➤ {name}{count_str}")
         
         caption_text = "\n".join(response)
 
+        # Проміжне повідомлення
         status_msg = bot.reply_to(
             message, 
             "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
             parse_mode="HTML"
         )
 
+        # Генерація картинки
         photo_bio = generate_inventory_ai_image(unique_codes)
 
         if photo_bio:
-            try: 
-                bot.delete_message(message.chat.id, status_msg.message_id)
-            except Exception: 
-                pass
+            try: bot.delete_message(message.chat.id, status_msg.message_id)
+            except: pass
             
             bot.send_photo(
                 message.chat.id, 
@@ -1253,7 +1193,7 @@ def show_inventory(message):
         
     except Exception as e:
         print(f"❌ Помилка команди майно: {e}")
-        error_details = html.escape(str(e))
+        error_details = str(e).replace("<", "&lt;").replace(">", "&gt;")
         
         if status_msg:
             try:
@@ -1264,19 +1204,16 @@ def show_inventory(message):
                     parse_mode="HTML"
                 )
                 return
-            except Exception: 
-                pass
+            except: pass
             
         bot.reply_to(message, f"❌ Помилка бази даних:\n<code>{error_details[:100]}</code>", parse_mode="HTML")
-
-
 
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
 intents = discord.Intents.default()
-intents.voice_states = True  
-intents.members = True       
+intents.voice_states = True  # Щоб бачити, хто заходить в голос і вмикає стрім
+intents.members = True       # Щоб бачити нікнейми
 
 discord_client = discord.Client(intents=intents)
 
@@ -1286,37 +1223,42 @@ async def on_ready():
 
 @discord_client.event
 async def on_voice_state_update(member, before, after):
+    # Перевіряємо, чи користувач запустив трансляцію екрана/стрім
+    # before.self_stream було False, а після оновлення after.self_stream стало True
     if not before.self_stream and after.self_stream:
-        user_name = html.escape(member.display_name)
-        channel_name = html.escape(after.channel.name) if after.channel else "Голосовий канал"
+        user_name = member.display_name
+        channel_name = after.channel.name if after.channel else "Голосовий канал"
         
+        # 🔗 Збираємо ID для створення прямого посилання на трансляцію
         guild_id = member.guild.id
         channel_id = after.channel.id if after.channel else 0
         discord_stream_url = f"https://discord.com/channels/{guild_id}/{channel_id}"
         
+        # Текст анонсу в Telegram з вбудованим клікабельним лінком
         announcement = (
             f"🎮 <b>ДРАГО ПАЛИТЬ КОНТОРУ В DISCORD!</b> 🚨\n\n"
             f"Чувак <b>{user_name}</b> не схотів сидіти тихо і запустив <b>живу трансляцію</b> "
             f"у голосовому каналі <i>«{channel_name}»</i>!\n\n"
             f"🚀 <b><a href='{discord_stream_url}'>👉 ЗАЛЕТІТИ НА СТРІМ 👈</a></b>\n\n"
-            f"🍿 <i>Шоу почалося, бандити! Тисніть на лінк вище і залітайте!</i>"
+            f"🍿 <i>Шоу почалося, бандити! Тисніть на лінк вище і залітайте, подивимося що він там мутить!</i>"
         )
         
+        # Відправляємо повідомлення в наш Телеграм чат
         try:
             bot.send_message(TELEGRAM_CHAT_ID, announcement, parse_mode="HTML")
         except Exception as e:
             print(f"Помилка відправки анонсу стріму в ТГ: {e}")
 
+# Функція для запуску ДС бота в окремому потоці
 def run_discord():
-    if 'DISCORD_TOKEN' in globals() and DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
+    if DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
         discord_client.run(DISCORD_TOKEN)
     else:
         print("⚠️ DISCORD_TOKEN не налаштовано. Модуль Discord спить.")
 
 # ===================================================================
-# 📋 КОМАНДА /help
+# 📋 КОМАНДА /help (Оновлений список можливостей Драго)
 # ===================================================================
-
 @bot.message_handler(commands=['start', 'help', 'команди', 'info'])
 def show_all_commands(message):
     if is_user_banned(message.from_user.id):
@@ -1325,50 +1267,51 @@ def show_all_commands(message):
     help_text = """
 <b>📁 ОПЕРАТИВНА БАЗА ДАНИХ ДРАГО</b> 📁
 
-Слухай сюди. Ось повний список того, що я вмію:
+Слухай сюди. Ось повний список того, що я вмію. Запам'ятовуй, бо двічі повторювати не буду:
 
 🗣 <b>Спілкування та ШІ:</b>
-• Просто пиши моє ім'я (<b>Драго</b>) або роби реплай — відповім по-пацанськи.
+• Просто пиши моє ім'я (<b>Драго</b>) або роби реплай на мої повідомлення — відповім по-пацанськи.
 • Надішли мені <b>голосове</b> — я його послухаю і відповім!
 • Попроси мене <b>"скажи"</b> або <b>"голосове"</b> в тексті — і я надиктую відповідь голосом.
+• Надішли <b>фотографію</b> з підписом (і згадай мене) — я проаналізую, що там за компромат.
 
 📊 <b>Розвідка та Статистика:</b>
-• /profile або /профіль — Переглянути свій паспорт авторитета.
-• /top або /stats — Топ найавторитетніших чатерів.
-• /sleepers або /сонні — Викликати на килим тих, хто спить.
-• /dossier або /досьє — <i>(реплай)</i> Скласти секретне досьє СБУ на юзера.
-• /news або /новини — Гарячий випуск мемних новин з переписок чату.
+• /profile або /профіль — Переглянути свій повний паспорт авторитета.
+• /top або /stats — Топ найавторитетніших базікал чату.
+• /sleepers або /сонні — Викликати на килим тих, хто спить і нічого не пише.
+• /dossier або /досьє — <i>(тільки реплай)</i> Скласти секретне кримінальне досьє на юзера.
+• /news або /новини — Гарячий випуск мемних новин з останніх переписок чату.
 
-🎰 <b>АЗАРТНІ ІГРИ ТА РОЗВАГИ:</b>
-• /mafia або /мафія — Зібрати братву на гру в Мафію
+🎰 **АЗАРТНІ ІГРИ ТА РОЗВАГИ:**
+• `/mafia` (або `/мафія`) — Зібрати братву на гру в Мафію
 
-💍 <b>ШЛЮБИ ТА СІМ'Я:</b>
-• /одруження або /шлюб — Зробити пропозицію (у відповідь/реплай)
-• /подарувати [сума] — Подарувати гроші партнерці/партнеру
-• /спільний_баланс — Переглянути сімейний банк
-• /поповнити_банк [сума] — Закинути гроші в сімейний сейф
-• /розлучення — Розлучитися та поділити банк 50/50
-• /marriages або /пари — Список усіх кримінальних сімей чату.
+💍 **ШЛЮБИ ТА СІМ'Я:**
+• `/одруження` (або `/шлюб`, `/marry`) — Зробити пропозицію (у відповідь/реплай)
+• `/подарувати [сума]` (або `/gift`) — Подарувати гроші своїй другій половинці
+• `/спільний_баланс` (або `/family_bank`) — Переглянути сімейний банк
+• `/поповнити_банк [сума]` — Закинути гроші в сімейний сейф
+• `/розлучення` (або `/divorce`) — Розлучитися та поділити банк 50/50
+• /marriages або /пари — Подивитися список усіх кримінальних сімей чату.
 
 🏢 <b>Бізнес-Імперія (Пасивний дохід):</b>
-• /biz або /бізнеси — Каталог бізнесів та огляд імперії.
+• /biz або /бізнеси — Каталог бізнесів та огляд твоєї фінансової імперії.
 • /купити_бізнес [код] — Купити бізнес (наприклад: <i>/купити_бізнес kebab</i>).
-• /зібрати або /каса — Зібрати прибуток з усіх бізнесів.
+• /зібрати або /каса — Зібрати касу та накопичений прибуток з усім бізнесів.
 • /продати_бізнес [код] — Продати бізнес за 75% вартості.
 
 💰 <b>Кримінальна Монополія та Базар:</b>
-• /магазин або /shop — Чорний ринок тачок, вілл, годинників.
+• /магазин або /shop — Відкрити чорний ринок з тачками, віллами та годинниками.
 • /купити [код] — Придбати обрану річ (наприклад: <i>/купити bmw</i>).
-• /майно, /баланс або /гаманець — Перевірити рахунок та майно.
-• /передати [сума] — <i>(реплай або @username)</i> Переказати бабки.
+• /майно, /баланс або /гаманець — Перевірити рахунок та список майна.
+• /передати [сума] — <i>(реплай або username)</i> Переказати бабки іншому братку.
 
 🎵 <b>Музика та Арт:</b>
-• /найти [назва] — Знайти і скачати трек.
+• /найти [назва] або /music — Знайти і скачати трек (наприклад: <i>/найти Скрябін</i>).
 • /generate [опис англійською] — Намалювати картинку через ШІ.
 
 📢 <b>Інше:</b>
 • @all або .збір — Загальний збір! Тегаю всіх живих у чаті.
-• /menu або /меню — Меню смаколиків.
+• /menu або /меню — Відкрити меню смаколиків, якщо зголоднів.
 
 <i>Користуйся, поки я добрий. Твій капітан Драго. 🚬</i>
     """
@@ -1380,16 +1323,14 @@ def show_all_commands(message):
 # ===================================================================
 
 def get_marriage_pair(user_id):
+    """Повертає spouse_id та унікальний pair_key для спільного банку"""
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT user1_id, user2_id FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
-                    res = cursor.fetchone()
-            finally:
-                conn.close()
-
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user1_id, user2_id FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                res = cursor.fetchone()
+            conn.close()
         if res:
             u1, u2 = res
             pair_key = f"{min(u1, u2)}_{max(u1, u2)}"
@@ -1400,10 +1341,10 @@ def get_marriage_pair(user_id):
     return None, None
 
 
+# 1. 💍 ПРОПОЗИЦІЯ ОДРУЖЕННЯ
 @bot.message_handler(commands=['marry', 'одруження', 'шлюб'])
 def propose_marriage(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     if not message.reply_to_message:
         bot.reply_to(message, "⚠️ Кому ти каблучку пхаєш? Зроби реплай на повідомлення того, з ким хочеш розписатися!")
@@ -1416,39 +1357,38 @@ def propose_marriage(message):
         bot.reply_to(message, "🤡 Шиза косить ряди. Сам з собою одружуватися зібрався?")
         return
         
-    bot_id = BOT_ID if 'BOT_ID' in globals() and BOT_ID else bot.get_me().id
-    if user2.id == bot_id:
+    if user2.id == bot.get_me().id:
         bot.reply_to(message, "🛑 Я капітан СБУ і на роботі романи не кручу. Відхилено.")
         return
 
+    # Перевірка, чи хтось із них вже у шлюбі
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1 FROM marriages WHERE user1_id = %s OR user2_id = %s", (user1.id, user1.id))
-                    if cursor.fetchone():
-                        bot.reply_to(message, "🚨 Ти вже маєш штамп у паспорті! Спочатку розлучись (/розлучення).")
-                        return
-
-                    cursor.execute("SELECT 1 FROM marriages WHERE user1_id = %s OR user2_id = %s", (user2.id, user2.id))
-                    if cursor.fetchone():
-                        bot.reply_to(message, "🚨 Ця людина вже зайнята! Шукай вільну жертву.")
-                        return
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user1.id, user1.id))
+                if cursor.fetchone():
+                    bot.reply_to(message, "🚨 Ти вже маєш штамп у паспорті! Спочатку розлучись (/розлучення).")
+                    conn.close()
+                    return
+                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user2.id, user2.id))
+                if cursor.fetchone():
+                    bot.reply_to(message, "🚨 Ця людина вже зайнята! Шукай вільну жертву.")
+                    conn.close()
+                    return
+            conn.close()
     except Exception as e:
         print(f"Помилка БД при перевірці шлюбу: {e}")
-        bot.reply_to(message, "❌ Не вдалося обробити запит до РАЦС. Спробуй пізніше.")
         return
 
+    # Створюємо кнопки
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_yes = types.InlineKeyboardButton("💍 ТАК, Я ЗГОДЕН(НА)", callback_data=f"marry_yes_{user1.id}_{user2.id}")
     btn_no = types.InlineKeyboardButton("❌ НІ, ПІШОВ ТИ", callback_data=f"marry_no_{user1.id}_{user2.id}")
     markup.add(btn_yes, btn_no)
     
-    target_name = html_escape(user2.first_name)
-    initiator_name = html_escape(user1.first_name)
+    target_name = user2.first_name.replace('<', '&lt;').replace('>', '&gt;')
+    initiator_name = user1.first_name.replace('<', '&lt;').replace('>', '&gt;')
     
     bot.send_message(
         message.chat.id, 
@@ -1459,7 +1399,7 @@ def propose_marriage(message):
         parse_mode="HTML"
     )
 
-
+# Обробка натискання кнопок шлюбу
 @bot.callback_query_handler(func=lambda call: call.data.startswith('marry_'))
 def handle_marriage_callbacks(call):
     parts = call.data.split('_')
@@ -1467,10 +1407,10 @@ def handle_marriage_callbacks(call):
     user1_id = int(parts[2])
     user2_id = int(parts[3])
     
+    # Захист: натиснути може ТІЛЬКИ той, кому зробили пропозицію
     if call.from_user.id != user2_id:
-        return bot.answer_callback_query(call.id, "🛑 Куди лізеш? Це не тобі пропозицію роблять!", show_alert=True)
-
-    bot.answer_callback_query(call.id)  # Прибираємо анімацію завантаження
+        bot.answer_callback_query(call.id, "🛑 Куди лізеш? Це не тобі пропозицію роблять!", show_alert=True)
+        return
 
     if action == 'no':
         bot.edit_message_text(
@@ -1485,14 +1425,15 @@ def handle_marriage_callbacks(call):
         try:
             with db_lock:
                 conn = get_db_connection()
-                try:
-                    with conn.cursor() as cursor:
-                        cursor.execute("INSERT INTO marriages (user1_id, user2_id) VALUES (%s, %s)", (user1_id, user2_id))
-                        pair_key = f"{min(user1_id, user2_id)}_{max(user1_id, user2_id)}"
-                        cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0) ON CONFLICT DO NOTHING", (pair_key,))
-                        conn.commit()
-                finally:
-                    conn.close()
+                with conn.cursor() as cursor:
+                    # Записуємо щасливу пару в базу
+                    cursor.execute("INSERT INTO marriages (user1_id, user2_id) VALUES (%s, %s)", (user1_id, user2_id))
+                    
+                    # Створюємо сімейний банк
+                    pair_key = f"{min(user1_id, user2_id)}_{max(user1_id, user2_id)}"
+                    cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0) ON CONFLICT DO NOTHING", (pair_key,))
+                    conn.commit()
+                conn.close()
                 
             bot.edit_message_text(
                 "🎉 <b>НОВИЙ БАНДИТСЬКИЙ СОЮЗ!</b> 🥂\n\n"
@@ -1504,33 +1445,36 @@ def handle_marriage_callbacks(call):
                 parse_mode="HTML"
             )
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Помилка оформлення шлюбу в БД: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
+            bot.answer_callback_query(call.id, f"Помилка БД: {e}", show_alert=True)
 
 
+# 2. 🎁 ПОДАРУВАТИ ГРОШІ ПАРТНЕРУ (/подарувати [сума])
 @bot.message_handler(commands=['gift', 'подарувати'])
 def gift_to_spouse(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     spouse_id, _ = get_marriage_pair(user_id)
 
     if not spouse_id:
-        return bot.reply_to(message, "💔 Ти ж самотній вовк, кому дарувати?")
+        bot.reply_to(message, "💔 Ти ж самотній вовк, кому дарувати?")
+        return
 
     args = message.text.split()
     if len(args) < 2:
-        return bot.reply_to(message, "❌ <b>Вкажи суму:</b> <code>/подарувати 25000</code>", parse_mode="HTML")
+        bot.reply_to(message, "❌ <b>Вкажи суму:</b> <code>/подарувати 25000</code>", parse_mode="HTML")
+        return
 
     try:
         amount = int(args[1])
     except ValueError:
-        return bot.reply_to(message, "❌ Сума має бути цілим числом!")
+        bot.reply_to(message, "❌ Сума має бути числом!")
+        return
 
-    if amount <= 0:
-        return bot.reply_to(message, "⚠️ Сума подарунка має бути більшою за 0 грн!")
+    if amount <= 0: return
 
     if get_user_balance(user_id) < amount:
-        return bot.reply_to(message, "💸 У тебе немає стільки грошей!")
+        bot.reply_to(message, "💸 У тебе немає стільки грошей!")
+        return
 
     update_user_balance(user_id, -amount)
     update_user_balance(spouse_id, amount)
@@ -1538,31 +1482,30 @@ def gift_to_spouse(message):
     bot.reply_to(message, f"🎁 <b>Романтика!</b> Ти подарував своїй другій половинці <b>{amount:,} грн</b>! ❤️", parse_mode="HTML")
 
 
+# 3. 🏦 СПІЛЬНИЙ БАЛАНС ПАРИ (/спільний_баланс)
 @bot.message_handler(commands=['family_bank', 'спільний_баланс', 'семейный_бюджет'])
 def show_family_bank(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     spouse_id, pair_key = get_marriage_pair(user_id)
 
     if not spouse_id:
-        return bot.reply_to(message, "💔 Спочатку знайди собі пару через <code>/одруження</code>!", parse_mode="HTML")
+        bot.reply_to(message, "💔 Спочатку знайди собі пару через <code>/одруження</code>!", parse_mode="HTML")
+        return
 
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
-                    res = cursor.fetchone()
-                    if not res:
-                        cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0)", (pair_key,))
-                        conn.commit()
-                        bank_bal = 0
-                    else:
-                        bank_bal = res[0]
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                res = cursor.fetchone()
+                if not res:
+                    cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0)", (pair_key,))
+                    conn.commit()
+                    bank_bal = 0
+                else:
+                    bank_bal = res[0]
+            conn.close()
 
         bot.reply_to(
             message, 
@@ -1573,83 +1516,80 @@ def show_family_bank(message):
             parse_mode="HTML"
         )
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка БД: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка БД: {e}")
 
 
+# 4. 📥 ПОПОВНЕННЯ СІМЕЙНОГО БАНКУ (/поповнити_банк [сума])
 @bot.message_handler(commands=['add_family_bank', 'поповнити_банк'])
 def add_family_bank(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
     spouse_id, pair_key = get_marriage_pair(user_id)
 
     if not spouse_id:
-        return bot.reply_to(message, "💔 Спочатку знайди собі пару!")
+        bot.reply_to(message, "💔 Спочатку знайди собі пару!")
+        return
 
     args = message.text.split()
     if len(args) < 2:
-        return bot.reply_to(message, "❌ <b>Формат:</b> <code>/поповнити_банк 50000</code>", parse_mode="HTML")
+        bot.reply_to(message, "❌ <b>Формат:</b> <code>/поповнити_банк 50000</code>", parse_mode="HTML")
+        return
 
     try:
         amount = int(args[1])
     except ValueError:
-        return bot.reply_to(message, "❌ Сума має бути цілим числом!")
+        bot.reply_to(message, "❌ Сума має бути числом!")
+        return
 
-    if amount <= 0:
-        return bot.reply_to(message, "⚠️ Сума поповнення має бути більшою за 0 грн!")
+    if amount <= 0: return
 
     if get_user_balance(user_id) < amount:
-        return bot.reply_to(message, "💸 Брак коштів на гаманці!")
+        bot.reply_to(message, "💸 Брак коштів на гаманці!")
+        return
 
     update_user_balance(user_id, -amount)
     
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
-                    conn.commit()
-            finally:
-                conn.close()
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
+            conn.commit()
+        conn.close()
 
-        bot.reply_to(message, f"🏦 Ти закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
-    except Exception as e:
-        # Повертаємо кошті юзеру у разі збою БД
-        update_user_balance(user_id, amount)
-        bot.reply_to(message, f"❌ Помилка транзакції: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
+    bot.reply_to(message, f"🏦 Ти закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
 
 
+# 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
 @bot.message_handler(commands=['divorce', 'розлучення'])
 def divorce_command(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     user_id = message.from_user.id
     spouse_id, pair_key = get_marriage_pair(user_id)
 
     if not spouse_id:
-        return bot.reply_to(message, "🤡 Ти й так самотній вовк! З ким ти розлучатися зібрався?")
+        bot.reply_to(message, "🤡 Ти й так самотній вовк! З ким ти розлучатися зібрався?")
+        return
 
     try:
         shared_money = 0
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    if pair_key:
-                        cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
-                        res = cursor.fetchone()
-                        if res: 
-                            shared_money = res[0] or 0
+            with conn.cursor() as cursor:
+                # Беремо гроші зі спільного банку
+                if pair_key:
+                    cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                    res = cursor.fetchone()
+                    if res: shared_money = res[0]
 
-                    cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
-                    if pair_key:
-                        cursor.execute("DELETE FROM shared_wallets WHERE pair_id = %s", (pair_key,))
-                    conn.commit()
-            finally:
-                conn.close()
+                # Видаляємо запис про шлюб та сімейний банк
+                cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                if pair_key:
+                    cursor.execute("DELETE FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                conn.commit()
+            conn.close()
 
+        # Поділ банку 50/50
         if shared_money > 0:
             half = shared_money // 2
             update_user_balance(user_id, half)
@@ -1664,46 +1604,48 @@ def divorce_command(message):
             parse_mode="HTML"
         )
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка БД при розлученні: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка БД: {e}")
 
-
+# ===================================================================
+# 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
+# ===================================================================
 @bot.message_handler(commands=['marriages', 'пари', 'шлюби'])
 def show_all_marriages(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
 
     chat_id = message.chat.id
     try:
         bot.send_chat_action(chat_id, 'typing')
         
-        couples = []
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT s1.name, s2.name 
-                        FROM marriages m
-                        JOIN stats s1 ON m.user1_id = s1.user_id
-                        JOIN stats s2 ON m.user2_id = s2.user_id
-                    """)
-                    couples = cursor.fetchall()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                # Зв'язуємо таблицю шлюбів із таблицею статистики, щоб витягнути імена обох партнерів
+                cursor.execute("""
+                    SELECT s1.name, s2.name 
+                    FROM marriages m
+                    JOIN stats s1 ON m.user1_id = s1.user_id
+                    JOIN stats s2 ON m.user2_id = s2.user_id
+                """)
+                couples = cursor.fetchall()
+            conn.close()
 
+        # Якщо база пуста
         if not couples:
-            return bot.reply_to(
+            bot.reply_to(
                 message, 
-                "🕸 <b>РАЦС пустує!</b>\nУ цьому чаті лише самотні вовки та незалежні левиці.", 
+                "🕸 <b>РАЦС пустує!</b>\nУ цьому чаті лише самотні вовки та незалежні левиці. Жодного союзу не зареєстровано.", 
                 parse_mode="HTML"
             )
+            return
 
+        # Формуємо красивий список
         response_lines = ["💍 <b>ОФІЦІЙНІ БАНДИТСЬКІ ПАРИ ЧАТУ:</b> 💍\n"]
         
         for idx, (name1, name2) in enumerate(couples, 1):
-            clean_name1 = html_escape(name1) if name1 else "Хтось"
-            clean_name2 = html_escape(name2) if name2 else "Хтось"
-            response_lines.append(f"{idx}. <b>{clean_name1}</b> 💘 <b>{clean_name2}</b>")
+            clean_name1 = name1.replace("<", "&lt;").replace(">", "&gt;") if name1 else "Хтось"
+            clean_name2 = name2.replace("<", "&lt;").replace(">", "&gt;") if name2 else "Хтось"
+            response_lines.append(f"{idx}. {clean_name1} 💘 {clean_name2}")
 
         response_lines.append("\n<i>Хто ще без пари? Команда /шлюб чекає на вас!</i>")
         
@@ -1711,14 +1653,13 @@ def show_all_marriages(message):
 
     except Exception as e:
         print(f"Помилка виведення списку шлюбів: {e}")
-        bot.reply_to(message, f"❌ Помилка бази даних: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
+        bot.reply_to(message, "❌ Щось архіви РАЦСу згоріли (помилка БД). Драго не може знайти документи.")
 
 
 
 # ===================================================================
 # 🧠 ГЕНДЕРНА СИСТЕМА
 # ===================================================================
-
 def analyze_gender_from_user(user) -> str:
     name_parts = []
     if user.first_name:
@@ -1727,7 +1668,6 @@ def analyze_gender_from_user(user) -> str:
         name_parts.append(user.last_name)
     if user.username:
         name_parts.append(user.username)
-    
     name_info = " ".join(name_parts)
     prompt = (
         f"Визнач стать людини тільки по імені/нікнейму: '{name_info}'. "
@@ -1739,92 +1679,125 @@ def analyze_gender_from_user(user) -> str:
         result = response.text.strip()
         if result in ['Хлопець', 'Дівчина']:
             return result
-    except Exception as e:
-        print(f"Помилка визначення статі Gemini: {e}")
+    except Exception:
+        pass
     return 'Невідомо'
 
+def analyze_gender_from_text(text: str) -> str:
+    prompt = (
+        f"Проаналізуй текст і визнач стать автора (по закінченням дієслів, прикметників). "
+        f"Текст: '{text}'. "
+        "Відповідай ТІЛЬКИ одним словом: Хлопець, Дівчина або Невідомо."
+    )
+    try:
+        response = model.generate_content(prompt)
+        result = response.text.strip()
+        if result in ['Хлопець', 'Дівчина']:
+            return result
+    except Exception:
+        pass
+    return 'Невідомо'
+
+def get_user_gender(user_id: int) -> str:
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
+                result = cursor.fetchone()
+            conn.close()
+        return result[0] if result else 'Невідомо'
+    except Exception:
+        return 'Невідомо'
+
+def ensure_user_in_db(user) -> str:
+    user_id = user.id
+    name = user.first_name or "Без імені"
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    gender = analyze_gender_from_user(user)
+                    cursor.execute(
+                        "INSERT INTO stats (user_id, name, count, gender) VALUES (%s, %s, 0, %s)",
+                        (user_id, name, gender)
+                    )
+                    conn.commit()
+                    conn.close()
+                    return gender
+            conn.close()
+            return row[0]
+    except Exception as e:
+        print(f"Помилка ensure_user_in_db: {e}")
+        return 'Невідомо'
+
 
 # ===================================================================
-# 🖼️ КОМАНДА /generate (АСИНХРОННА / НЕ БЛОКУЄ БОТА)
+# 🖼️ КОМАНДА /generate
 # ===================================================================
-
 @bot.message_handler(commands=['generate'])
-def generate_image_handler(message):
+def generate_image_wait_and_send(message):
     if is_user_banned(message.from_user.id):
         return
 
-    # Безпечне витягнення промпту незалежно від наявності @bot_username
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].strip():
-        return bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: <code>/generate cyberpunk warrior wolf</code>", parse_mode="HTML")
-
-    prompt = parts[1].strip()
-    status_msg = bot.reply_to(message, "⏳ <b>Драго починає малювати...</b> Зачекай пару секунд.", parse_mode="HTML")
-
-    # Внутрішня функція для запуску у фоновому потоці
-    def worker():
-        try:
-            encoded_prompt = requests.utils.quote(prompt)
-            seed = random.randint(1, 999999)
-            image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
-            
-            response = requests.get(image_url, timeout=60)
-            
-            if response.status_code == 200:
-                if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
-                    raise Exception("Сервер ШІ перевантажений або повернув помилку.")
-
-                try:
-                    bot.edit_message_text(
-                        chat_id=message.chat.id,
-                        message_id=status_msg.message_id,
-                        text="⚡ Картинку згенеровано! Надсилаю..."
-                    )
-                except Exception:
-                    pass
-
-                # Конвертація зображення
-                img = Image.open(io.BytesIO(response.content)).convert("RGB")
-                bio = io.BytesIO()
-                bio.name = 'drago_art.jpg'
-                img.save(bio, 'JPEG', quality=95)
-                bio.seek(0)
-
-                bot.send_photo(
-                    chat_id=message.chat.id,
-                    photo=bio,
-                    caption=f"🔥 <b>Твоя картинка готова!</b>\n\n📋 <b>Запит:</b> {html_escape(prompt)}",
-                    parse_mode="HTML",
-                    reply_to_message_id=message.message_id
-                )
-                
-                try:
-                    bot.delete_message(message.chat.id, status_msg.message_id)
-                except Exception:
-                    pass
-            else:
-                raise Exception(f"Сервер повернув код: {response.status_code}")
-
-        except Exception as e:
-            print(f"Помилка генерації зображення: {e}")
+    prompt = message.text[10:].strip()
+    if not prompt:
+        bot.reply_to(message, "⚠️ Напиши опис картини! Наприклад: /generate cyberpunk warrior wolf")
+        return
+    status_msg = bot.reply_to(message, "⏳ Драго починає малювати... Зачекай до 2 хвилин.")
+    try:
+        encoded_prompt = requests.utils.quote(prompt)
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux&nologo=true"
+        response = requests.get(image_url, timeout=120)
+        if response.status_code == 200:
+            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
+                raise Exception("Сервер ШІ перевантажений або повернув помилку ліміту.")
             try:
                 bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=status_msg.message_id,
-                    text=f"❌ <b>Невдалося згенерувати арт.</b>\nПомилка: <code>{html_escape(str(e)[:100])}</code>",
-                    parse_mode="HTML"
+                    text="⚡ Картинку згенеровано! Обробляю для Telegram..."
                 )
             except Exception:
-                bot.reply_to(message, "❌ Сервер малювання тимчасово недоступний.")
-
-    # Запускаємо малювання в окремому потоці
-    threading.Thread(target=worker, daemon=True).start()
+                pass
+            img = Image.open(io.BytesIO(response.content))
+            img = img.convert("RGB")
+            bio = io.BytesIO()
+            bio.name = 'drago_art.jpg'
+            img.save(bio, 'JPEG', progressive=False, quality=95)
+            bio.seek(0)
+            bot.send_photo(
+                chat_id=message.chat.id,
+                photo=bio,
+                caption=f"🔥 Твоя картинка готова!\n\n📋 <b>Запит:</b> {prompt}",
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id
+            )
+            try:
+                bot.delete_message(message.chat.id, status_msg.message_id)
+            except Exception:
+                pass
+        else:
+            raise Exception(f"Сервер повернув код: {response.status_code}")
+    except Exception as e:
+        print(f"Помилка генерації: {e}")
+        try:
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=status_msg.message_id,
+                text=f"❌ Не зміг отримати картинку.\nПомилка: <code>{str(e)[:100]}</code>\n\nСпробуй пізніше, бро.",
+                parse_mode="HTML"
+            )
+        except Exception:
+            bot.reply_to(message, "❌ Сервер малювання тимчасово ліг. Спробуй пізніше.")
 
 
 # ===================================================================
-# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all, .збір)
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all)
 # ===================================================================
-
 @bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір']))
 def call_everyone(message):
     if is_user_banned(message.from_user.id):
@@ -1835,13 +1808,12 @@ def call_everyone(message):
     user = message.from_user
 
     if chat_type not in ['group', 'supergroup']:
-        return bot.reply_to(message, "Чувак, який збір в приватних повідомленнях? Ти тут один. 👁️")
+        bot.reply_to(message, "Чувак, який збір в приватних повідомленнях? Ти тут один. 👁️")
+        return
 
     try:
-        status_msg = bot.reply_to(message, "📢 <b>Драго розгортає рупор... Шукаю живих...</b>", parse_mode="HTML")
-        
-        if 'ensure_user_in_db' in globals():
-            ensure_user_in_db(user)
+        status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
+        ensure_user_in_db(user)
 
         original_text = message.text.strip()
         reason = ""
@@ -1851,74 +1823,83 @@ def call_everyone(message):
                 reason = original_text[len(trigger):].strip()
                 break
 
-        # Безпечне читання з БД
-        users = []
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT user_id, name FROM stats")
-                    users = cursor.fetchall()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, name FROM stats")
+                users = cursor.fetchall()
+            conn.close()
 
         if not users:
-            return bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних пуста, нікого кликати.")
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних пуста, нікого кликати.")
+            return
 
-        bot_id = BOT_ID if 'BOT_ID' in globals() and BOT_ID else bot.get_me().id
         mentions = []
-        
         for user_id, name in users:
-            if user_id == bot_id:
+            if user_id == bot.get_me().id:
                 continue
-            clean_name = html_escape(name) if name else "Бро"
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Бро"
             mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a>')
 
         if not mentions:
-            return bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшов кого кликати, бро.")
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшов кого кликати, бро.")
+            return
 
         try:
             bot.delete_message(chat_id, status_msg.message_id)
         except Exception:
             pass
 
-        reason_text = f"📌 <b>Причина збору:</b> {html_escape(reason)}" if reason else "Драго наказує підняти свої дупи і зайти в чат!"
+        if reason:
+            clean_reason = reason.replace("<", "&lt;").replace(">", "&gt;")
+            reason_text = f"📌 <b>Причина збору:</b> {clean_reason}"
+        else:
+            reason_text = "Драго наказує підняти свої дупи і зайти в чат!"
 
         main_call = (
             "🚨 <b>ОБЩІЙ ЗБІР, БАНДІТИ!</b> 🚨\n"
             f"{reason_text}\n\n"
             "<i>Живо відгукнулися! 🤬</i>"
         )
+        
         bot.send_message(chat_id, main_call, parse_mode="HTML")
 
-        # Надсилаємо теги порціями по 5 юзерів з безпечною паузою
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
-            mention_text = "🔔 На зв'язок: " + ", ".join(chunk)
+            mention_text = " На зв'язок: " + ", ".join(chunk)
             bot.send_message(chat_id, mention_text, parse_mode="HTML")
-            time.sleep(0.35)  # Захист від бана за спам
 
     except Exception as e:
         print(f"Помилка загального збору: {e}")
         try:
-            bot.send_message(chat_id, f"❌ Рупор знову згорів. Деталі: <code>{html_escape(str(e)[:100])}</code>", parse_mode="HTML")
+            bot.send_message(chat_id, f"❌ Рупор знову згорів. Деталі: <code>{str(e)[:50]}</code>", parse_mode="HTML")
         except Exception:
             pass
 
-
-
 # ===================================================================
-# 👑 СУПЕР-АДМІН ПАНЕЛЬ V2.0 (ОПТИМІЗОВАНА)
+# 👑 СУПЕР-АДМІН ПАНЕЛЬ V2.0 (ПЕРЕВЕДЕНО НА CLOUD POSTGRES)
 # ===================================================================
 
 ADMIN_ID = 5512316636
 
+def init_admin_db():
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id BIGINT PRIMARY KEY)")
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка ініціалізації таблиці банів: {e}")
+
+init_admin_db()
+
 def is_admin(user_id):
     return int(user_id) == int(ADMIN_ID)
 
-# --- КЛАВІАТУРИ ---
-
+# --- ГЕНЕРАТОРИ МЕНЮ ---
 def get_main_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -1958,12 +1939,10 @@ def get_db_keyboard():
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
 
-# --- ГОЛОВНА КОМАНДА ---
-
 @bot.message_handler(commands=['admin', 'адмін'])
 def admin_panel(message):
     if not is_admin(message.from_user.id):
-        return bot.reply_to(message, "🛑 Куди лізеш? Ця панель створена тільки для Адміна.")
+        return bot.reply_to(message, "🛑 Куди лізеш? Ця панель створена тільки для Артура.")
         
     bot.reply_to(
         message, 
@@ -1972,19 +1951,13 @@ def admin_panel(message):
         parse_mode="HTML"
     )
 
-# --- ОБРОБНИК CALLBACK-ЗАПИТІВ ---
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
     if not is_admin(call.from_user.id):
         return bot.answer_callback_query(call.id, "🛑 Доступ заборонено!", show_alert=True)
 
     action = call.data
-    
-    # Відповідаємо на callback, щоб прибрати індикатор завантаження на кнопці
-    bot.answer_callback_query(call.id)
 
-    # Навігація по меню
     if action == "admin_main":
         bot.edit_message_text("👑 <b>Головне меню управління:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_main_admin_keyboard(), parse_mode="HTML")
     elif action == "admin_menu_mail":
@@ -1994,62 +1967,60 @@ def handle_admin_callbacks(call):
     elif action == "admin_menu_db":
         bot.edit_message_text("💾 <b>Управління базою даних:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard(), parse_mode="HTML")
 
-    # Статистика
     elif action == "admin_stats":
         try:
             with db_lock:
                 conn = get_db_connection()
-                try:
-                    with conn.cursor() as cursor:
-                        cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
-                        result = cursor.fetchone()
-                        users_count = result[0] or 0
-                        total_msgs = result[1] or 0
-                        
-                        cursor.execute("SELECT COUNT(*) FROM banned_users")
-                        banned_count = cursor.fetchone()[0] or 0
-                finally:
-                    conn.close()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*), SUM(count) FROM stats")
+                    result = cursor.fetchone()
+                    users_count = result[0] or 0
+                    total_msgs = result[1] or 0
+                    
+                    cursor.execute("SELECT COUNT(*) FROM banned_users")
+                    banned_count = cursor.fetchone()[0] or 0
+                conn.close()
 
             text = (
-                "📊 <b>Розширена статистика (Neon Cloud):</b>\n\n"
-                f"👤 Юзерів у базі: <code>{users_count}</code>\n"
-                f"💬 Всього повідомлень: <code>{total_msgs:,}</code>\n"
-                f"🚫 Забанених юзерів: <code>{banned_count}</code>\n"
-                f"💾 Тип БД: <code>Хмарна Neon PostgreSQL</code>"
+                "📊 *Розширена статистика (Neon Cloud):*\n\n"
+                f"👤 Юзерів у базі: `{users_count}`\n"
+                f"💬 Всього повідомлень: `{total_msgs}`\n"
+                f"🚫 Забанених юзерів: `{banned_count}`\n"
+                f"💾 Тип БД: `Хмарна Neon PostgreSQL`"
             )
-            bot.send_message(call.message.chat.id, text, parse_mode="HTML")
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Помилка БД: <code>{html_escape(e)}</code>", parse_mode="HTML")
+            bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
 
-    # Покрокові дії (Next Step Handlers)
     elif action == "admin_broadcast":
-        msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки (або <code>відміна</code>):", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "📢 Введи текст для розсилки (або `відміна`):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_broadcast)
     elif action == "admin_dm":
-        msg = bot.send_message(call.message.chat.id, "💬 Надішли <code>ID текст_повідомлення</code> (або <code>відміна</code>):", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "💬 Надішли `ID текст_повідомлення` (або `відміна`):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_dm)
 
     elif action == "admin_user_info":
-        msg = bot.send_message(call.message.chat.id, "🔎 Надішли ID юзера для перевірки (або <code>відміна</code>):", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "🔎 Надішли ID юзера для перевірки (або `відміна`):")
         bot.register_next_step_handler(msg, process_user_info)
     elif action == "admin_ban":
-        msg = bot.send_message(call.message.chat.id, "🚫 Надішли ID юзера для БАНУ (або <code>відміна</code>):", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "🚫 Надішли ID юзера для БАНУ (або `відміна`):")
         bot.register_next_step_handler(msg, process_ban_user)
     elif action == "admin_unban":
-        msg = bot.send_message(call.message.chat.id, "✅ Надішли ID юзера для РОЗБАНУ (або <code>відміна</code>):", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "✅ Надішли ID юзера для РОЗБАНУ (або `відміна`):")
         bot.register_next_step_handler(msg, process_unban_user)
 
-    # Інформація та скидання
     elif action == "admin_backup":
+        bot.answer_callback_query(call.id)
         bot.send_message(
             call.message.chat.id, 
             "💾 <b>Інформація про базу даних:</b>\n"
-            "Твій бот працює на хмарній архітектурі Neon PostgreSQL. Усі бекапи автоматичні.",
-            parse_mode="HTML"
+            "Твій бот тепер працює на хмарній архітектурі Neon. Локальних файлів `.db` більше немає.\n"
+            "Всі бекапи робляться автоматично на самому сервері Neon в режимі Point-in-Time Recovery. "
+            "Ти можеш керувати знімками через їхній сайт!"
         )
     elif action == "admin_sql":
-        msg = bot.send_message(call.message.chat.id, "🛠 Введи RAW SQL запит (або <code>відміна</code>).\n<i>Обережно, це виконується напряму!</i>", parse_mode="HTML")
+        msg = bot.send_message(call.message.chat.id, "🛠 Введи RAW SQL запит (або `відміна`).\n*Обережно, це виконується напряму!*", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_raw_sql)
     elif action == "admin_reset":
         markup = types.InlineKeyboardMarkup()
@@ -2057,627 +2028,811 @@ def handle_admin_callbacks(call):
             types.InlineKeyboardButton("⚠️ ТАК, ОБНУЛИТИ", callback_data="admin_confirm_reset"),
             types.InlineKeyboardButton("❌ СКАСУВАТИ", callback_data="admin_menu_db")
         )
-        bot.edit_message_text("⚠️ <b>Впевнений, що хочеш скинути лічильник повідомлень?</b>", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="HTML")
+        bot.edit_message_text("⚠️ Впевнений, що хочеш скинути лічильник повідомлень?", call.message.chat.id, call.message.message_id, reply_markup=markup)
     elif action == "admin_confirm_reset":
         try:
             with db_lock:
                 conn = get_db_connection()
-                try:
-                    with conn.cursor() as cursor:
-                        cursor.execute("UPDATE stats SET count = 0")
-                        conn.commit()
-                finally:
-                    conn.close()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET count = 0")
+                conn.commit()
+                conn.close()
             bot.edit_message_text("🧹 Статистику успішно обнулено!", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard())
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"❌ Помилка скидання: <code>{html_escape(e)}</code>", parse_mode="HTML")
+            bot.send_message(call.message.chat.id, f"❌ Помилка скидання: {e}")
 
-
-# ===================================================================
-# 🛠 АДМІН ОБРОБНИКИ (NEXT_STEP_HANDLERS)
-# ===================================================================
-
+# --- ДОПОМІЖНІ ФУНКЦІЇ ОБРОБКИ (NEXT_STEP_HANDLERS) ---
 def process_broadcast(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']: 
-        return bot.reply_to(message, "🛑 Скасовано.")
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
     
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT DISTINCT user_id FROM stats")
-                    users = cursor.fetchall()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT DISTINCT user_id FROM stats")
+                users = cursor.fetchall()
+            conn.close()
     except Exception as e:
-        return bot.reply_to(message, f"❌ Не вдалося отримати користувачів: {html_escape(e)}", parse_mode="HTML")
+        return bot.reply_to(message, f"❌ Не вдалося отримати користувачів: {e}")
     
     def run_broadcast():
         success, failed = 0, 0
-        bot_id = bot.get_me().id  # Кешуємо ID бота 1 раз перед циклом
-        bot.send_message(message.chat.id, "⏳ <b>Розсилка запущена...</b>", parse_mode="HTML")
-        
+        bot.send_message(message.chat.id, "⏳ Розсилка запущена...")
         for user in users:
-            target_id = user[0]
-            if target_id == bot_id: 
-                continue
+            if user[0] == bot.get_me().id: continue
             try:
-                bot.send_message(target_id, f"📢 <b>Повідомлення від Адміна:</b>\n\n{html_escape(message.text)}", parse_mode="HTML")
+                bot.send_message(user[0], f"📢 <b>Повідомлення від Творця:</b>\n\n{message.text}", parse_mode="HTML")
                 success += 1
-                time.sleep(0.04)  # Безпечна пауза ~25 повідомлень/сек під ліміти Telegram
+                time.sleep(0.05)
             except Exception:
                 failed += 1
-                
-        bot.send_message(
-            message.chat.id, 
-            f"✅ <b>Розсилку завершено!</b>\n\nУспішно: <code>{success}</code>\nПомилок: <code>{failed}</code>", 
-            parse_mode="HTML"
-        )
-
+        bot.send_message(message.chat.id, f"✅ <b>Розсилка завершена!</b>\nДоставлено: {success}\nПомилок: {failed}", parse_mode="HTML")
+    
     threading.Thread(target=run_broadcast, daemon=True).start()
 
 def process_dm(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        return bot.reply_to(message, "🛑 Скасовано.")
-    
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        parts = message.text.split(maxsplit=1)
-        if len(parts) < 2:
-            return bot.reply_to(message, "⚠️ Формат: <code>ID_користувача Текст</code>", parse_mode="HTML")
-        
-        target_id = int(parts[0])
-        dm_text = parts[1]
-        
-        bot.send_message(target_id, f"✉️ <b>Особисте повідомлення від Адміна:</b>\n\n{html_escape(dm_text)}", parse_mode="HTML")
-        bot.reply_to(message, f"✅ Повідомлення успішно надіслано юзеру <code>{target_id}</code>!", parse_mode="HTML")
-    except ValueError:
-        bot.reply_to(message, "❌ Помилка: ID користувача має бути числом!")
+        target_id, text = message.text.split(" ", 1)
+        bot.send_message(int(target_id), f"💬 <b>Особисте повідомлення:</b>\n\n{text}", parse_mode="HTML")
+        bot.reply_to(message, f"✅ Відправлено юзеру {target_id}!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка надсилання: <code>{html_escape(e)}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка: {e}")
 
 def process_user_info(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        return bot.reply_to(message, "🛑 Скасовано.")
-    
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        target_id = int(message.text.strip())
+        uid = int(message.text.strip())
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT name, count, gender, balance FROM stats WHERE user_id = %s", (target_id,))
-                    res = cursor.fetchone()
-                    cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (target_id,))
-                    is_banned = bool(cursor.fetchone())
-            finally:
-                conn.close()
-
-        if not res:
-            return bot.reply_to(message, "❌ Користувача з таким ID не знайдено в базі.")
-
-        name, count, gender, balance = res
-        status = "🚫 ЗАБАНЕНИЙ" if is_banned else "✅ Активний"
-
-        bot.reply_to(
-            message,
-            f"👤 <b>ІНФОРМАЦІЯ ПРО ЮЗЕРА:</b>\n"
-            f"• ID: <code>{target_id}</code>\n"
-            f"• Ім'я: <b>{html_escape(name or 'Невідомо')}</b>\n"
-            f"• Стать: {gender or 'Невідомо'}\n"
-            f"• Повідомлень: {count or 0}\n"
-            f"• Баланс: {balance or 0:,} грн\n"
-            f"• Статус: <b>{status}</b>",
-            parse_mode="HTML"
-        )
-    except ValueError:
-        bot.reply_to(message, "❌ Помилка: ID користувача має бути числом!")
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT count FROM stats WHERE user_id = %s", (uid,))
+                res = cursor.fetchone()
+                cursor.execute("SELECT 1 FROM banned_users WHERE user_id = %s", (uid,))
+                is_banned = bool(cursor.fetchone())
+            conn.close()
+        
+        if res:
+            status = "🔴 В БАНІ" if is_banned else "🟢 Активний"
+            bot.reply_to(message, f"👤 <b>ID:</b> {uid}\n💬 <b>Повідомлень:</b> {res[0]}\nСтатус: {status}", parse_mode="HTML")
+        else:
+            bot.reply_to(message, "🤷‍♂️ Юзера немає в базі `stats`.")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка: <code>{html_escape(e)}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка формату ID або бази: {e}")
 
 def process_ban_user(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        return bot.reply_to(message, "🛑 Скасовано.")
-    
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        target_id = int(message.text.strip())
+        uid = int(message.text.strip())
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("INSERT INTO banned_users (user_id) VALUES (%s) ON CONFLICT DO NOTHING", (target_id,))
-                    conn.commit()
-            finally:
-                conn.close()
-        bot.reply_to(message, f"🚫 Користувача <code>{target_id}</code> успішно забанено!", parse_mode="HTML")
-    except ValueError:
-        bot.reply_to(message, "❌ Помилка: ID користувача має бути числом!")
+            with conn.cursor() as cursor:
+                # Замінено на правильний синтаксис Postgres
+                cursor.execute("INSERT INTO banned_users (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (uid,))
+            conn.commit()
+            conn.close()
+        bot.reply_to(message, f"🚫 Юзера <code>{uid}</code> заблоковано!", parse_mode="HTML")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка бану: <code>{html_escape(e)}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка: {e}")
 
 def process_unban_user(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        return bot.reply_to(message, "🛑 Скасовано.")
-    
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
-        target_id = int(message.text.strip())
+        uid = int(message.text.strip())
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("DELETE FROM banned_users WHERE user_id = %s", (target_id,))
-                    conn.commit()
-            finally:
-                conn.close()
-        bot.reply_to(message, f"✅ Користувача <code>{target_id}</code> успішно розбанено!", parse_mode="HTML")
-    except ValueError:
-        bot.reply_to(message, "❌ Помилка: ID користувача має бути числом!")
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM banned_users WHERE user_id = %s", (uid,))
+            conn.commit()
+            conn.close()
+        bot.reply_to(message, f"✅ Юзера <code>{uid}</code> розбанено!", parse_mode="HTML")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка розбану: <code>{html_escape(e)}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка: {e}")
 
 def process_raw_sql(message):
     if not is_admin(message.from_user.id): return
-    if message.text and message.text.lower() in ['скасування', 'відміна', 'cancel']:
-        return bot.reply_to(message, "🛑 Скасовано.")
-    
-    sql_query = message.text.strip()
+    if message.text.lower() in ['скасування', 'відміна']: return bot.reply_to(message, "🛑 Скасовано.")
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute(sql_query)
-                    if cursor.description:
-                        res = cursor.fetchall()
-                        out = f"📊 <b>Результат SQL:</b>\n<code>{html_escape(str(res[:10]))}</code>"
-                    else:
-                        out = "✅ <b>Запит успішно виконано.</b>"
+            with conn.cursor() as cursor:
+                cursor.execute(message.text)
+                if message.text.upper().strip().startswith("SELECT"):
+                    res = cursor.fetchall()
+                    res_text = str(res)[:4000] if res else "Порожній результат"
+                    bot.reply_to(message, f"✅ Виконано:\n```\n{res_text}\n```", parse_mode="Markdown")
+                else:
                     conn.commit()
-            finally:
-                conn.close()
-        bot.reply_to(message, out, parse_mode="HTML")
-    except Exception as e:
-        bot.reply_to(message, f"❌ Помилка SQL: <code>{html_escape(e)}</code>", parse_mode="HTML")
+                    bot.reply_to(message, f"✅ Запит успішно виконано (змінено рядків: {cursor.rowcount}).")
+            conn.close()
+    except psycopg2.Error as e:
+        bot.reply_to(message, f"❌ Помилка PostgreSQL: {e}")
 
 
 # ===================================================================
-# 💵 ФУНКЦІЇ БАЛАНСУ (Мають стояти ВИЩЕ за хендлери)
+# 🎵 ОПТИМІЗОВАНИЙ НАДШВИДКИЙ ПОШУК (SOUNDCLOUD)
 # ===================================================================
-
-def get_user_balance(user_id: int) -> int:
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                return res[0] if res else 0
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"Помилка отримання балансу: {e}")
-        return 0
-
-def update_user_balance(user_id: int, amount: int, name: str = "Користувач"):
-    """Безпечне оновлення балансу (автоматично створює запис, якщо юзера ще немає)"""
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO stats (user_id, name, count, balance) 
-                        VALUES (%s, %s, 0, %s)
-                        ON CONFLICT (user_id) DO UPDATE 
-                        SET balance = stats.balance + EXCLUDED.balance;
-                    """, (user_id, name, amount))
-                    conn.commit()
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення балансу: {e}")
-
-
-# ===================================================================
-# 🧠 ГОЛОВНИЙ ОБРОБНИК (УВАГА: Розміщувати в самому КІНЦІ файлу!)
-# ===================================================================
-
-@bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'video', 'sticker'])
-def handle_all_messages(message):
-    if is_user_banned(message.from_user.id): 
+@bot.message_handler(commands=['song', 'music', 'музика', 'найти'])
+def search_and_send_music(message):
+    if is_user_banned(message.from_user.id):
         return
-    
-    user = message.from_user
+
     chat_id = message.chat.id
-    text = message.text or message.caption or ""
+    query = message.text[len(message.text.split()[0]):].strip()
     
-    # 1. Оновлення статистики та нарахування грошей (+2 грн за активність)
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO stats (user_id, name, count, balance) 
-                        VALUES (%s, %s, 1, 2)
-                        ON CONFLICT (user_id) DO UPDATE 
-                        SET name = EXCLUDED.name, 
-                            count = stats.count + 1,
-                            balance = stats.balance + 2;
-                    """, (user.id, user.first_name))
-                    conn.commit()
-            finally:
-                conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення статистики: {e}")
-
-    # 2. Збереження історії для новин
-    if text and 'RECENT_MESSAGES' in globals():
-        RECENT_MESSAGES.append(f"{user.first_name}: {text}")
-        if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
-            RECENT_MESSAGES.pop(0)
-
-    # 3. Реакція Драго (ШІ)
-    global BOT_ID
-    if not BOT_ID:
-        BOT_ID = bot.get_me().id
-
-    is_reply_to_bot = (
-        message.reply_to_message 
-        and message.reply_to_message.from_user 
-        and message.reply_to_message.from_user.id == BOT_ID
-    )
-    bot_name_mentioned = "драго" in text.lower()
-
-    if is_reply_to_bot or bot_name_mentioned or message.chat.type == 'private':
-        # Якщо надіслано медіа без підпису
-        prompt_text = text if text.strip() else "[Користувач надіслав медіа/стікер]"
+    if not query:
+        bot.reply_to(message, "⚠️ Ей, а назву треку чи автора хто писати буде? Наприклад: `/найти Скрябін`", parse_mode="Markdown")
+        return
         
-        bot.send_chat_action(chat_id, 'typing')
-        try:
-            chat = get_gemini_chat(chat_id)
-            prompt = f"Користувач {user.first_name} каже: {prompt_text}"
+    status_msg = bot.reply_to(message, f"🔍 Драго шукає трек: <i>{query}</i>...", parse_mode="HTML")
+    
+    import yt_dlp
+    
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': 'downloads/%(title)s.%(ext)s',
+        'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'source_address': '0.0.0.0', 
+        'check_formats': False,      
+        'socket_timeout': 10,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '128', 
+        }],
+    }
+    
+    try:
+        bot.send_chat_action(chat_id, 'upload_voice')
+        
+        if not os.path.exists('downloads'):
+            os.makedirs('downloads')
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"scsearch1:{query}", download=True)
             
-            # Перевірка на запит голосової відповіді
-            wants_voice = any(kw in text.lower() for kw in ["скажи", "голосове", "голосом", "озвуч"])
+            if not info or 'entries' not in info or len(info['entries']) == 0:
+                raise Exception("Нічого не знайдено. Перевір назву!")
+                
+            video_info = info['entries'][0]
+            if not video_info:
+                raise Exception("Не вдалося зчитати дані треку.")
+                
+            title = video_info.get('title', 'Unknown Track')
+            duration = video_info.get('duration', 0)
+            performer = video_info.get('uploader', 'Драго Музика')
             
-            if wants_voice and 'send_voice_reply' in globals():
-                response = chat.send_message(prompt + " (Дай коротку відповідь для озвучки)")
-                send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
+            filename = ydl.prepare_filename(video_info)
+            mp3_filename = os.path.splitext(filename)[0] + '.mp3'
+            
+            if os.path.exists(mp3_filename):
+                try:
+                    with open(mp3_filename, 'rb') as audio:
+                        bot.send_audio(
+                            chat_id=chat_id,
+                            audio=audio,
+                            title=title,
+                            performer=performer,
+                            duration=duration,
+                            reply_to_message_id=message.message_id,
+                            caption="🔥 Тримай свій трек від Драго!"
+                        )
+                finally:
+                    if os.path.exists(mp3_filename):
+                        os.remove(mp3_filename)
             else:
-                response = chat.send_message(prompt)
-                bot.reply_to(message, response.text)
-        except Exception as e:
-            print(f"Помилка Gemini AI: {e}")
-            bot.reply_to(message, "Шось у мене мізки закипіли... Повтори пізніше, бро.")
-
+                found_file = None
+                for file in os.listdir('downloads'):
+                    if file.endswith('.mp3'):
+                        found_file = os.path.join('downloads', file)
+                        break
+                
+                if found_file and os.path.exists(found_file):
+                    try:
+                        with open(found_file, 'rb') as audio:
+                            bot.send_audio(
+                                chat_id=chat_id,
+                                audio=audio,
+                                title=title,
+                                performer=performer,
+                                duration=duration,
+                                reply_to_message_id=message.message_id,
+                                caption="🔥 Тримай свій трек від Драго!"
+                            )
+                    finally:
+                        if os.path.exists(found_file):
+                            os.remove(found_file)
+                else:
+                    raise Exception("Файл MP3 не знайдено на сервері.")
+                
+            try:
+                bot.delete_message(chat_id, status_msg.message_id)
+            except Exception:
+                pass
+                
+    except Exception as e:
+        print(f"Помилка пошуку музики: {e}")
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"❌ <b>Не зміг знайти або завантажити трек.</b>\nСпробуй написати трохи інакше або перевір назву!",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
 
 # ===================================================================
-# 🛠️ ДОПОМІЖНІ ФУНКЦІЇ
+# 📊 ТОП АКТИВНОСТІ (Стиль бота Соняшник)
 # ===================================================================
 
-def html_escape(text):
-    """Екранування спецсимволів для безпечного виводу в HTML"""
-    if not text:
-        return ""
-    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-# ===================================================================
-# 📊 ТОП АКТИВНОСТІ (Об'єднаний та стилізований)
-# ===================================================================
-
-@bot.message_handler(commands=['top', 'stats', 'топ', 'статистика'])
-def show_chat_activity(message: types.Message):
-    if is_user_banned(message.from_user.id): 
-        return
-    
+@bot.message_handler(commands=['top', 'stats', 'топ'])
+def show_chat_activity(message):
+    if is_user_banned(message.from_user.id): return
     chat_id = message.chat.id
-
+    
     try:
         bot.send_chat_action(chat_id, 'typing')
-        
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    # Беремо топ 10 активних учасників у чаті з балансом
-                    cursor.execute("""
-                        SELECT COALESCE(name, 'Анонім'), COALESCE(count, 0), COALESCE(balance, 0) 
-                        FROM stats 
-                        WHERE in_chat = TRUE 
-                        ORDER BY count DESC 
-                        LIMIT 10
-                    """)
-                    rows = cursor.fetchall()
-
-                    # Загальна сума повідомлень усього чату
-                    cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
-                    total_messages = cursor.fetchone()[0] or 0
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                # Беремо топ 10 активних у чаті
+                cursor.execute("SELECT name, count FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
+                rows = cursor.fetchall()
+                
+                # Загальна сума повідомлень усього чату
+                cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
+                total_messages = cursor.fetchone()[0] or 0
+            conn.close()
 
         if not rows or total_messages == 0:
             bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
             return
 
+        # Шапка
         chat_title = message.chat.title or "цьому чаті"
-        chat_title_clean = html_escape(chat_title)
-
+        chat_title_clean = chat_title.replace("<", "&lt;").replace(">", "&gt;")
+        
         response = [
-            f"📊 <b>ТОП-10 НАЙАКТИВНІШИХ ГРАВЦІВ В {chat_title_clean.upper()}:</b>\n"
+            f"📊 <b>Топ найактивніших учасників в {chat_title_clean}:</b>\n"
         ]
 
+        # Іконки топу
         medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
-        for idx, (name, count, balance) in enumerate(rows):
+        for idx, (name, count) in enumerate(rows):
             icon = medals[idx] if idx < len(medals) else "▫️"
-            clean_name = html_escape(name)
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+            
+            # Вираховуємо відсоток від загальної кількості
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
-            rank = get_rank_title(count) if 'get_rank_title' in globals() else "Боєць"
+            
+            # Чистий вивід у стилі Соняшника
+            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> <i>({percent:.1f}%)</i>")
 
-            response.append(
-                f"{icon} <b>{clean_name}</b> — <code>{count:,} пов.</code> <i>({percent:.1f}%)</i> | <code>{balance:,} грн</code> ({rank})"
-            )
-
+        # Підвал
         response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
-        response.append("<i>Пиши частіше, щоб піднятися вище в рейтингу! 🚀</i>")
-
+        
         bot.reply_to(message, "\n".join(response), parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка виведення топу: {e}")
-        bot.reply_to(message, f"❌ Помилка завантаження статистики: <code>{html_escape(e)}</code>", parse_mode="HTML")
-
+        bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
 
 # ===================================================================
-# 💤 СОННІ МУХИ ЧАТУ
+# 💤 КОМАНДА ДЛЯ ПОШУКУ НЕАКТИВНИХ (/sleepers або /сонні)
 # ===================================================================
+@bot.message_handler(commands=['sleepers', 'сонні'])
+def tag_inactive_users(message):
+    chat_id = message.chat.id
+    chat_type = message.chat.type
 
-@bot.message_handler(commands=['sleepers', 'сонні', 'сони'])
-def show_sleepers(message: types.Message):
-    if is_user_banned(message.from_user.id): 
+    if chat_type not in ['group', 'supergroup']:
+        bot.reply_to(message, "Ей, бро, які сонні мухи в приватці? Тут тільки ти і я. 👁️")
         return
 
     try:
+        bot.send_chat_action(chat_id, 'typing')
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT name, count FROM stats WHERE in_chat = TRUE AND count < 5 ORDER BY count ASC LIMIT 15")
-                    sleepers = cursor.fetchall()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                # Шукаємо лінивців ТІЛЬКИ СЕРЕД ТИХ, ХТО ЗАРАЗ Є В ЧАТІ
+                cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 AND in_chat = TRUE ORDER BY count ASC LIMIT 15")
+                rows = cursor.fetchall()
+            conn.close()
+            
+        rows = [row for row in rows if row[0] != bot.get_me().id]
 
-        if not sleepers:
-            bot.reply_to(message, "🔥 Сонних немає! Усі валять повідомлення на повну!")
+        if not rows:
+            bot.reply_to(message, "🔥 Ого! Схоже, у цьому чаті всі активні звірі! Жодного сонного лінивця не знайдено. Поважаю. 😎")
             return
 
-        lines = ["💤 <b>СПИСОК СОННИХ МУХ ЧАТУ:</b>\n"]
-        for idx, (name, count) in enumerate(sleepers, 1):
-            c_name = html_escape(name or "Без імені")
-            lines.append(f"{idx}. <b>{c_name}</b> (лише <code>{count} пов.</code>)")
+        mentions = []
+        for user_id, name, count in rows:
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Чуваче"
+            mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a> (активність: {count} пов.)')
 
-        lines.append("\n<i>Прокинулися і швидко дали про себе знати! 🤬</i>")
-        bot.reply_to(message, "\n".join(lines), parse_mode="HTML")
+        punchlines = [
+            "Ей, ви там що, позасинали у своїх норах? Ану живо в чат! 🪵",
+            "Якого біса ви мовчите? Я стежу за вами, привиди! 👁️👻",
+            "У вас пальці повідсихали чи що? Ану черкніть хоч слово! 🤬",
+            "Дивлюся на вашу активність і плакати хочеться. Прокидаємося! 💤"
+        ]
+        random_punch = random.choice(punchlines)
+
+        response_text = (
+            f"📢 <b>ДРАГО ВИХОДИТЬ НА ПОЛЮВАННЯ НА СОННИХ МУХ!</b> 💤\n"
+            f"<i>{random_punch}</i>\n\n"
+            "⚠️ <b>Список підозрілих тихушників:</b>\n"
+        )
+
+        for idx, mention in enumerate(mentions, 1):
+            response_text += f"{idx}. {mention}\n"
+
+        response_text += "\n☠️ <i>Якщо не почнете писати — Драго особисто вас забанить.</i>"
+        bot.send_message(chat_id, response_text, parse_mode="HTML")
+
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка списку сонних: {html_escape(e)}", parse_mode="HTML")
+        print(f"Помилка пошуку сонних: {e}")
+        bot.reply_to(message, "❌ Не зміг розбудити лінивців, щось пішло не так.")
 
 
 # ===================================================================
-# 🕵️‍♂️ ГЕНЕРАЦІЯ ДОСЬЄ (Gemini AI)
+# 🍔 МЕНЮ ДОБРОГО ДРУГА (/menu або /меню)
+# ===================================================================
+@bot.message_handler(commands=['menu', 'меню'])
+def show_friend_menu(message):
+    chat_id = message.chat.id
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        menu_text = (
+            "🍔 <b>МЕНЮ ДОБРОГО ДРУГА</b> 🍕\n\n"
+            "Зголоднів, бро? Чи просто хочеться закинути в себе щось нереально соковите? "
+            "Твій вірний кент Драго вже про все подбав! 😎\n\n"
+            "Тримай посилання на наше гаряче меню. Переходь, вибирай найкращі смаколики "
+            "та влаштуй своїм смаковим рецепторам справжнє свято! 🚀\n\n"
+            "<i>Смачного, тигр! 🐯👇</i>"
+        )
+        markup = types.InlineKeyboardMarkup()
+        btn_menu = types.InlineKeyboardButton(
+            text="📖 Відкрити Меню 🍽️", 
+            url="https://expz.menu/64562137-fa19-4413-9b90-d2dba1c697fa"
+        )
+        markup.add(btn_menu)
+        bot.reply_to(message, menu_text, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Помилка при виклику меню: {e}")
+        bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
+
+
+# ===================================================================
+# 🔫 ГРА "МАФІЯ" (Братва проти СБУ)
 # ===================================================================
 
-@bot.message_handler(commands=['dossier', 'досьє', 'досье'])
-def generate_user_dossier(message: types.Message):
-    if is_user_banned(message.from_user.id): 
+# Допоміжні функції для перевірки статусу гри
+def check_win(chat_id):
+    game = mafia_games[chat_id]
+    alive = game['alive']
+    roles = game['roles']
+    
+    mafia_alive = sum(1 for pid in alive if roles[pid] == 'Братва (Мафія)')
+    mirni_alive = len(alive) - mafia_alive
+    
+    if mafia_alive == 0:
+        return 'mirni'
+    elif mafia_alive >= mirni_alive:
+        return 'mafia'
+    return None
+
+def start_night(chat_id):
+    game = mafia_games[chat_id]
+    game['state'] = 'night'
+    game['night_actions'] = {'mafia': None, 'sbu': None}
+    
+    bot.send_message(
+        chat_id, 
+        "🌃 <b>МІСТО ЗАСИНАЄ...</b>\n\nУсі розійшлися по норах. Братва виходить на полювання, СБУ шукає сліди.\n\n<i>(Мафія та СБУ роблять вибір у ПП з ботом)</i>", 
+        parse_mode="HTML"
+    )
+    
+    # Відправляємо кнопки живим активам у ПП
+    for pid in game['alive']:
+        role = game['roles'][pid]
+        if role in ['Братва (Мафія)', 'Агент СБУ (Комісар)']:
+            markup = types.InlineKeyboardMarkup()
+            for target_id in game['alive']:
+                if target_id != pid: # Не можна вибрати себе
+                    target_name = game['players'][target_id]
+                    cb_data = f"night_{chat_id}_{target_id}"
+                    markup.add(types.InlineKeyboardButton(target_name, callback_data=cb_data))
+            
+            try:
+                if role == 'Братва (Мафія)':
+                    bot.send_message(pid, "🔫 <b>Вибери, кого братва завалить цієї ночі:</b>", reply_markup=markup, parse_mode="HTML")
+                elif role == 'Агент СБУ (Комісар)':
+                    bot.send_message(pid, "🕵️‍♂️ <b>Вибери, кого пробити по базі СБУ:</b>", reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                pass # Якщо користувач не запустив бота в ПП
+
+def process_night(chat_id):
+    game = mafia_games[chat_id]
+    
+    # Вбиваємо жертву мафії
+    killed_id = game['night_actions']['mafia']
+    if killed_id and killed_id in game['alive']:
+        game['alive'].remove(killed_id)
+        killed_name = game['players'][killed_id]
+        killed_msg = f"💀 Вночі братва розстріляла <b>{killed_name}</b>!"
+    else:
+        killed_msg = "🤷‍♂️ Вночі ніхто не постраждав (Мафія проспала або жертва вже мертва)."
+
+    # Перевіряємо чи хтось виграв
+    winner = check_win(chat_id)
+    if winner:
+        finish_game(chat_id, winner, killed_msg)
         return
 
-    target_user = message.reply_to_message.from_user if message.reply_to_message else message.from_user
-    ensure_user_in_db(target_user)
+    # Якщо гра триває, починаємо день
+    game['state'] = 'day'
+    game['day_votes'] = {}
+    
+    markup = types.InlineKeyboardMarkup()
+    for pid in game['alive']:
+        cb_data = f"dayvote_{chat_id}_{pid}"
+        markup.add(types.InlineKeyboardButton(game['players'][pid], callback_data=cb_data))
+    
+    bot.send_message(
+        chat_id, 
+        f"☀️ <b>РАНОК НА РАЙОНІ</b>\n\n{killed_msg}\n\nЧас знайти крису! Голосуйте, кого посадити на пляшку (за ґрати):", 
+        reply_markup=markup, 
+        parse_mode="HTML"
+    )
 
+def finish_game(chat_id, winner, extra_msg=""):
+    game = mafia_games[chat_id]
+    roles_text = "\n".join([f"{name} — {game['roles'][pid]}" for pid, name in game['players'].items()])
+    
+    if winner == 'mafia':
+        result = "🏴 <b>БРАТВА ПЕРЕМОГЛА!</b> Місто під їхнім контролем."
+    else:
+        result = "👮‍♂️ <b>СБУ ТА РОБОТЯГИ ПЕРЕМОГЛИ!</b> Мафію знищено."
+        
+    bot.send_message(
+        chat_id, 
+        f"{extra_msg}\n\n{result}\n\n<b>Хто був ким:</b>\n{roles_text}", 
+        parse_mode="HTML"
+    )
+    del mafia_games[chat_id]
+
+# ==================== КОМАНДИ ====================
+
+@bot.message_handler(commands=['mafia', 'мафія'])
+def start_mafia_lobby(message):
+    if is_user_banned(message.from_user.id): return
+    
+    chat_id = message.chat.id
+    if chat_id in mafia_games:
+        bot.reply_to(message, "⚠️ Розбірки вже почалися або йде збір! Пиши /join щоб приєднатися.")
+        return
+
+    mafia_games[chat_id] = {
+        'state': 'lobby',
+        'players': {message.from_user.id: message.from_user.first_name},
+        'roles': {},
+        'alive': [],
+        'night_actions': {'mafia': None, 'sbu': None},
+        'day_votes': {}
+    }
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔫 Приєднатися", callback_data="mafia_join"))
+    
+    bot.send_message(chat_id, "🚬 <b>ЗБІР НА РОЗБІРКИ (МАФІЯ)</b>\n\nБратва ділить район, СБУ шиє справи. Натискай кнопку!", reply_markup=markup, parse_mode="HTML")
+
+@bot.message_handler(commands=['stop_mafia', 'зупинити_мафію'])
+def stop_mafia_game_cmd(message):
+    if is_user_banned(message.from_user.id): return
+    chat_id = message.chat.id
+    if chat_id in mafia_games:
+        del mafia_games[chat_id]
+        bot.reply_to(message, "🛑 <b>РОЗБІРКИ СКАСОВАНО!</b>\nСБУ накрило точку, братва розбіглася.", parse_mode="HTML")
+    else:
+        bot.reply_to(message, "🤡 Яку мафію зупиняти? Ніхто навіть не збирався!")
+
+@bot.message_handler(commands=['start_mafia'])
+def start_mafia_game(message):
+    if is_user_banned(message.from_user.id): return
+    
+    chat_id = message.chat.id
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby': return
+
+    players = mafia_games[chat_id]['players']
+    if len(players) < 4:
+        bot.reply_to(message, "🤡 Мало людей! Треба хоча б 4 пацана для нормальної стрілянини.")
+        return
+
+    player_ids = list(players.keys())
+    random.shuffle(player_ids)
+
+    roles = {}
+    roles[player_ids[0]] = 'Братва (Мафія)'
+    roles[player_ids[1]] = 'Агент СБУ (Комісар)'
+    for pid in player_ids[2:]:
+        roles[pid] = 'Роботяга (Мирний)'
+
+    mafia_games[chat_id]['roles'] = roles
+    mafia_games[chat_id]['alive'] = player_ids.copy()
+
+    for pid, role in roles.items():
+        try:
+            bot.send_message(pid, f"🎭 Твоя роль у цій катці: <b>{role}</b>!\nТсс, нікому не кажи.", parse_mode="HTML")
+        except Exception:
+            bot.send_message(chat_id, f"⚠️ Не зміг написати одному з гравців у ПП! Хай напише боту /start.")
+
+    start_night(chat_id)
+
+# ==================== КОЛБЕКИ (КНОПКИ) ====================
+
+@bot.callback_query_handler(func=lambda call: call.data == "mafia_join")
+def join_mafia(call):
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'lobby':
+        bot.answer_callback_query(call.id, "Гра вже йде або не створена!", show_alert=True)
+        return
+    if user_id in mafia_games[chat_id]['players']:
+        bot.answer_callback_query(call.id, "Ти вже в ділі!", show_alert=True)
+        return
+
+    mafia_games[chat_id]['players'][user_id] = call.from_user.first_name
+    bot.answer_callback_query(call.id, "Тебе записано!")
+    bot.edit_message_text(
+        f"🚬 <b>ЗБІР НА РОЗБІРКИ</b>\n\nЗа столом: {len(mafia_games[chat_id]['players'])} чол.\n(Мінімум 4).\n<i>Старт: /start_mafia</i>",
+        chat_id, call.message.message_id, reply_markup=call.message.reply_markup, parse_mode="HTML"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("night_"))
+def handle_night_action(call):
+    _, chat_id, target_id = call.data.split("_")
+    chat_id, target_id = int(chat_id), int(target_id)
+    user_id = call.from_user.id
+    
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'night':
+        bot.answer_callback_query(call.id, "Зараз не ніч або гра закінчилась!", show_alert=True)
+        return
+        
+    game = mafia_games[chat_id]
+    if user_id not in game['alive']: return
+    
+    role = game['roles'][user_id]
+    target_name = game['players'][target_id]
+
+    if role == 'Братва (Мафія)':
+        game['night_actions']['mafia'] = target_id
+        bot.edit_message_text(f"🔫 Ти обрав завалити: <b>{target_name}</b>.", user_id, call.message.message_id, parse_mode="HTML")
+    elif role == 'Агент СБУ (Комісар)':
+        game['night_actions']['sbu'] = target_id
+        target_role = game['roles'][target_id]
+        is_mafia = "❗️ Це МАФІЯ!" if target_role == 'Братва (Мафія)' else "✅ Це звичайний роботяга."
+        bot.edit_message_text(f"🕵️‍♂️ Ти перевірив <b>{target_name}</b>.\nРезультат: {is_mafia}", user_id, call.message.message_id, parse_mode="HTML")
+
+    # Перевіряємо чи всі активи зробили хід
+    mafia_alive = any(game['roles'][p] == 'Братва (Мафія)' for p in game['alive'])
+    sbu_alive = any(game['roles'][p] == 'Агент СБУ (Комісар)' for p in game['alive'])
+    
+    mafia_done = not mafia_alive or game['night_actions']['mafia'] is not None
+    sbu_done = not sbu_alive or game['night_actions']['sbu'] is not None
+
+    if mafia_done and sbu_done:
+        process_night(chat_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("dayvote_"))
+def handle_day_vote(call):
+    _, chat_id, target_id = call.data.split("_")
+    chat_id, target_id = int(chat_id), int(target_id)
+    user_id = call.from_user.id
+    
+    if chat_id not in mafia_games or mafia_games[chat_id]['state'] != 'day':
+        bot.answer_callback_query(call.id, "Голосування не активне!", show_alert=True)
+        return
+        
+    game = mafia_games[chat_id]
+    if user_id not in game['alive']:
+        bot.answer_callback_query(call.id, "Мертві не голосують!", show_alert=True)
+        return
+        
+    game['day_votes'][user_id] = target_id
+    bot.answer_callback_query(call.id, f"Голос прийнято за {game['players'][target_id]}!")
+    
+    # Якщо всі живі проголосували
+    if len(game['day_votes']) == len(game['alive']):
+        votes = list(game['day_votes'].values())
+        # Знаходимо того, в кого найбільше голосів
+        vote_counts = {i: votes.count(i) for i in votes}
+        max_votes = max(vote_counts.values())
+        lynched = [k for k, v in vote_counts.items() if v == max_votes]
+        
+        if len(lynched) == 1:
+            lynched_id = lynched[0]
+            game['alive'].remove(lynched_id)
+            lynch_name = game['players'][lynched_id]
+            lynch_role = game['roles'][lynched_id]
+            msg = f"⚖️ Більшістю голосів за ґрати відправляється <b>{lynch_name}</b>!\nВін був: <i>{lynch_role}</i>"
+        else:
+            msg = "⚖️ Голоси розділилися! Ніхто не сів."
+            
+        bot.send_message(chat_id, msg, parse_mode="HTML")
+        
+        winner = check_win(chat_id)
+        if winner:
+            finish_game(chat_id, winner)
+        else:
+            start_night(chat_id)
+
+# ===================================================================
+# 📰 МЕМНІ НОВИНИ ВІД ДРАГО НА БАЗІ GEMINI (/news)
+# ===================================================================
+@bot.message_handler(commands=['news', 'новини'])
+def generate_chat_news(message):
+    chat_id = message.chat.id
+    
+    if len(RECENT_MESSAGES) < 5:
+        bot.reply_to(
+            message, 
+            "🤫 *Драго ще не назбирав достатньо компромату!* Поактивнічайте трохи в чаті, і я зроблю вам гарячий випуск новин.",
+            parse_mode="Markdown"
+        )
+        return
+        
+    status_msg = bot.reply_to(message, "🔥 <i>Драго дістає брудну білизну чату та пише свіжий випуск новин...</i>", parse_mode="HTML")
+    bot.send_chat_action(chat_id, 'typing')
+    
+    formatted_history = "\n".join([f"- {msg['user']}: {msg['text']}" for msg in RECENT_MESSAGES])
+    
+    prompt = f"""
+    Ти — Драго, зухвалий, саркастичний, харизматичний бот-бандит, який веде кримінальний чат.
+    Твоє завдання — написати короткий, суперсмішний випуск "жовтої преси" або "мемних новин" на основі останніх повідомлень у чаті.
+    Будь іронічним, використовуй молодіжний сленг, трохи підколюй учасників (але без відвертої злоби чи жорстокої токсичності).
+    Вигадай абсурдні сенсації, теорії змови або "кримінальні розслідування" на основі того, про що त्यांनी писали.
+    
+    Ось історія останніх повідомлень у чаті:
+    {formatted_history}
+    
+    Напиши короткий випуск новин (3-4 пункти) українською мовою. Обов'язково використовуй емодії та виділяй імена.
+    В кінці додай фірмову бандитську фразу від Драго.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        news_text = response.text
+        
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ <b>СПЕЦВИПУСК ДРАГО-NEWS</b> ⚡️\n\n{news_text}",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg.message_id,
+                text=f"⚡️ СПЕЦВИПУСК ДРАГО-NEWS ⚡️\n\n{news_text}"
+            )
+            
+    except Exception as e:
+        print(f"Помилка генерації новин через Gemini: {e}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=status_msg.message_id,
+            text="❌ *Чорт, зв'язок обірвався!* Мої інформатори накрилися мідним тазом (помилка Gemini). Спробуй трохи пізніше!",
+            parse_mode="Markdown"
+        )
+
+
+# ===================================================================
+# 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото через Gemini)
+# ===================================================================
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    user = message.from_user
+    caption = message.caption or ""
+    
+    ensure_user_in_db(user)
+    gender = get_user_gender(user.id)
+    
     try:
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT count, balance, gender FROM stats WHERE user_id = %s", (target_user.id,))
-                    res = cursor.fetchone()
-            finally:
-                conn.close()
-
-        count = res[0] if res else 0
-        balance = res[1] if res else 0
-        gender = res[2] if res else "Невідомо"
-
-        bot.send_chat_action(message.chat.id, 'typing')
-
-        prompt = (
-            f"Склади секретне, гумористичне кримінальне досьє від імені агента СБУ Драго на користувача {target_user.first_name}. "
-            f"Його стать: {gender}, активність: {count} повідомлень, статки: {balance} грн. "
-            f"Пиши з пацанським гумором, іронією, сленгом українською мовою."
-        )
-
-        gen_model = model if 'model' in globals() else get_gemini_chat(message.chat.id)
-        response = gen_model.generate_content(prompt) if hasattr(gen_model, 'generate_content') else gen_model.send_message(prompt)
-        
-        dossier_text = f"🕵️‍♂️ <b>ТАЄМНЕ ДОСЬЄ СБУ: {html_escape(target_user.first_name)}</b>\n\n{response.text}"
-        bot.reply_to(message, dossier_text, parse_mode="HTML")
-    except Exception as e:
-        print(f"Помилка досьє: {e}")
-        bot.reply_to(message, f"❌ Помилка генерації досьє: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
-
-
-# ===================================================================
-# 📰 НОВИНИ ЧАТУ (Gemini AI)
-# ===================================================================
-
-@bot.message_handler(commands=['news', 'новини', 'новости'])
-def generate_chat_news(message: types.Message):
-    if is_user_banned(message.from_user.id): 
-        return
-
-    if 'RECENT_MESSAGES' not in globals() or not RECENT_MESSAGES:
-        bot.reply_to(message, "📰 Ще немає достатньо новин! Напишіть щось у чат, щоб Драго склав дайджест.")
-        return
-
-    bot.send_chat_action(message.chat.id, 'typing')
-
-    try:
-        history_text = "\n".join(RECENT_MESSAGES[-25:])
-        prompt = (
-            f"Ти — ведучий пацанських мемних новин Драго. На основі цих останніх повідомлень з чату:\n\n{history_text}\n\n"
-            f"Склади короткий, смішний, емоційний та зухвалий випуск гарячих новин чату українською мовою."
-        )
-
-        gen_model = model if 'model' in globals() else get_gemini_chat(message.chat.id)
-        response = gen_model.generate_content(prompt) if hasattr(gen_model, 'generate_content') else gen_model.send_message(prompt)
-
-        bot.reply_to(message, f"📰 <b>МЕМНІ НОВИНИ ЧАТУ ВІД ДРАГО</b> 🗞️\n\n{response.text}", parse_mode="HTML")
-    except Exception as e:
-        print(f"Помилка новин: {e}")
-        bot.reply_to(message, f"❌ Помилка формування новин: {html_escape(e)}", parse_mode="HTML")
-
-
-# ===================================================================
-# 🕵️‍♂️ МАФІЯ ТА МЕНЮ
-# ===================================================================
-
-@bot.message_handler(commands=['mafia', 'мафія', 'мафия'])
-def start_mafia_game(message: types.Message):
-    if is_user_banned(message.from_user.id): 
-        return
-
-    bot.reply_to(
-        message, 
-        "🕵️‍♂️ <b>ГРА В МАФІЮ ВІД ДРАГО!</b>\n\n"
-        "Збір братви оголошено! Щоб запустити повноцінну гру, треба мінімум 4 гравці.\n"
-        "Натискайте кнопку нижче, щоб приєднатися!",
-        reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🎮 Приєднатися до гри", callback_data="mafia_join")),
-        parse_mode="HTML"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data == "mafia_join")
-def mafia_join_callback(call: types.CallbackQuery):
-    bot.answer_callback_query(call.id, text="Ти в грі! Збираємо інших...")
-    bot.send_message(
-        call.message.chat.id, 
-        f"🕵️‍♂️ <b>{html_escape(call.from_user.first_name)}</b> приєднався(-лася) до мафіозного клану!", 
-        parse_mode="HTML"
-    )
-
-@bot.message_handler(commands=['menu', 'меню'])
-def show_menu(message: types.Message):
-    if is_user_banned(message.from_user.id): 
-        return
-
-    menu_text = (
-        "🍕 <b>МЕНЮ СМАКОЛИКІВ ВІД ДРАГО</b> 🍺\n\n"
-        "1. 🌯 Шаурма По-Київськи — 120 грн\n"
-        "2. 🍕 Піца З Чотирма Сирами — 250 грн\n"
-        "3. 🍔 Подвійний Пацанський Бургер — 180 грн\n"
-        "4. 🍺 Холодне Пінне — 60 грн\n"
-        "5. ☕ Кава Еспресо — 35 грн\n\n"
-        "<i>Замовляй у барі, гроші списуються з твоєї кишені через /купити!</i>"
-    )
-    bot.reply_to(message, menu_text, parse_mode="HTML")
-
-
-# ===================================================================
-# 🎧 ПОШУК МУЗИКИ В SOUNDCLOUD
-# ===================================================================
-
-@bot.message_handler(commands=['найти', 'music', 'музика', 'музыка'])
-def search_music(message: types.Message):
-    if is_user_banned(message.from_user.id): 
-        return
-
-    query = message.text.split(maxsplit=1)
-    if len(query) < 2:
-        bot.reply_to(
-            message, 
-            "🎧 Напиши назву треку або виконавця! Наприклад: <code>/найти Скрябін Кораблі</code>", 
-            parse_mode="HTML"
-        )
-        return
-
-    track_name = query[1].strip()
-    
-    msg = bot.reply_to(
-        message, 
-        f"🟠 <b>Драго шукає трек на SoundCloud:</b> <i>{html_escape(track_name)}</i>...\n\n🎧 <i>Зачекай пару секунд!</i>", 
-        parse_mode="HTML"
-    )
-
-    try:
-        # Налаштування yt-dlp для пошуку 1 треку на SoundCloud без завантаження самого файлу
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'no_warnings': True,
-            'default_search': 'scsearch1',  # scsearch1 означає 1 результат із SoundCloud
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Шукаємо трек
-            info = ydl.extract_info(f"scsearch1:{track_name}", download=False)
-            
-            if info and 'entries' in info and len(info['entries']) > 0:
-                track_info = info['entries'][0]
-                track_url = track_info.get('webpage_url') or track_info.get('url')
-                title = track_info.get('title', 'Трек')
-                uploader = track_info.get('uploader', 'SoundCloud')
-
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=msg.message_id,
-                    text=(
-                        f"🟠 <b>Ось твій трек із SoundCloud:</b>\n\n"
-                        f"🎵 <b>{html_escape(uploader)} — {html_escape(title)}</b>\n"
-                        f"🔗 {track_url}"
-                    ),
-                    parse_mode="HTML"
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
+                    (user.first_name, user.id)
                 )
-            else:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=msg.message_id,
-                    text="❌ Драго обшукав весь SoundCloud, але нічого не знайшов."
-                )
+            conn.commit()
+            conn.close()
     except Exception as e:
-        print(f"Помилка пошуку SoundCloud: {e}")
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=msg.message_id,
-            text=f"❌ Помилка пошуку на SoundCloud: <code>{html_escape(e)}</code>",
-            parse_mode="HTML"
+        print(f"Помилка оновлення статів фото: {e}")
+
+    is_mentioned = False
+    if chat_type in ['group', 'supergroup']:
+        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
+        first_word = caption.split()[0].lower() if caption.split() else ""
+        if (first_word in trigger_words
+                or f"@{bot.get_me().username}" in caption
+                or (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id)):
+            is_mentioned = True
+            for word in trigger_words:
+                if caption.lower().startswith(word):
+                    caption = caption[len(word):].strip()
+                    break
+    else:
+        is_mentioned = True
+
+    if not is_mentioned:
+        return
+
+    gender_hint = ""
+    if gender == 'Дівчина':
+        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга', 'красуня' тощо] "
+    elif gender == 'Хлопець':
+        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
+
+    status_msg = None
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        status_msg = bot.reply_to(message, "Так-так, Драго протирає очі й дивиться на твою картинку... 👀")
+
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        image_data = {"data": downloaded_file, "mime_type": "image/jpeg"}
+
+        system_prompt = (
+            f"{gender_hint}Тобі надіслали фото. Проаналізуй, що на ньому зображено. "
+            f"Якщо користувач залишив підпис до фото, він тут: '{caption}'. "
+            "Дай коротку, дотепну, зухвалу або іронічну відповідь у стилі Драго на основі того, що ти бачиш на зображенні!"
         )
+
+        response = model.generate_content([system_prompt, image_data])
+
+        try:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
+        except Exception:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
+
+    except Exception as e:
+        print(f"Помилка аналізу фото: {e}")
+        if status_msg:
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Ой, у мене лінзи запітніли, не зміг роздивитися це фото.")
+
 
 # ===================================================================
 # 👋 Обробник входу/виходу учасників
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    old_status = message.old_chat_member.status
-    new_status = message.new_chat_member.status
-
-    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ (перевіряємо, що раніше його НЕ було в чаті)
-    if old_status in ['left', 'kicked'] and new_status in ['member', 'administrator', 'restricted']:
-        user = message.new_chat_member.user
-        if user.is_bot:
-            return  # Ігноруємо ботів
-
+    user = message.new_chat_member.user
+    
+    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ
+    if (message.new_chat_member.status in ['member', 'administrator', 'restricted']
+            and not user.is_bot):
         gender = ensure_user_in_db(user)
-        # html.escape захищає від збоїв, якщо в імені є символи '<' або '>'
-        name = html.escape(user.first_name)  
+        name = user.first_name
         
         # Повертаємо його в активні списки
         try:
@@ -2696,16 +2851,12 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             greeting = f"Йо, <b>{name}</b>, вітаємо в чаті! 🤝\nРадий бачити тебе тут, бро!"
         else:
             greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
-            
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
     # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
-    elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
-        user = message.old_chat_member.user
-        if user.is_bot:
-            return  # Ігноруємо вихід ботів
-
-        name = html.escape(user.first_name)
+    elif (message.old_chat_member.status in ['member', 'administrator', 'restricted']
+          and message.new_chat_member.status in ['left', 'kicked']):
+        name = message.old_chat_member.user.first_name
         
         # ВИКРЕСЛЮЄМО З ТОПІВ
         try:
@@ -2726,133 +2877,138 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         ]
         bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
 
-
 # ===================================================================
-# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ (ШІ ЧАТ ТА ЛІЧИЛЬНИК)
+# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
-
 @bot.message_handler(content_types=['text'])
-def handle_all_text_messages(message: types.Message):
+def handle_text(message):
     if is_user_banned(message.from_user.id):
         return
 
-    user = message.from_user
+    text = message.text
     chat_id = message.chat.id
-    text = message.text or ""
+    user = message.from_user
+    chat_type = message.chat.type
 
-    # 1. Забезпечуємо наявність користувача у БД
+    if text and not text.startswith('/'):
+        user_name = user.first_name or "Анонім"
+        RECENT_MESSAGES.append({
+            "user": user_name,
+            "text": text
+        })
+        if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
+            RECENT_MESSAGES.pop(0)
+
     ensure_user_in_db(user)
+    gender = get_user_gender(user.id)
 
-    # 2. Нараховуємо 1 повідомлення та бонуси
+    # 1. Оновлення статі, якщо вона невідома
+    if gender in ['Never', 'Невідомо']:
+        guessed = analyze_gender_from_text(text)
+        if guessed in ['Хлопець', 'Дівчина']:
+            try:
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                print(f"Помилка оновлення статі: {e}")
+
+    # 2. Нарахування грошей та оновлення лічильника повідомлень
     try:
-        cash_reward = random.randint(5, 25)
+        earned_money = random.randint(5, 15)  # 💰 Генеруємо випадковий заробіток
         with db_lock:
             conn = get_db_connection()
-            try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        UPDATE stats 
-                        SET count = count + 1, 
-                            balance = balance + %s,
-                            name = %s,
-                            username = %s
-                        WHERE user_id = %s
-                    """, (cash_reward, user.first_name, user.username, user.id))
-                conn.commit()
-            finally:
-                conn.close()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE stats SET count = count + 1, balance = COALESCE(balance, 0) + %s, name = %s WHERE user_id = %s",
+                    (earned_money, user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
     except Exception as e:
-        print(f"Помилка оновлення статистики: {e}")
+        print(f"Помилка оновлення лічильника та балансу: {e}")
 
-    # 3. Зберігаємо в буфер останні повідомлення
-    RECENT_MESSAGES.append(f"{user.first_name}: {text}")
-    if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
-        RECENT_MESSAGES.pop(0)
+    is_mentioned = False
 
-    # 4. Перевірка чи звертаються до Драго
-    is_private = message.chat.type == "private"
-    is_mentioned = "драго" in text.lower() or (BOT_USERNAME and f"@{BOT_USERNAME}" in text.lower())
-    is_reply_to_bot = (
-        message.reply_to_message 
-        and message.reply_to_message.from_user 
-        and message.reply_to_message.from_user.id == (BOT_OBJ.id if BOT_OBJ else None)
-    )
+    if chat_type in ['group', 'supergroup']:
+        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
+        first_word = text.split()[0].lower() if text.split() else ""
+        if (first_word in trigger_words
+                or f"@{bot.get_me().username}" in text
+                or (message.reply_to_message
+                    and message.reply_to_message.from_user.id == bot.get_me().id)):
+            is_mentioned = True
+            for word in trigger_words:
+                if text.lower().startswith(word):
+                    text = text[len(word):].strip()
+                    break
+    else:
+        is_mentioned = True
 
-    if is_private or is_mentioned or is_reply_to_bot:
-        bot.send_chat_action(chat_id, 'typing')
-
-        wants_voice = any(kw in text.lower() for kw in ["скажи", "голосове", "голосом", "озвуч", "скажи голосом"])
-
-        try:
-            chat_genai = get_gemini_chat(chat_id)
-            prompt_clean = text.lower().replace("драго", "").replace(f"@{BOT_USERNAME}", "").strip()
-            if not prompt_clean:
-                prompt_clean = "Привіт, Драго!"
-
-            response = chat_genai.send_message(prompt_clean)
-            reply_text = response.text
-
-            if wants_voice and 'send_voice_reply' in globals():
-                send_voice_reply(chat_id, reply_text, reply_to_id=message.message_id)
-            else:
-                bot.reply_to(message, reply_text)
-        except Exception as e:
-            print(f"Помилка Gemini AI: {e}")
-            bot.reply_to(message, "Шось у мене мізки закипіли... Повтори пізніше, бро.")
-
-
-# ===================================================================
-# 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото)
-# ===================================================================
-
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message: types.Message):
-    if is_user_banned(message.from_user.id):
+    if not is_mentioned:
         return
 
-    chat_id = message.chat.id
-    user = message.from_user
-    caption = message.caption or ""
-    
-    gender = ensure_user_in_db(user)
-    
-    # 1. Нараховуємо активність за фото
+    voice_triggers = ['скажи', 'голосове', 'гс', 'озвуч', 'запиши', 'скажии']
+    wants_voice = any(trigger in text.lower() for trigger in voice_triggers)
+
+    gender_hint = ""
+    if gender == 'Дівчина':
+        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга' тощо] "
+    elif gender == 'Хлопець':
+        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
+
+    status_msg = None
     try:
-        with db_lock:
-            conn = get_db_connection()
+        if wants_voice:
+            bot.send_chat_action(chat_id, 'record_voice')
+            status_msg = bot.reply_to(message, "Драго записує голосове повідомлення... 🎤")
+        else:
+            bot.send_chat_action(chat_id, 'typing')
+            status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
+
+        chat = get_gemini_chat(chat_id)
+        full_prompt = f"{gender_hint}{text}"
+        response = chat.send_message(full_prompt)
+
+        clean_text_for_speech = response.text.replace("*", "").replace("_", "").replace("`", "")
+
+        if wants_voice:
             try:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        UPDATE stats 
-                        SET count = count + 1, balance = balance + 2 
-                        WHERE user_id = %s
-                    """, (user.id,))
-                conn.commit()
-            finally:
-                conn.close()
+                bot.delete_message(chat_id, status_msg.message_id)
+            except Exception:
+                pass
+            send_voice_reply(chat_id, clean_text_for_speech, reply_to_id=message.message_id)
+        else:
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
+            except Exception:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
+            
     except Exception as e:
-        print(f"Помилка в handle_photo (БД): {e}")
-
-    # 2. Якщо до фото є звернення до бота — обробляємо через Gemini (якщо налаштовано)
-    is_mentioned = "драго" in caption.lower() or (BOT_USERNAME and f"@{BOT_USERNAME}" in caption.lower())
-    if message.chat.type == "private" or is_mentioned:
-        bot.send_chat_action(chat_id, 'typing')
-        # Тут можна завантажити файл через bot.get_file(message.photo[-1].file_id) 
-        # та передати байти у Gemini Vision API.
-        bot.reply_to(message, "📸 Драго бачить твоє фото! (Опрацювання фото в розробці)")
+        print(f"Помилка Gemini в handle_text: {e}")
+        if status_msg:
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Бля, щось у мене мізки на секунду заклинило. Спробуй ще раз, бро!")
+            except Exception:
+                pass
 
 
 # ===================================================================
-# 🚀 ЗАПУСК БОТА
+# 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
-
 if __name__ == "__main__":
-    print("🤖 Бот Драго успішно запущений і готовий розвалювати кабіни!")
+    bot.enable_save_next_step_handlers(delay=2)
+    bot.load_next_step_handlers()
     
-    # Запускаємо Discord-клієнт у фоновому потоці (якщо він налаштований)
-    if 'DISCORD_TOKEN' in globals() and DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
-        if 'run_discord' in globals():
-            threading.Thread(target=run_discord, daemon=True).start()
-        
-    # Запускаємо Telegram-бота
-    bot.infinity_polling(none_stop=True, timeout=60, allowed_updates=["message", "edited_message", "chat_member", "my_chat_member"])
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
+    print("🚀 Dummy-сервер успішно запущено.")
+
+    discord_thread = threading.Thread(target=run_discord, daemon=True)
+    discord_thread.start()
+    
+    print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
+    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
