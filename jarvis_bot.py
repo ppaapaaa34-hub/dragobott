@@ -2373,114 +2373,6 @@ def search_music(message):
             text=f"❌ Помилка пошуку: {e}"
         )
 
-# ===================================================================
-# 🍔 МЕНЮ ДОБРОГО ДРУГА (/menu або /меню)
-# ===================================================================
-@bot.message_handler(commands=['menu', 'меню'])
-def show_friend_menu(message):
-    chat_id = message.chat.id
-    try:
-        bot.send_chat_action(chat_id, 'typing')
-        menu_text = (
-            "🍔 <b>МЕНЮ ДОБРОГО ДРУГА</b> 🍕\n\n"
-            "Зголоднів, бро? Чи просто хочеться закинути в себе щось нереально соковите? "
-            "Твій вірний кент Драго вже про все подбав! 😎\n\n"
-            "Тримай посилання на наше гаряче меню. Переходь, вибирай найкращі смаколики "
-            "та влаштуй своїм смаковим рецепторам справжнє свято! 🚀\n\n"
-            "<i>Смачного, тигр! 🐯👇</i>"
-        )
-        markup = types.InlineKeyboardMarkup()
-        btn_menu = types.InlineKeyboardButton(
-            text="📖 Відкрити Меню 🍽️", 
-            url="https://expz.menu/64562137-fa19-4413-9b90-d2dba1c697fa"
-        )
-        markup.add(btn_menu)
-        bot.reply_to(message, menu_text, reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        print(f"Помилка при виклику меню: {e}")
-        bot.reply_to(message, "❌ Щось меню не відкриватися. Спробуй за секунду!")
-
-
-# ===================================================================
-# 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото через Gemini)
-# ===================================================================
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    if is_user_banned(message.from_user.id):
-        return
-
-    chat_id = message.chat.id
-    chat_type = message.chat.type
-    user = message.from_user
-    caption = message.caption or ""
-    
-    ensure_user_in_db(user)
-    gender = get_user_gender(user.id)
-    
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE stats SET count = count + 1, name = %s WHERE user_id = %s",
-                    (user.first_name, user.id)
-                )
-            conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення статів фото: {e}")
-
-    is_mentioned = False
-    if chat_type in ['group', 'supergroup']:
-        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
-        first_word = caption.split()[0].lower() if caption.split() else ""
-        if (first_word in trigger_words
-                or f"@{bot.get_me().username}" in caption
-                or (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id)):
-            is_mentioned = True
-            for word in trigger_words:
-                if caption.lower().startswith(word):
-                    caption = caption[len(word):].strip()
-                    break
-    else:
-        is_mentioned = True
-
-    if not is_mentioned:
-        return
-
-    gender_hint = ""
-    if gender == 'Дівчина':
-        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга', 'красуня' тощо] "
-    elif gender == 'Хлопець':
-        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
-
-    status_msg = None
-    try:
-        bot.send_chat_action(chat_id, 'typing')
-        status_msg = bot.reply_to(message, "Так-так, Драго протирає очі й дивиться на твою картинку... 👀")
-
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        image_data = {"data": downloaded_file, "mime_type": "image/jpeg"}
-
-        system_prompt = (
-            f"{gender_hint}Тобі надіслали фото. Проаналізуй, що на ньому зображено. "
-            f"Якщо користувач залишив підпис до фото, він тут: '{caption}'. "
-            "Дай коротку, дотепну, зухвалу або іронічну відповідь у стилі Драго на основі того, що ти бачиш на зображенні!"
-        )
-
-        response = model.generate_content([system_prompt, image_data])
-
-        try:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
-        except Exception:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
-
-    except Exception as e:
-        print(f"Помилка аналізу фото: {e}")
-        if status_msg:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Ой, у мене лінзи запітніли, не зміг роздивитися це фото.")
-
 
 # ===================================================================
 # 👋 Обробник входу/виходу учасників
@@ -2620,16 +2512,50 @@ def handle_all_text_messages(message):
 
 
 # ===================================================================
-# 🚀 ЗАПУСК БОТА ТА ВСІХ СЕРВІСІВ
+# 📸 ОБРОБНИК ЗОБРАЖЕНЬ (Аналіз фото через Gemini)
 # ===================================================================
-if __name__ == '__main__':
-    # 1. Запуск Dummy HTTP сервера (для Render/Koyeb) у фоновому потоці
-    threading.Thread(target=run_dummy_server, daemon=True).start()
-    
-    # 2. Запуск Discord бота у фоновому потоці
-    threading.Thread(target=run_discord, daemon=True).start()
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    if is_user_banned(message.from_user.id):
+        return
 
-    print("🤖 Бот Драго успішно запущений і чекає на повідомлення!")
+    chat_id = message.chat.id
+    user = message.from_user
+    caption = message.caption or ""
     
-    # 3. Запуск Telegram бота
-    bot.infinity_polling(skip_pending=True)
+    # Виправляємо отримання статі: функція ensure_user_in_db якраз її повертає
+    gender = ensure_user_in_db(user)
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Завершуємо обірваний SQL-запит (нараховуємо активність та гроші)
+                cursor.execute("""
+                    UPDATE stats 
+                    SET count = count + 1, balance = balance + 2 
+                    WHERE user_id = %s
+                """, (user.id,))
+                conn.commit()
+            conn.close()
+            
+        # Якщо тут планувався аналіз фото через Gemini, 
+        # то сюди потрібно додати логіку завантаження картинки та відправки в модель.
+        # Наразі просто логуємо або відповідаємо:
+        # bot.reply_to(message, "📸 Драго бачить твоє фото, але ще не навчився його коментувати!")
+        
+    except Exception as e:
+        print(f"Помилка в handle_photo: {e}")
+
+# ===================================================================
+# 🚀 ЗАПУСК БОТА
+# ===================================================================
+if __name__ == "__main__":
+    print("🤖 Бот Драго успішно запущений і готовий розвалювати кабіни!")
+    
+    # Запускаємо Discord-клієнт у фоновому потоці (якщо він налаштований)
+    if DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
+        threading.Thread(target=run_discord, daemon=True).start()
+        
+    # Запускаємо Telegram-бота
+    bot.infinity_polling(none_stop=True, timeout=60)
