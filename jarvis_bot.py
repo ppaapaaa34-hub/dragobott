@@ -2512,7 +2512,7 @@ def generate_user_dossier(message: types.Message):
         bot.reply_to(message, dossier_text, parse_mode="HTML")
     except Exception as e:
         print(f"Помилка досьє: {e}")
-        bot.reply_to(message, f"❌ Помилка генерації досьє: {html_escape(e)}", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка генерації досьє: <code>{html_escape(str(e))}</code>", parse_mode="HTML")
 
 
 # ===================================================================
@@ -2661,71 +2661,71 @@ def search_music(message: types.Message):
             parse_mode="HTML"
         )
 
-
 # ===================================================================
 # 👋 Обробник входу/виходу учасників
 # ===================================================================
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
-    old_status = message.old_chat_member.status
-    new_status = message.new_chat_member.status
+    old_status = message.old_chat_member.status
+    new_status = message.new_chat_member.status
 
-    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ (перевіряємо, що раніше його НЕ було в чаті)
-    if old_status in ['left', 'kicked'] and new_status in ['member', 'administrator', 'restricted']:
-        user = message.new_chat_member.user
-        if user.is_bot:
-            return  # Ігноруємо ботів
+    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ (перевіряємо, що раніше його НЕ було в чаті)
+    if old_status in ['left', 'kicked'] and new_status in ['member', 'administrator', 'restricted']:
+        user = message.new_chat_member.user
+        if user.is_bot:
+            return  # Ігноруємо ботів
 
-        gender = ensure_user_in_db(user)
-        # html.escape захищає від збоїв, якщо в імені є символи '<' або '>'
-        name = html.escape(user.first_name)  
-        
-        # Повертаємо його в активні списки
-        try:
-            with db_lock:
-                conn = get_db_connection()
-                with conn.cursor() as cursor:
-                    cursor.execute("UPDATE stats SET in_chat = TRUE WHERE user_id = %s", (user.id,))
-                conn.commit()
-                conn.close()
-        except Exception as e:
-            print(f"Помилка БД при поверненні юзера: {e}")
-            
-        if gender == 'Дівчина':
-            greeting = f"Вітаємо в чаті, <b>{name}</b>! 🤍\nРадий бачити тебе тут!"
-        elif gender == 'Хлопець':
-            greeting = f"Йо, <b>{name}</b>, вітаємо в чаті! 🤝\nРадий бачити тебе тут, бро!"
-        else:
-            greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
-            
-        bot.send_message(message.chat.id, greeting, parse_mode="HTML")
+        gender = ensure_user_in_db(user)
+        # html.escape захищає від збоїв, якщо в імені є символи '<' або '>'
+        name = html.escape(user.first_name)  
+        
+        # Повертаємо його в активні списки
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = TRUE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при поверненні юзера: {e}")
+            
+        if gender == 'Дівчина':
+            greeting = f"Вітаємо в чаті, <b>{name}</b>! 🤍\nРадий бачити тебе тут!"
+        elif gender == 'Хлопець':
+            greeting = f"Йо, <b>{name}</b>, вітаємо в чаті! 🤝\nРадий бачити тебе тут, бро!"
+        else:
+            greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
+            
+        bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
-    # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
-    elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
-        user = message.old_chat_member.user
-        if user.is_bot:
-            return  # Ігноруємо вихід ботів
+    # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
+    elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
+        user = message.old_chat_member.user
+        if user.is_bot:
+            return  # Ігноруємо вихід ботів
 
-        name = html.escape(user.first_name)
-        
-        # ВИКРЕСЛЮЄМО З ТОПІВ
-        try:
-            with db_lock:
-                conn = get_db_connection()
-                with conn.cursor() as cursor:
-                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (user.id,))
-                conn.commit()
-                conn.close()
-        except Exception as e:
-            print(f"Помилка БД при виході юзера: {e}")
+        name = html.escape(user.first_name)
+        
+        # ВИКРЕСЛЮЄМО З ТОПІВ
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (user.id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Помилка БД при виході юзера: {e}")
 
-        goodbyes = [
-            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
-            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
-            f"<b>{name}</b> покинув чат. Схоже, не витримав нашого рівня інтелекту... 🧠",
-            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії!"
-        ]
-        bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
+        goodbyes = [
+            f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
+            f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
+            f"<b>{name}</b> покинув чат. Схоже, не витримав нашого рівня інтелекту... 🧠",
+            f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії!"
+        ]
+        bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
+
 
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ (ШІ ЧАТ ТА ЛІЧИЛЬНИК)
