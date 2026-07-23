@@ -2130,7 +2130,8 @@ def show_top_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT name, count, balance FROM stats ORDER BY count DESC LIMIT 10")
+                # Додаємо COALESCE, щоб уникнути проблем з NULL
+                cursor.execute("SELECT COALESCE(name, 'Анонім'), COALESCE(count, 0), COALESCE(balance, 0) FROM stats ORDER BY count DESC LIMIT 10")
                 top_users = cursor.fetchall()
             conn.close()
 
@@ -2140,14 +2141,15 @@ def show_top_users(message):
 
         lines = ["📊 <b>ТОП-10 НАЙАКТИВНІШИХ ГРАВЦІВ:</b>\n"]
         for idx, (name, count, balance) in enumerate(top_users, 1):
-            c_name = html_escape(name or "Анонім")
-            rank = get_rank_title(count or 0)
-            lines.append(f"{idx}. <b>{c_name}</b> — <code>{count or 0} пов.</code> | <code>{balance or 0:,} грн</code> ({rank})")
+            c_name = html_escape(name)
+            rank = get_rank_title(count)
+            lines.append(f"{idx}. <b>{c_name}</b> — <code>{count} пов.</code> | <code>{balance:,} грн</code> ({rank})")
 
         lines.append("\n<i>Пиши частіше, щоб піднятися вище в рейтингу! 🚀</i>")
         bot.reply_to(message, "\n".join(lines), parse_mode="HTML")
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка топ-статистики: {e}")
+        print(f"Помилка топ-статистики: {e}")
+        bot.reply_to(message, f"❌ Помилка топ-статистики: <code>{e}</code>", parse_mode="HTML")
 
 @bot.message_handler(commands=['sleepers', 'сонні', 'сони'])
 def show_sleepers(message):
