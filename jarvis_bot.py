@@ -2386,13 +2386,15 @@ def handle_all_text_messages(message):
 # 🚀 ЗАПУСК БОТА ТА ПОТОКІВ
 # ===================================================================
 if __name__ == '__main__':
-    # Запускаємо сервер для підтримки активності (наприклад, для Render)
+    # 1. Запускаємо HTTP-сервер для Keep-Alive (наприклад, для Render/Railway) у фоновому потоці
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    
-    # Запускаємо Discord клієнт у фоновому потоці
+
+    # 2. Запускаємо Discord-агента у фоновому потоці
     threading.Thread(target=run_discord, daemon=True).start()
-    
+
+    # 3. Запускаємо основний цикл Telegram бота
     print("🚀 Бот Драго успішно запущений і готовий до роботи!")
-    
-    # Запуск Телеграм-бота (infinity_polling щоб не падав від дрібних помилок)
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    try:
+        bot.infinity_polling(skip_pending=True)
+    except Exception as e:
+        print(f"❌ Помилка в роботі бота: {e}")
