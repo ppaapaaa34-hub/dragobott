@@ -7,3 +7,4 @@ edge-tts
 ffmpeg-python
 psycopg2-binary
 discord.py
+flask-cors
