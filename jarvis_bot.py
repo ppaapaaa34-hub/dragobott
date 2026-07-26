@@ -402,26 +402,39 @@ def show_user_profile(message):
         print(f"Помилка створення профілю: {e}")
         bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
 
+
 # ===================================================================
-# ⚙️ НАЛАШТУВАННЯ ТА ІНІЦІАЛІЗАЦІЯ (Додайте це у ваш основний файл)
+# ⚙️ НАЛАШТУВАННЯ ТА ІНІЦІАЛІЗАЦІЯ
 # ===================================================================
-# Переконайтеся, що ці змінні вже визначені у вашому основному коді:
+# Переконайтеся, що ці змінні/функції вже є у вашому основному коді:
 # bot = telebot.TeleBot(TOKEN)
 # db_lock = threading.Lock()
 # def get_db_connection(): ...
 # def is_user_banned(user_id): ...
+# def update_user_balance(user_id, amount): ...
+# def get_user_balance(user_id): ...
 
 # ===================================================================
-# 💼 СИСТЕМА БІЗНЕСІВ ТА ПАСИВНОГО ДОХОДУ
+# 💼 КАТАЛОГ БІЗНЕСІВ (12 різноманітних об'єктів)
 # ===================================================================
-
-# Каталог бізнесів
 BUSINESSES = {
+    "coffee": {
+        "name": "☕ Кав'ярня «Кава на майно»", 
+        "price": 25000, 
+        "income": 900, 
+        "ai_desc": "cozy small coffee shop exterior, warm lighting, wooden decoration, realistic"
+    },
     "kebab": {
         "name": "🌯 I Love Kebab", 
         "price": 60000, 
         "income": 2200, 
-        "ai_desc": "cozy small fast food kebab restaurant, bright light, realistic"
+        "ai_desc": "cozy small fast food kebab restaurant, bright street light, realistic"
+    },
+    "barbershop": {
+        "name": "💈 Барбершоп «Barba»", 
+        "price": 150000, 
+        "income": 5500, 
+        "ai_desc": "modern stylish barbershop exterior, neon barber pole, big windows, stylish"
     },
     "cigars": {
         "name": "🚬 Контрабанда цигарок", 
@@ -429,11 +442,23 @@ BUSINESSES = {
         "income": 12500, 
         "ai_desc": "secret cargo truck, cardboard boxes, custom control border crossing, dark night"
     },
+    "carwash": {
+        "name": "🚗 Автомийка самообслуговування", 
+        "price": 800000, 
+        "income": 28000, 
+        "ai_desc": "modern self-service car wash bay with glowing LED lights, clean sports car"
+    },
     "atb": {
         "name": "🛒 Мережа АТБ", 
         "price": 1800000, 
         "income": 60000, 
         "ai_desc": "huge modern green and red ATB supermarket store building, parking lot"
+    },
+    "crypto": {
+        "name": "⛏️ Майнінг-ферма", 
+        "price": 4000000, 
+        "income": 135000, 
+        "ai_desc": "industrial warehouse filled with dark blue glowing crypto mining rigs and ASIC servers"
     },
     "split": {
         "name": "🌃 Нічний Клуб Split", 
@@ -441,15 +466,35 @@ BUSINESSES = {
         "income": 230000, 
         "ai_desc": "luxurious VIP Split night club exterior, golden lighting, lasers, realistic"
     },
+    "logistics": {
+        "name": "🚚 Логістична компанія «Нова Пошта»", 
+        "price": 15000000, 
+        "income": 480000, 
+        "ai_desc": "huge modern logistics warehouse center with red delivery trucks, bright day"
+    },
     "nvidia": {
         "name": "🤖 Компанія NVIDIA", 
         "price": 35000000, 
         "income": 1100000, 
         "ai_desc": "futuristic neon green NVIDIA headquarters building, high-tech server room"
+    },
+    "bank": {
+        "name": "🏦 Privat/Monobank Хмарочос", 
+        "price": 85000000, 
+        "income": 2700000, 
+        "ai_desc": "massive skyscraper financial bank headquarters building, glass and steel exterior, sunset"
+    },
+    "space": {
+        "name": "🚀 Космічна компанія SpaceX", 
+        "price": 200000000, 
+        "income": 6500000, 
+        "ai_desc": "sci-fi futuristic space rocket launchpad facility, glowing launch platform, epic photography"
     }
 }
 
-# 🛠️ АВТОМАТИЧНЕ СТВОРЕННЯ ТАБЛИЦІ В БД
+ITEMS_PER_PAGE = 4
+
+# 🛠️ ІНІЦІАЛІЗАЦІЯ ТАБЛИЦІ ТА ПОЛЯ POSITION В БД
 def init_business_db():
     try:
         with db_lock:
@@ -460,9 +505,14 @@ def init_business_db():
                         id SERIAL PRIMARY KEY,
                         user_id BIGINT NOT NULL,
                         biz_code VARCHAR(50) NOT NULL,
+                        position INT DEFAULT 0,
                         last_collect TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
+                """)
+                cursor.execute("""
+                    ALTER TABLE user_businesses 
+                    ADD COLUMN IF NOT EXISTS position INT DEFAULT 0;
                 """)
             conn.commit()
             conn.close()
@@ -472,17 +522,14 @@ def init_business_db():
 
 init_business_db()
 
-# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО БІЗНЕСІВ ЧЕРЕЗ AI (Pollinations)
+# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО БІЗНЕСІВ ЧЕРЕЗ AI
 def generate_business_ai_image(owned_biz_codes):
-    """Генерує одну суцільну картинку, що показує всі бізнеси користувача разом"""
     if not owned_biz_codes:
         return None
         
-    # Збираємо описи для AI тільки для унікальних кодів
     unique_codes = list(set(owned_biz_codes))
     ai_descriptions = []
     
-    # Обмежуємо до 4 бізнесів, щоб картинка не була надто хаотичною
     for code in unique_codes[:4]:
         if code in BUSINESSES:
             ai_descriptions.append(BUSINESSES[code]["ai_desc"])
@@ -490,7 +537,6 @@ def generate_business_ai_image(owned_biz_codes):
     if not ai_descriptions:
         return None
         
-    # Формуємо промпт
     items_prompt = ", ".join(ai_descriptions)
     prompt = (
         f"A ultra-realistic cinematic wide shot photography representing a successful business empire ownership, "
@@ -499,19 +545,16 @@ def generate_business_ai_image(owned_biz_codes):
     
     try:
         encoded_prompt = requests.utils.quote(prompt)
-        # Використовуємо Flux модель для кращої деталізації
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 9999)}&model=flux&nologo=true"
         
         response = requests.get(image_url, timeout=30)
         
         if response.status_code == 200:
-            # Перевіряємо, чи це дійсно картинка, а не помилка JSON
             if "application/json" in response.headers.get("Content-Type", ""):
                 return None
             
-            # Обробляємо картинку через PIL, щоб переконатися в форматі
             img = Image.open(io.BytesIO(response.content))
-            img = img.convert("RGB") # Конвертуємо в RGB для сумісності
+            img = img.convert("RGB")
             
             bio = io.BytesIO()
             bio.name = 'business_empire.jpg'
@@ -519,17 +562,88 @@ def generate_business_ai_image(owned_biz_codes):
             bio.seek(0)
             return bio
         else:
-            print(f"⚠️ Pollinations повернув код: {response.status_code}")
             return None
     except Exception as e:
         print(f"⚠️ Помилка генерації AI фото: {e}")
         return None
 
+# 📄 ДОПОМІЖНА ФУНКЦІЯ ПАГІНАЦІЇ
+def build_biz_page_text_and_markup(user_id, user_name, page=0):
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT biz_code 
+                FROM user_businesses 
+                WHERE user_id = %s 
+                ORDER BY position ASC, id ASC
+            """, (user_id,))
+            owned_rows = cursor.fetchall()
+            
+            cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+            res = cursor.fetchone()
+            balance = res[0] if res else 0
+        conn.close()
+
+    owned_codes = [row[0] for row in owned_rows]
+    biz_keys = list(BUSINESSES.keys())
+    
+    total_pages = (len(biz_keys) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    page = max(0, min(page, total_pages - 1))
+    
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
+    current_page_keys = biz_keys[start_idx:end_idx]
+
+    total_income_per_hour = sum(BUSINESSES[code]["income"] for code in owned_codes if code in BUSINESSES)
+
+    text = [
+        f"👑 <b>БІЗНЕС-ІМПЕРІЯ:</b> {user_name}",
+        f"💳 Баланс: <code>{balance:,} грн</code>",
+        f"📈 Пасивний дохід: <b>+{total_income_per_hour:,} грн/год</b>",
+        "────────────────────",
+        f"📊 <b>КАТАЛОГ (Стор. {page + 1}/{total_pages}):</b>\n"
+    ]
+
+    for code in current_page_keys:
+        biz = BUSINESSES[code]
+        count = owned_codes.count(code)
+
+        if count > 0:
+            text.append(f"✅ <b>{biz['name']}</b> (<code>{code}</code>)")
+            text.append(f" ├ 📈 Власність: <b>{count} шт.</b>")
+            text.append(f" └ 💰 Дохід: <code>+{biz['income']*count:,} грн/год</code>\n")
+        else:
+            text.append(f"⚪ {biz['name']} (<code>{code}</code>)")
+            text.append(f" ├ Ціна: <code>{biz['price']:,} грн</code>")
+            text.append(f" └ Дохід: <code>+{biz['income']:,} грн/год</code>\n")
+
+    text.append("💡 <i>Купити: /купити_бізнес [код]</i>")
+    text.append("💡 <i>Зібрати касу: /зібрати</i>")
+    text.append("💡 <i>Змінити порядок: /swap [№1] [№2]</i>")
+
+    caption_text = "\n".join(text)
+
+    markup = types.InlineKeyboardMarkup()
+    buttons = []
+
+    if page > 0:
+        buttons.append(types.InlineKeyboardButton("◀️ Назад", callback_data=f"bizpage_{user_id}_{page - 1}"))
+    
+    buttons.append(types.InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="ignore"))
+
+    if page < total_pages - 1:
+        buttons.append(types.InlineKeyboardButton("Вперед ▶️", callback_data=f"bizpage_{user_id}_{page + 1}"))
+
+    markup.row(*buttons)
+
+    return caption_text, markup, owned_codes
+
 # ===================================================================
-# 🏢 КОМАНДИ БОТА
+# 🏢 КОМАНДИ БІЗНЕСІВ
 # ===================================================================
 
-# 🏢 КОМАНДА: МОЇ БІЗНЕСИ ТА КАТАЛОГ (/biz, /бізнеси)
+# 🏢 КАТАЛОГ ТА МОЇ БІЗНЕСИ (/biz, /бізнеси)
 @bot.message_handler(commands=['biz', 'бізнеси', 'бизнесы'])
 def show_businesses(message):
     if is_user_banned(message.from_user.id): return
@@ -537,75 +651,26 @@ def show_businesses(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
 
-    # Надсилаємо статус, бо генерація картинки займає час
     status_msg = bot.reply_to(message, "⏳ <i>Зачекай, Драго підраховує твої активи та малює картинку імперії...</i>", parse_mode="HTML")
 
     try:
-        # 1. Отримуємо дані з БД
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Отримуємо бізнеси користувача
-                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user_id,))
-                owned_rows = cursor.fetchall()
-                
-                # Отримуємо баланс
-                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                res = cursor.fetchone()
-                balance = res[0] if res else 0
-            conn.close()
+        caption_text, markup, owned_codes = build_biz_page_text_and_markup(user_id, user_name, page=0)
 
-        owned_codes = [row[0] for row in owned_rows]
-        
-        # 2. Формуємо текст
-        text = [
-            f"👑 <b>БІЗНЕС-ІМПЕРІЯ:</b> {user_name}\n",
-            f"💳 Баланс: <code>{balance:,} грн</code>\n",
-            "────────────────────",
-            "📊 <b>КАТАЛОГ ТА ТВОЇ АКТИВИ:</b>\n"
-        ]
-
-        total_income_per_hour = 0
-        
-        for code, biz in BUSINESSES.items():
-            count = owned_codes.count(code)
-            
-            # Розрахунок доходу
-            income_str = f"+{biz['income']:,} грн/год"
-            
-            if count > 0:
-                text.append(f"✅ <b>{biz['name']}</b> (<code>{code}</code>)")
-                text.append(f" ├ 📈 Власність: <b>{count} шт.</b>")
-                text.append(f" └ 💰 Дохід: <code>{biz['income']*count:,} грн/год</code>\n")
-                total_income_per_hour += (biz['income'] * count)
-            else:
-                text.append(f"⚪ {biz['name']} (<code>{code}</code>)")
-                text.append(f" ├ Ціна: <code>{biz['price']:,} грн</code>")
-                text.append(f" └ Дохід: <code>{income_str}</code>\n")
-
-        text.append("────────────────────")
-        text.append(f"📈 Загальний пасивний дохід: <b>{total_income_per_hour:,} грн/год</b>")
-        text.append("\n💡 <i>Купити: /купити_бізнес [код]</i>")
-        text.append("💡 <i>Зібрати касу: /зібрати</i>")
-        
-        caption_text = "\n".join(text)
-
-        # 3. Генеруємо AI картинку
         if owned_codes:
             photo = generate_business_ai_image(owned_codes)
             if photo:
                 bot.delete_message(message.chat.id, status_msg.message_id)
-                bot.send_photo(message.chat.id, photo=photo, caption=caption_text, parse_mode="HTML")
+                bot.send_photo(message.chat.id, photo=photo, caption=caption_text, parse_mode="HTML", reply_markup=markup)
                 return
 
-        # Якщо бізнесів немає або AI не спрацював — просто редагуємо текст
-        bot.edit_message_text(caption_text, message.chat.id, status_msg.message_id, parse_mode="HTML")
+        bot.delete_message(message.chat.id, status_msg.message_id)
+        bot.send_message(message.chat.id, caption_text, parse_mode="HTML", reply_markup=markup)
 
     except Exception as e:
         print(f"❌ Помилка команди /бізнеси: {e}")
-        bot.edit_message_text(f"❌ Не вдалося завантажити дані про бізнес. Помилка БД.", message.chat.id, status_msg.message_id)
+        bot.edit_message_text("❌ Не вдалося завантажити дані про бізнес. Помилка БД.", message.chat.id, status_msg.message_id)
 
-# 🛒 КОМАНДА: КУПІВЛЯ БІЗНЕСУ (/купити_бізнес)
+# 🛒 КУПІВЛЯ БІЗНЕСУ (/купити_бізнес)
 @bot.message_handler(commands=['купити_бізнес', 'buy_biz'])
 def buy_business(message):
     if is_user_banned(message.from_user.id): return
@@ -627,7 +692,6 @@ def buy_business(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Перевірка балансу
                 cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
                 res = cursor.fetchone()
                 balance = res[0] if res else 0
@@ -637,9 +701,11 @@ def buy_business(message):
                     conn.close()
                     return
 
-                # Списання грошей та додавання бізнесу
                 cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (biz["price"], user_id))
-                cursor.execute("INSERT INTO user_businesses (user_id, biz_code) VALUES (%s, %s)", (user_id, biz_code))
+                cursor.execute("""
+                    INSERT INTO user_businesses (user_id, biz_code, position)
+                    VALUES (%s, %s, COALESCE((SELECT MAX(position) FROM user_businesses WHERE user_id = %s), 0) + 1)
+                """, (user_id, biz_code, user_id))
 
             conn.commit()
             conn.close()
@@ -656,9 +722,9 @@ def buy_business(message):
         
     except Exception as e:
         print(f"❌ Помилка купівлі бізнесу: {e}")
-        bot.reply_to(message, f"❌ Помилка угоди. Спробуй пізніше.")
+        bot.reply_to(message, "❌ Помилка угоди. Спробуй пізніше.")
 
-# 💵 КОМАНДА: ЗБІР ПРИБУТКУ (/зібрати, /каса, /прибуток)
+# 💵 ЗБІР ПРИБУТКУ (/зібрати, /каса, /прибуток)
 @bot.message_handler(commands=['зібрати', 'каса', 'collect', 'прибуток'])
 def collect_business_income(message):
     if is_user_banned(message.from_user.id): return
@@ -669,8 +735,6 @@ def collect_business_income(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Отримуємо всі бізнеси користувача та час, що минув (в годинах)
-                # EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 — рахує різницю в годинах
                 cursor.execute("""
                     SELECT id, biz_code, EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 
                     FROM user_businesses 
@@ -685,7 +749,6 @@ def collect_business_income(message):
 
                 total_earned = 0
                 biz_details = []
-                # Ліміт накопичення — 24 години
                 time_limit_hours = 24.0
 
                 for row in user_bizs:
@@ -693,46 +756,36 @@ def collect_business_income(message):
                     
                     if biz_code in BUSINESSES:
                         biz = BUSINESSES[biz_code]
-                        
-                        # Застосовуємо ліміт часу
                         effective_hours = min(hours_passed, time_limit_hours)
                         
-                        # Потрібно хоча б 1 хвилина роботи (0.016 години)
                         if effective_hours >= 0.016: 
                             earned = int(effective_hours * biz["income"])
                             total_earned += earned
-                            
                             time_str = f"{int(effective_hours)}г {int((effective_hours%1)*60)}хв"
                             biz_details.append(f"• <b>{biz['name']}</b> (за {time_str}): <code>+{earned:,} грн</code>")
 
                 if total_earned <= 0:
-                    bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Бізнеси працюють, але прибуток ще не накопичився (зачекай хоча б хвилину).")
+                    bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Зачекай хоча б хвилину.")
                     conn.close()
                     return
 
-                # --- 🎲 Випадкові події (Пацанський рандом) ---
                 event_text = ""
-                # "Reputation" базується на вартості бізнесів
-                reputation_bonus = min(len(user_bizs) // 2, 10) # max 10% бонус
+                reputation_bonus = min(len(user_bizs) // 2, 10)
                 rand_event = random.randint(1, 100) + reputation_bonus
                 
-                if rand_event <= 8: # Податкова перевірка (Погано)
+                if rand_event <= 8:
                     penalty = int(total_earned * 0.15)
                     total_earned -= penalty
-                    event_text = f"\n\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Прийшов штраф або хабар на <code>-{penalty:,} грн</code>! Відкупився..."
-                elif rand_event >= 92: # Ажіотаж (Добре)
+                    event_text = f"\n\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Штраф <code>-{penalty:,} грн</code>!"
+                elif rand_event >= 92:
                     bonus = int(total_earned * 0.30)
                     total_earned += bonus
-                    event_text = f"\n\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Наплив клієнтів приніс додаткові <code>+{bonus:,} грн</code>! Всі задоволені."
-                elif rand_event == 50: # Рейдерська атака (Дуже погано, але рідко)
+                    event_text = f"\n\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Додатково <code>+{bonus:,} грн</code>!"
+                elif rand_event == 50:
                     total_earned = 0
-                    event_text = f"\n\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Касу намагалися віджати. Гроші довелося заховати, прибутку за цей період немає."
+                    event_text = f"\n\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Прибутку за цей період немає."
 
-                # Оновлюємо час збору ТІЛЬКИ ДЛЯ ОБРОБЛЕНИХ БІЗНЕСІВ
-                # Але простіше оновити всім last_collect = NOW()
                 cursor.execute("UPDATE user_businesses SET last_collect = NOW() WHERE user_id = %s", (user_id,))
-                
-                # Додаємо гроші на баланс
                 cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (total_earned, user_id))
 
             conn.commit()
@@ -749,16 +802,16 @@ def collect_business_income(message):
 
     except Exception as e:
         print(f"❌ Помилка збору прибутку: {e}")
-        bot.reply_to(message, f"❌ Помилка під час збору каси. Спробуй пізніше.")
+        bot.reply_to(message, "❌ Помилка під час збору каси.")
 
-# 🚮 КОМАНДА: ПРОДАЖ БІЗНЕСУ (/продати_бізнес)
+# 🚮 ПРОДАЖ БІЗНЕСУ (/продати_бізнес)
 @bot.message_handler(commands=['продати_бізнес', 'sell_biz'])
 def sell_business(message):
     if is_user_banned(message.from_user.id): return
 
     args = message.text.split()
     if len(args) < 2:
-        bot.reply_to(message, "⚠️ Вкажи код бізнесу для продажу! Наприклад: <code>/продати_бізнес kebab</code>", parse_mode="HTML")
+        bot.reply_to(message, "⚠️ Вкажи код бізнесу! Наприклад: <code>/продати_бізнес kebab</code>", parse_mode="HTML")
         return
 
     biz_code = args[1].lower().strip()
@@ -768,39 +821,19 @@ def sell_business(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Перевіряємо, чи є такий бізнес у користувача (беремо ID одного)
-                cursor.execute("SELECT id, biz_code FROM user_businesses WHERE user_id = %s AND biz_code = %s LIMIT 1", (user_id, biz_code))
+                cursor.execute("SELECT id FROM user_businesses WHERE user_id = %s AND biz_code = %s ORDER BY position ASC LIMIT 1", (user_id, biz_code))
                 row = cursor.fetchone()
 
                 if not row:
-                    bot.reply_to(message, f"🤡 У тебе немає бізнесу з кодом <code>{biz_code}</code> для продажу!")
+                    bot.reply_to(message, f"🤡 У тебе немає бізнесу з кодом <code>{biz_code}</code>!")
                     conn.close()
                     return
                 
                 biz_id_to_sell = row[0]
-                
-                # Визначаємо ціну продажу (75% від номіналу)
-                if biz_code in BUSINESSES:
-                    sell_price = int(BUSINESSES[biz_code]["price"] * 0.75)
-                    biz_name = BUSINESSES[biz_code]["name"]
-                else:
-                    # Якщо бізнес старий і його нема в каталозі
-                    sell_price = 0
-                    biz_name = "Старий бізнес"
+                sell_price = int(BUSINESSES[biz_code]["price"] * 0.75) if biz_code in BUSINESSES else 0
+                biz_name = BUSINESSES[biz_code]["name"] if biz_code in BUSINESSES else "Старий бізнес"
 
-                # Збираємо касу перед продажем (автоматично)
-                cursor.execute("""
-                    UPDATE stats SET balance = balance + (
-                        SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - last_collect)) / 3600 * income, 0)
-                        FROM user_businesses b JOIN (SELECT %s AS c, income FROM (VALUES %s) AS v(c, income)) AS v ON b.biz_code = v.c
-                        WHERE b.id = %s
-                    ) WHERE user_id = %s
-                """, (biz_code, tuple((k, v['income']) for k, v in BUSINESSES.items()), biz_id_to_sell, user_id))
-                # Цей SQL вище складний, простіше викликати collect_business_income(message) ДО продажу, 
-                # але це вимагає перебудови логіки. Залишимо автоматичний збір спрощеним:
                 cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (sell_price, user_id))
-                
-                # Видаляємо бізнес
                 cursor.execute("DELETE FROM user_businesses WHERE id = %s", (biz_id_to_sell,))
 
             conn.commit()
@@ -808,16 +841,200 @@ def sell_business(message):
 
         bot.reply_to(
             message, 
-            f"🚮 <b>БІЗНЕС ПРОДАНО!</b> 🚮\n\n"
-            f"Ти успішно продав: <b>{biz_name}</b>!\n"
-            f"Від продажу (та залишків каси) отримано: <code>{sell_price:,} грн</code>.\n"
-            f"Кошти зараховані на твій баланс.", 
+            f"🚮 <b>БІЗНЕС ПРОДАНО!</b>\n\n"
+            f"Продано: <b>{biz_name}</b>\n"
+            f"Отримано: <code>{sell_price:,} грн</code>.", 
             parse_mode="HTML"
         )
         
     except Exception as e:
-        print(f"❌ Помилка продажу бізнесу: {e}")
-        bot.reply_to(message, f"❌ Помилка під час продажу. Угода зірвалася.")
+        print(f"❌ Помилка продажу: {e}")
+        bot.reply_to(message, "❌ Помилка під час продажу.")
+
+# 🔄 ЗМІНА ПОРЯДКУ БІЗНЕСІВ (/swap, /переставити)
+@bot.message_handler(commands=['swap', 'переставити', 'порядок'])
+def swap_businesses(message):
+    if is_user_banned(message.from_user.id): return
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        return bot.reply_to(message, "⚠️ **Вкажи два номери бізнесів!**\nПриклад: `/swap 1 3`", parse_mode="Markdown")
+
+    try:
+        pos1, pos2 = int(args[1]), int(args[2])
+    except ValueError:
+        return bot.reply_to(message, "❌ Номери мають бути цілими числами!")
+
+    if pos1 <= 0 or pos2 <= 0 or pos1 == pos2:
+        return bot.reply_to(message, "❌ Вкажи два різних номери більших за 0!")
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, position 
+                    FROM user_businesses 
+                    WHERE user_id = %s 
+                    ORDER BY position ASC, id ASC
+                """, (user_id,))
+                items = cursor.fetchall()
+
+                if not items or len(items) < max(pos1, pos2):
+                    conn.close()
+                    return bot.reply_to(message, f"❌ У тебе немає бізнесу з номером `{max(pos1, pos2)}`!", parse_mode="Markdown")
+
+                idx1, idx2 = pos1 - 1, pos2 - 1
+                id1, id2 = items[idx1][0], items[idx2][0]
+
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (idx2 + 1, id1))
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (idx1 + 1, id2))
+
+                conn.commit()
+            conn.close()
+
+        bot.reply_to(message, f"✅ **Порядок змінено!** Бізнеси №`{pos1}` та №`{pos2}` помінялися місцями.", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Помилка зміни порядку: {e}")
+        bot.reply_to(message, "❌ Помилка при зміні порядку.")
+
+# ===================================================================
+# 🔄 ОБРОБНИКИ КНОПОК ПАГІНАЦІЇ
+# ===================================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith('bizpage_'))
+def handle_biz_page(call):
+    if is_user_banned(call.from_user.id): return
+
+    parts = call.data.split('_')
+    owner_id, target_page = int(parts[1]), int(parts[2])
+
+    if call.from_user.id != owner_id:
+        bot.answer_callback_query(call.id, "⚠️ Це не твій список! Напиши /бізнеси", show_alert=True)
+        return
+
+    try:
+        caption_text, markup, _ = build_biz_page_text_and_markup(owner_id, call.from_user.first_name, page=target_page)
+
+        if call.message.content_type == 'photo':
+            bot.edit_message_caption(caption_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        else:
+            bot.edit_message_text(caption_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        print(f"❌ Помилка перемикання сторінки: {e}")
+        bot.answer_callback_query(call.id, "❌ Помилка завантаження.")
+
+@bot.callback_query_handler(func=lambda call: call.data == "ignore")
+def handle_ignore_callback(call):
+    bot.answer_callback_query(call.id)
+
+# ===================================================================
+# 🎮 ДОДАТКОВІ ІНТЕРАКТИВНІ КОМАНДИ
+# ===================================================================
+
+# ⚔️ ДУЕЛІ (/duel)
+active_duels = {}
+
+@bot.message_handler(commands=['duel', 'дуель'])
+def start_duel(message):
+    if is_user_banned(message.from_user.id): return
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Дай відповідь (reply) на повідомлення того, кого викликаєш на дуель!")
+
+    challenger_id = message.from_user.id
+    target_id = message.reply_to_message.from_user.id
+
+    if challenger_id == target_id or message.reply_to_message.from_user.is_bot:
+        return bot.reply_to(message, "🤡 Обирай реального суперника!")
+
+    args = message.text.split()
+    if len(args) < 2:
+        return bot.reply_to(message, "⚠️ Вкажи ставку! Приклад: `/duel 5000`", parse_mode="Markdown")
+
+    try:
+        bet = int(args[1])
+    except ValueError:
+        return bot.reply_to(message, "❌ Ставка має бути цілим числом!")
+
+    if bet <= 0:
+        return bot.reply_to(message, "❌ Ставка має бути більшою за 0!")
+
+    if get_user_balance(challenger_id) < bet or get_user_balance(target_id) < bet:
+        return bot.reply_to(message, "💸 У когось із вас недостатньо коштів!")
+
+    active_duels[target_id] = {
+        'challenger_id': challenger_id,
+        'challenger_name': message.from_user.first_name,
+        'target_name': message.reply_to_message.from_user.first_name,
+        'bet': bet
+    }
+
+    bot.reply_to(
+        message, 
+        f"⚔️ **ДУЕЛЬ!**\n\n"
+        f"**{message.from_user.first_name}** викликає **{message.reply_to_message.from_user.first_name}**!\n"
+        f"💰 Ставка: `{bet:,} грн`\n\n"
+        f"👉 Напиши `/прийняти`, щоб прийняти бій!",
+        parse_mode="Markdown"
+    )
+
+@bot.message_handler(commands=['accept', 'прийняти', 'принять'])
+def accept_duel(message):
+    if is_user_banned(message.from_user.id): return
+    target_id = message.from_user.id
+
+    if target_id not in active_duels:
+        return bot.reply_to(message, "⚠️ Тебе ніхто не викликав на дуель.")
+
+    duel_info = active_duels.pop(target_id)
+    challenger_id, bet = duel_info['challenger_id'], duel_info['bet']
+
+    if get_user_balance(challenger_id) < bet or get_user_balance(target_id) < bet:
+        return bot.reply_to(message, "❌ Недостатньо коштів на балансі!")
+
+    winner_id, loser_id = (challenger_id, target_id) if random.random() < 0.5 else (target_id, challenger_id)
+    winner_name = duel_info['challenger_name'] if winner_id == challenger_id else duel_info['target_name']
+    loser_name = duel_info['target_name'] if winner_id == challenger_id else duel_info['challenger_name']
+
+    update_user_balance(loser_id, -bet)
+    update_user_balance(winner_id, bet)
+
+    bot.reply_to(
+        message,
+        f"💥 **ПОСТРІЛ!**\n\n🤠 **{winner_name}** застрелив **{loser_name}**!\n🏆 Переможець забирає: `+{bet:,} грн`",
+        parse_mode="Markdown"
+    )
+
+# 📊 ТОП БАГАТІЇВ (/rich, /багатії, /олігархи)
+@bot.message_handler(commands=['rich', 'багатії', 'олігархи', 'богачи'])
+def show_rich_users(message):
+    if is_user_banned(message.from_user.id): return
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, balance, custom_nick FROM stats ORDER BY balance DESC LIMIT 10")
+                rows = cursor.fetchall()
+            conn.close()
+
+        if not rows:
+            return bot.reply_to(message, "📉 Таблиця лідерів порожня.")
+
+        top_text = "💰 **ТОП-10 НАЙБАГАТШИХ ГРАВЦІВ (ОЛІГАРХИ)**\n\n"
+        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+        for idx, row in enumerate(rows):
+            uid, bal, custom_nick = row
+            name = custom_nick if custom_nick else f"Гравець (ID: {uid})"
+            top_text += f"{medals[idx]} **{name}** — `{bal:,} грн`\n"
+
+        bot.reply_to(message, top_text, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Помилка топу багатіїв: {e}")
 
 
 # ===================================================================
@@ -1229,24 +1446,56 @@ def clear_messages(message):
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
 
-# Оновлений асортимент ринку: [Код: {Назва, Ціна, Категорія, Опис для AI}]
+# Оновлений та розширений асортимент ринку (30 предметів)
 SHOP_ITEMS = {
+    # 💎 Аксесуари та Гаджети
     "rolex": {"name": "⌚ Золотий Rolex Daytona", "price": 85000, "cat": "Аксесуари", "ai_desc": "luxurious golden Rolex watch on a velvet pillow"},
+    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 65000, "cat": "Аксесуари", "ai_desc": "latest titanium iPhone 16 Pro Max, futuristic backdrop"},
+    "chain": {"name": "⛓️ Масивна золота цеп", "price": 120000, "cat": "Аксесуари", "ai_desc": "heavy thick solid gold chain on dark background"},
+    
+    # 🐾 Тварини
     "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara wearing a small gold chain"},
-    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic big pet tiger"},
+    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic big pet tiger sitting on velvet carpet"},
+    "bear": {"name": "🐻 Дресирований Ведмідь", "price": 600000, "cat": "Тварини", "ai_desc": "huge friendly brown bear wearing leather harness"},
+    
+    # 🔫 Зброя та Екіп
+    "ak47": {"name": "🔫 Золотий АК-47", "price": 200000, "cat": "Зброя", "ai_desc": "glowing pure gold AK-47 assault rifle"},
+    "deagle": {"name": "💥 Desert Eagle .50 AE", "price": 90000, "cat": "Зброя", "ai_desc": "chrome Desert Eagle pistol on wooden table"},
+    
+    # 🚗 Тачки та Автопарк
     "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки", "ai_desc": "tuned classic VAZ 2107 car"},
+    "passat": {"name": "🚘 Volkswagen Passat B6 1.9 TDI", "price": 220000, "cat": "Тачки", "ai_desc": "black Volkswagen Passat car parked near garage"},
+    "gelik": {"name": "⬛ Mercedes G63 AMG (Ґелік)", "price": 7500000, "cat": "Тачки", "ai_desc": "black aggressive Mercedes G-Wagon G63 AMG"},
     "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки", "ai_desc": "black aggressive sports car BMW M5 F90"},
     "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки", "ai_desc": "racing lime Porsche 911 GT3 RS"},
+    "ferrari": {"name": "🔴 Ferrari SF90 Stradale", "price": 22000000, "cat": "Тачки", "ai_desc": "red Italian hypercar Ferrari SF90"},
     "bugatti": {"name": "⚡ Bugatti Chiron", "price": 45000000, "cat": "Тачки", "ai_desc": "hypercar Bugatti Chiron"},
+    
+    # 🚚 Важка техніка та Спецтранспорт
+    "truck": {"name": "🚚 Тягач MAN TGX", "price": 4000000, "cat": "Транспорт", "ai_desc": "heavy industrial MAN truck on highway"},
     "copier": {"name": "🚁 Вертоліт Eurocopter", "price": 18000000, "cat": "Транспорт", "ai_desc": "private luxury black helicopter"},
+    "tank": {"name": "🪖 Танк T-80", "price": 80000000, "cat": "Транспорт", "ai_desc": "powerful military combat tank T-80"},
+    "jet": {"name": "🛩️ Бизнес-джет Gulfstream G650", "price": 250000000, "cat": "Транспорт", "ai_desc": "private white Gulfstream jet on airfield"},
+
+    # 🏢 Нерухомість
+    "garage": {"name": "🏚️ Ґараж на Макулатурі", "price": 80000, "cat": "Нерухомість", "ai_desc": "old brick garage with metal doors"},
     "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість", "ai_desc": "Soviet-style apartment building"},
+    "penthouse": {"name": "🏙️ Пентхаус у Києві", "price": 12000000, "cat": "Нерухомість", "ai_desc": "luxury modern glass penthouse view of modern city skyline"},
     "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість", "ai_desc": "luxury modern mansion with pool"},
-    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"}
+    "castle": {"name": "🏰 Середньовічний замок", "price": 150000000, "cat": "Нерухомість", "ai_desc": "epic majestic ancient stone castle in countryside"},
+
+    # 💎 Люкс та Олігархія
+    "gold_bar": {"name": "🥇 Золотий зливок (10 кг)", "price": 30000000, "cat": "Люкс", "ai_desc": "heavy sparkling pure gold bar bullion"},
+    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"},
+    "sub": {"name": " подводний човен (Субмарина)", "price": 180000000, "cat": "Люкс", "ai_desc": "black stealth submarine in ocean surface"},
+    "island": {"name": "🏝️ Приватний острів на Карибах", "price": 500000000, "cat": "Люкс", "ai_desc": "exotic tropical private island with white beaches and palm trees"},
+    "stadium": {"name": "🏟️ Футбольний стадіон", "price": 1000000000, "cat": "Люкс", "ai_desc": "huge crowded illuminated football sports stadium at night"}
 }
+
+SHOP_ITEMS_PER_PAGE = 4
 
 # 🛠️ АВТОМАТИЧНА ПЕРЕВІРКА ТА СТВОРЕННЯ ТАБЛИЦІ В БД
 def init_inventory_db():
-    """Створює таблицю inventory в PostgreSQL, якщо вона відсутня"""
     try:
         with db_lock:
             conn = get_db_connection()
@@ -1266,12 +1515,48 @@ def init_inventory_db():
     except Exception as e:
         print(f"⚠️ Помилка ініціалізації таблиці inventory: {e}")
 
-# Викликаємо автоматичну перевірку при старті бота
 init_inventory_db()
+
+# 📄 ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ТЕКСТУ ТА КНОПОК МАГАЗИНУ
+def build_shop_page(page=0):
+    item_keys = list(SHOP_ITEMS.keys())
+    total_pages = (len(item_keys) + SHOP_ITEMS_PER_PAGE - 1) // SHOP_ITEMS_PER_PAGE
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * SHOP_ITEMS_PER_PAGE
+    end_idx = start_idx + SHOP_ITEMS_PER_PAGE
+    current_keys = item_keys[start_idx:end_idx]
+
+    text = [
+        "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
+        f"📊 <b>КАТАЛОГ ТОВАРІВ (Стор. {page + 1}/{total_pages}):</b>\n"
+    ]
+
+    for code in current_keys:
+        item = SHOP_ITEMS[code]
+        text.append(f"📦 <b>{item['cat'].upper()}</b>")
+        text.append(f"• <code>{code}</code> — <b>{item['name']}</b>")
+        text.append(f" └ 💰 Ціна: <code>{item['price']:,} грн</code>\n")
+
+    text.append("💡 <i>Купити товар: /купити [код] (наприклад: /купити gelik)</i>")
+
+    markup = types.InlineKeyboardMarkup()
+    buttons = []
+
+    if page > 0:
+        buttons.append(types.InlineKeyboardButton("◀️ Назад", callback_data=f"shoppage_{page - 1}"))
+    
+    buttons.append(types.InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="ignore"))
+
+    if page < total_pages - 1:
+        buttons.append(types.InlineKeyboardButton("Вперед ▶️", callback_data=f"shoppage_{page + 1}"))
+
+    markup.row(*buttons)
+
+    return "\n".join(text), markup
 
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
 def generate_inventory_ai_image(bought_codes):
-    """Генерує арт з усім майном через Pollinations AI з захистом від помилок"""
     if not bought_codes:
         return None
         
@@ -1285,7 +1570,6 @@ def generate_inventory_ai_image(bought_codes):
     if not ai_descriptions:
         return None
         
-    # Беремо до 5 головних речей для стабільної швидкості
     items_prompt = ", ".join(ai_descriptions[:5])
     full_prompt = (
         f"A cinematic high quality photo showing a wealthy owner collection in one scene: {items_prompt}. "
@@ -1297,7 +1581,6 @@ def generate_inventory_ai_image(bought_codes):
         seed = random.randint(1, 999999)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
         
-        # Таймаут 30 секунд
         response = requests.get(image_url, timeout=30)
         
         if response.status_code == 200:
@@ -1320,24 +1603,23 @@ def generate_inventory_ai_image(bought_codes):
 def show_shop(message):
     if is_user_banned(message.from_user.id): return
     
-    shop_text = [
-        "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
-        "<i>За кожне смс я кидаю тобі пару гривень. Зібрав капітал? Купуй жирні ніштяки!</i>\n",
-        "💡 <b>Як купити:</b> <code>/купити [код]</code> (наприклад: <i>/купити rolex</i>)\n"
-    ]
-    
-    categories = {}
-    for code, item in SHOP_ITEMS.items():
-        cat = item["cat"]
-        if cat not in categories: categories[cat] = []
-        categories[cat].append(f"• <code>{code}</code> — <b>{item['name']}</b> | 💰 <code>{item['price']:,} грн</code>")
-        
-    for cat, items in categories.items():
-        shop_text.append(f"📦 <b>{cat.upper()}:</b>")
-        shop_text.extend(items)
-        shop_text.append("")
-        
-    bot.reply_to(message, "\n".join(shop_text), parse_mode="HTML")
+    text, markup = build_shop_page(page=0)
+    bot.reply_to(message, text, parse_mode="HTML", reply_markup=markup)
+
+# 🔄 ОБРОБКА ПЕРЕМЕШЕННЯ ПО СТОРІНКАХ МАГАЗИНУ
+@bot.callback_query_handler(func=lambda call: call.data.startswith('shoppage_'))
+def handle_shop_page(call):
+    if is_user_banned(call.from_user.id): return
+
+    page = int(call.data.split('_')[1])
+    text, markup = build_shop_page(page=page)
+
+    try:
+        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        print(f"❌ Помилка гортання магазину: {e}")
+        bot.answer_callback_query(call.id, "❌ Помилка.")
 
 # 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
 @bot.message_handler(commands=['buy', 'купити'])
@@ -1368,7 +1650,7 @@ def buy_item(message):
                 
                 if current_balance < item["price"]:
                     shortage = item["price"] - current_balance
-                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на Porsche не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
+                    bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на покупку не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
                     conn.close()
                     return
                     
@@ -1404,7 +1686,6 @@ def transfer_money(message):
     target_user_id = None
     target_user_name = None
 
-    # Варіант A: Відповіддю на повідомлення (Reply) -> /передати 5000
     if message.reply_to_message:
         if len(args) < 2:
             bot.reply_to(message, "⚠️ Вкажи суму переказу! Наприклад: <code>/передати 5000</code> (у відповідь на повідомлення)", parse_mode="HTML")
@@ -1418,7 +1699,6 @@ def transfer_money(message):
         target_user_id = message.reply_to_message.from_user.id
         target_user_name = message.reply_to_message.from_user.first_name
 
-    # Варіант B: Через юзернейм -> /передати 5000 @username
     else:
         if len(args) < 3:
             bot.reply_to(message, "💡 <b>Як передати бабки:</b>\n1. Відповісти на чиєсь повідомлення: <code>/передати 1000</code>\n2. Або за юзернеймом: <code>/передати 1000 @username</code>", parse_mode="HTML")
@@ -1448,7 +1728,6 @@ def transfer_money(message):
             bot.reply_to(message, f"❌ Не знайшов у базі гравця <code>@{username_arg}</code>. Хай він спочатку напише щось у чат!", parse_mode="HTML")
             return
 
-    # Перевірки безпеки
     if amount <= 0:
         bot.reply_to(message, "🤡 Ти кого надурити хочеш? Сума повинна бути більшою за 0!")
         return
@@ -1457,12 +1736,10 @@ def transfer_money(message):
         bot.reply_to(message, "🧠 Переводити гроші самому собі? Сильно.")
         return
 
-    # Транзакція в БД
     try:
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Перевіряємо баланс відправника
                 cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (sender_id,))
                 res = cursor.fetchone()
                 sender_balance = res[0] if res else 0
@@ -1477,10 +1754,7 @@ def transfer_money(message):
                     conn.close()
                     return
 
-                # Знімаємо у відправника
                 cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (amount, sender_id))
-                
-                # Зараховуємо отримувачу
                 cursor.execute("""
                     INSERT INTO stats (user_id, balance) VALUES (%s, %s)
                     ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
@@ -1517,12 +1791,10 @@ def show_inventory(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Баланс
                 cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
                 res = cursor.fetchone()
                 balance = res[0] if res else 0
                 
-                # Майно
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
                 items = cursor.fetchall()
             conn.close()
@@ -1566,14 +1838,12 @@ def show_inventory(message):
         
         caption_text = "\n".join(response)
 
-        # Проміжне повідомлення
         status_msg = bot.reply_to(
             message, 
             "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
             parse_mode="HTML"
         )
 
-        # Генерація картинки
         photo_bio = generate_inventory_ai_image(unique_codes)
 
         if photo_bio:
