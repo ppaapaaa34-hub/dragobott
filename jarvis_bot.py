@@ -123,7 +123,7 @@ model = genai.GenerativeModel(
         "іноді нецензурну лексику (мати) для емоційності, якщо це доречно. "
         "Будь живим, неформальним розмовником, злегка іронізуй, підколюй юзера, але завжди допомагай. "
         "Обов'язково закінчуй свої думки, не обривай речення на пів слові! "
-        "Пиши коротко і ясно!, твій создатель СБУ, якщо ти пишеш досє ілі новини відповідай повністю"
+        "Пиши коротко і ясно!, твій создатель СБУ"
     )
 )
 
@@ -1541,22 +1541,36 @@ def add_family_bank(message):
         bot.reply_to(message, "❌ Сума має бути числом!")
         return
 
-    if amount <= 0: return
+    if amount <= 0:
+        bot.reply_to(message, "❌ Сума має бути більшою за 0!")
+        return
 
     if get_user_balance(user_id) < amount:
         bot.reply_to(message, "💸 Брак коштів на гаманці!")
         return
 
-    update_user_balance(user_id, -amount)
-    
-    with db_lock:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
-            conn.commit()
-        conn.close()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Перевіряємо, чи існує банк для цієї пари, якщо ні — створюємо
+                cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                if not cursor.fetchone():
+                    cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0)", (pair_key,))
 
-    bot.reply_to(message, f"🏦 Ти закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
+                # Оновлюємо баланс спільного банку
+                cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
+                conn.commit()
+            conn.close()
+
+        # Знімаємо гроші з балансу користувача тільки після успішного оновлення банку
+        update_user_balance(user_id, -amount)
+
+        bot.reply_to(message, f"🏦 Ти успішно закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка поповнення банку: {e}")
+        bot.reply_to(message, f"❌ Помилка БД при поповненні банку: <code>{e}</code>", parse_mode="HTML")
 
 
 # 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
