@@ -1327,7 +1327,10 @@ def get_marriage_pair(user_id):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user1_id, user2_id FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                cursor.execute(
+                    "SELECT user1_id, user2_id FROM marriages WHERE user1_id = %s OR user2_id = %s", 
+                    (user_id, user_id)
+                )
                 res = cursor.fetchone()
             conn.close()
         if res:
@@ -1356,28 +1359,33 @@ def propose_marriage(message):
         bot.reply_to(message, "🤡 Шиза косить ряди. Сам з собою одружуватися зібрався?")
         return
         
-    if user2.id == bot.get_me().id:
-        bot.reply_to(message, "🛑 Я капітан СБУ і на роботі романи не кручу. Відхилено.")
+    if user2.is_bot:
+        bot.reply_to(message, "🛑 На ботах не одружуємося! Відхилено.")
         return
 
-    # Перевірка, чи хтось із них вже у шлюбі
+    # Перевірка, чи хтось із них вже у шлюбі (одним запитом для обох)
     try:
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user1.id, user1.id))
-                if cursor.fetchone():
-                    bot.reply_to(message, "🚨 Ти вже маєш штамп у паспорті! Спочатку розлучись (/розлучення).")
-                    conn.close()
-                    return
-                cursor.execute("SELECT * FROM marriages WHERE user1_id = %s OR user2_id = %s", (user2.id, user2.id))
-                if cursor.fetchone():
-                    bot.reply_to(message, "🚨 Ця людина вже зайнята! Шукай вільну жертву.")
-                    conn.close()
-                    return
+                cursor.execute(
+                    "SELECT user1_id, user2_id FROM marriages WHERE user1_id IN (%s, %s) OR user2_id IN (%s, %s)", 
+                    (user1.id, user2.id, user1.id, user2.id)
+                )
+                m_res = cursor.fetchall()
             conn.close()
+
+            if m_res:
+                for row in m_res:
+                    if user1.id in row:
+                        bot.reply_to(message, "🚨 Ти вже маєш штамп у паспорті! Спочатку розлучись (/розлучення).")
+                        return
+                    if user2.id in row:
+                        bot.reply_to(message, "🚨 Ця людина вже зайнята! Шукай вільну жертву.")
+                        return
     except Exception as e:
         print(f"Помилка БД при перевірці шлюбу: {e}")
+        bot.reply_to(message, "❌ Помилка перевірки статусу шлюбу.")
         return
 
     # Створюємо кнопки
@@ -1398,6 +1406,7 @@ def propose_marriage(message):
         parse_mode="HTML"
     )
 
+
 # Обробка натискання кнопок шлюбу
 @bot.callback_query_handler(func=lambda call: call.data.startswith('marry_'))
 def handle_marriage_callbacks(call):
@@ -1406,7 +1415,6 @@ def handle_marriage_callbacks(call):
     user1_id = int(parts[2])
     user2_id = int(parts[3])
     
-    # Захист: натиснути може ТІЛЬКИ той, кому зробили пропозицію
     if call.from_user.id != user2_id:
         bot.answer_callback_query(call.id, "🛑 Куди лізеш? Це не тобі пропозицію роблять!", show_alert=True)
         return
@@ -1438,7 +1446,11 @@ def handle_marriage_callbacks(call):
                 "🎉 <b>НОВИЙ БАНДИТСЬКИЙ СОЮЗ!</b> 🥂\n\n"
                 "Драго офіційно оголошує вас сім'єю!\n"
                 "Тепер ви — одне кримінальне угруповання. Гірко! 💋\n\n"
-                "💡 <i>Вам доступний сімейний банк: <code>/спільний_баланс</code> та <code>/поповнити_банк [сума]</code></i>", 
+                "💡 <i>Вам доступні команди:\n"
+                "• <code>/спільний_баланс</code>\n"
+                "• <code>/поповнити_банк [сума]</code>\n"
+                "• <code>/зняти_банк [сума]</code>\n"
+                "• <code>/подарувати [сума]</code></i>", 
                 call.message.chat.id, 
                 call.message.message_id, 
                 parse_mode="HTML"
@@ -1466,10 +1478,12 @@ def gift_to_spouse(message):
     try:
         amount = int(args[1])
     except ValueError:
-        bot.reply_to(message, "❌ Сума має бути числом!")
+        bot.reply_to(message, "❌ Сума має бути цілим числом!")
         return
 
-    if amount <= 0: return
+    if amount <= 0:
+        bot.reply_to(message, "❌ Сума подарунка має бути більшою за 0!")
+        return
 
     if get_user_balance(user_id) < amount:
         bot.reply_to(message, "💸 У тебе немає стільки грошей!")
@@ -1503,7 +1517,7 @@ def show_family_bank(message):
                     conn.commit()
                     bank_bal = 0
                 else:
-                    bank_bal = res[0]
+                    bank_bal = res[0] or 0
             conn.close()
 
         bot.reply_to(
@@ -1511,7 +1525,8 @@ def show_family_bank(message):
             f"👩‍❤️‍👨 <b>СІМЕЙНИЙ СЕЙФ</b>\n"
             f"───────────────────────\n"
             f"💰 У банку пари лежить: <b>{bank_bal:,} грн</b>\n\n"
-            f"📥 <i>Закинути гроші: <code>/поповнити_банк [сума]</code></i>", 
+            f"📥 <i>Закинути: <code>/поповнити_банк [сума]</code></i>\n"
+            f"📤 <i>Зняти: <code>/зняти_банк [сума]</code></i>", 
             parse_mode="HTML"
         )
     except Exception as e:
@@ -1533,7 +1548,6 @@ def add_family_bank(message):
         bot.reply_to(message, "💔 Спочатку знайди собі пару!")
         return
 
-    # Очищаємо текст від зайвих пробілів і розбиваємо
     args = message.text.strip().split()
     if len(args) < 2:
         bot.reply_to(message, "❌ <b>Формат:</b> <code>/поповнити_банк 50000</code>", parse_mode="HTML")
@@ -1573,13 +1587,65 @@ def add_family_bank(message):
         bot.reply_to(message, f"❌ Помилка БД: <code>{e}</code>", parse_mode="HTML")
 
 
-# ===================================================================
+# 4.1 📤 НОВА КОМАНДА: ЗНЯТТЯ З СІМЕЙНОГО БАНКУ (/зняти_банк [сума])
+@bot.message_handler(func=lambda message: message.text and (
+    message.text.startswith('/зняти_банк') or 
+    message.text.startswith('/withdraw_family_bank') or
+    message.text.startswith('/снять_банк')
+))
+def withdraw_family_bank(message):
+    if is_user_banned(message.from_user.id): return
+    user_id = message.from_user.id
+    spouse_id, pair_key = get_marriage_pair(user_id)
+
+    if not spouse_id:
+        bot.reply_to(message, "💔 Спочатку знайди собі пару!")
+        return
+
+    args = message.text.strip().split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ <b>Формат:</b> <code>/зняти_банк 10000</code>", parse_mode="HTML")
+        return
+
+    try:
+        amount = int(args[1])
+    except ValueError:
+        bot.reply_to(message, "❌ Сума має бути цілим числом!")
+        return
+
+    if amount <= 0:
+        bot.reply_to(message, "❌ Сума має бути більшою за 0!")
+        return
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                res = cursor.fetchone()
+                current_bal = res[0] if res else 0
+
+                if current_bal < amount:
+                    bot.reply_to(message, f"💸 У сімейному банку немає стільки грошей! (Є тільки <b>{current_bal:,} грн</b>)", parse_mode="HTML")
+                    conn.close()
+                    return
+
+                cursor.execute("UPDATE shared_wallets SET balance = balance - %s WHERE pair_id = %s", (amount, pair_key))
+                conn.commit()
+            conn.close()
+
+        update_user_balance(user_id, amount)
+        bot.reply_to(message, f"💸 Ти зняв <b>{amount:,} грн</b> із сімейного банку себе на рахунок!", parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Помилка зняття з банку: {e}")
+        bot.reply_to(message, f"❌ Помилка БД: <code>{e}</code>", parse_mode="HTML")
+
+
 # 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
-# ===================================================================
 @bot.message_handler(commands=['divorce', 'розлучення'])
 def divorce_command(message):
-    if is_user_banned(message.from_user.id): 
-        return
+    if is_user_banned(message.from_user.id): return
     
     user_id = message.from_user.id
     spouse_id, pair_key = get_marriage_pair(user_id)
@@ -1593,14 +1659,13 @@ def divorce_command(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо гроші зі спільного банку
                 if pair_key:
                     cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
                     res = cursor.fetchone()
                     if res: 
                         shared_money = res[0] or 0
 
-                # Видаляємо запис про шлюб та сімейний банк
+                # Видаляємо запис про шлюб та банк
                 cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
                 if pair_key:
                     cursor.execute("DELETE FROM shared_wallets WHERE pair_id = %s", (pair_key,))
@@ -1634,7 +1699,16 @@ def init_db():
     with db_lock:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # 6. Спільні гаманці для пар
+            # 1. Таблиця шлюбів
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS marriages (
+                    user1_id BIGINT,
+                    user2_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user1_id, user2_id)
+                )
+            """)
+            # 2. Спільні гаманці для пар
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS shared_wallets (
                     pair_id VARCHAR(100) PRIMARY KEY,
@@ -1644,7 +1718,6 @@ def init_db():
             conn.commit()
         conn.close()
 
-# Обов'язково викликай init_db() під час старту бота (наприклад, у if __name__ == '__main__':)
 
 # ===================================================================
 # 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
