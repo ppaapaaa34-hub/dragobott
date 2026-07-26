@@ -1017,25 +1017,39 @@ def show_rich_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user_id, balance, custom_nick FROM stats ORDER BY balance DESC LIMIT 10")
+                # Отримуємо додатково first_name та username
+                cursor.execute("SELECT user_id, balance, custom_nick, first_name, username FROM stats ORDER BY balance DESC LIMIT 10")
                 rows = cursor.fetchall()
             conn.close()
 
         if not rows:
             return bot.reply_to(message, "📉 Таблиця лідерів порожня.")
 
-        top_text = "💰 **ТОП-10 НАЙБАГАТШИХ ГРАВЦІВ (ОЛІГАРХИ)**\n\n"
+        top_text = "💰 <b>ТОП-10 НАЙБАГАТШИХ ГРАВЦІВ (ОЛІГАРХИ)</b>\n\n"
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
         for idx, row in enumerate(rows):
-            uid, bal, custom_nick = row
-            name = custom_nick if custom_nick else f"Гравець (ID: {uid})"
-            top_text += f"{medals[idx]} **{name}** — `{bal:,} грн`\n"
+            uid, bal, custom_nick, first_name, username = row
+            
+            # Визначаємо відображуване ім'я
+            if custom_nick:
+                display_name = custom_nick
+            elif first_name:
+                display_name = first_name
+            elif username:
+                display_name = f"@{username}"
+            else:
+                display_name = f"Гравець_{uid}"
 
-        bot.reply_to(message, top_text, parse_mode="Markdown")
+            # Екрануємо символи HTML
+            clean_name = display_name.replace("<", "&lt;").replace(">", "&gt;")
+            
+            top_text += f"{medals[idx]} <b>{clean_name}</b> — <code>{bal:,} грн</code>\n"
+
+        bot.reply_to(message, top_text, parse_mode="HTML")
     except Exception as e:
         print(f"Помилка топу багатіїв: {e}")
-
+        bot.reply_to(message, "❌ Помилка під час завантаження топу багатіїв.")
 
 # ===================================================================
 # 1. СТВОРЕННЯ ТАБЛИЦІ МОДЕРАТОРІВ В БД
