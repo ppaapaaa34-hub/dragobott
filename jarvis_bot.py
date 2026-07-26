@@ -252,6 +252,9 @@ def safe_get_rank(msg_count):
 # 🪪 2. ВІДОБРАЖЕННЯ ТА НАЛАШТУВАННЯ ПРОФІЛЮ
 # ===================================================================
 
+# 🌐 URL твоєї Web App сторінки (заміни на своє реальне посилання)
+WEB_APP_URL = "https://your-username.github.io/my-drago-webapp/"
+
 # Автоматична миграція БД, щоб уникнути помилки (Missing Column)
 def ensure_profile_columns():
     try:
@@ -437,8 +440,17 @@ def show_user_profile(message):
         if not final_photo:
             final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
 
-        # Кнопки для налаштування
-        markup = types.InlineKeyboardMarkup()
+        # 🔘 КНОПКИ ПІД ПРОФІЛЕМ
+        markup = types.InlineKeyboardMarkup(row_width=1)
+
+        # 📱 1. Кнопка відкриття Mini App
+        web_app_btn = types.InlineKeyboardButton(
+            text="📱 Відкрити Профіль (Mini App)", 
+            web_app=types.WebAppInfo(url=WEB_APP_URL)
+        )
+        markup.add(web_app_btn)
+
+        # ⚙️ 2. Кнопка стандартних налаштувань (якщо це власний профіль)
         if is_self:
             markup.add(types.InlineKeyboardButton("⚙️ Налаштувати профіль", callback_data=f"edit_profile_{target_user.id}"))
 
@@ -548,7 +560,7 @@ def handle_profile_settings(call):
         bot.delete_message(call.message.chat.id, call.message.message_id)
 
 # -------------------------------------------------------------------
-# 🛠 ОБРОБНИКИ КРОКІВ (ВВІД ТЕКСТУ / ФОТО)
+# 🛠 ОБРОБНИКИ КРОКІВ ТА WEB APP ДАНИХ
 # -------------------------------------------------------------------
 
 def process_nick_change(message):
@@ -586,6 +598,32 @@ def process_photo_change(message):
 
     bot.reply_to(message, "✅ **Нову аватарку встановлено!** Напиши `профіль`, щоб перевірити.", parse_mode="Markdown")
 
+
+# 📩 ОБРОБКА ДАНИХ З MINI APP (через tg.sendData)
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_data(message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        action = data.get("action")
+        user_id = message.from_user.id
+
+        if action == "upgrade_lvl":
+            conn = None
+            try:
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s AND balance >= 1000", (user_id,))
+                    conn.commit()
+            finally:
+                if conn:
+                    conn.close()
+
+            bot.reply_to(message, "🚀 **Твій профіль успішно прокачано через Mini App!**", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Помилка обробки WebApp: {e}")
+        bot.reply_to(message, "❌ Виникла помилка під час оновлення даних з Web App.")
 
 # ===================================================================
 # ⚙️ НАЛАШТУВАННЯ ТА ІНІЦІАЛІЗАЦІЯ
