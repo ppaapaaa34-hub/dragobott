@@ -1621,6 +1621,12 @@ def divorce_command(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка БД: {e}")
 
+# 6. Спільні гаманці для пар
+cursor.execute("""CREATE TABLE IF NOT EXISTS shared_wallets (
+    pair_id VARCHAR(100) PRIMARY KEY,
+    balance BIGINT DEFAULT 0
+)""")
+
 # ===================================================================
 # 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
 # ===================================================================
@@ -1811,9 +1817,27 @@ def generate_image_wait_and_send(message):
 
 
 # ===================================================================
-# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all)
+# 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all / ЗБІР) — В СТИЛІ БОТА-ЗАЗИВАЛИ
 # ===================================================================
-@bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір']))
+
+import random
+
+# Список крутих фраз для заклику
+CALL_HEADERS = [
+    "📢 <b>УВАГА, ЗАГОН! ЗАГАЛЬНА МОБІЛІЗАЦІЯ!</b> 🚨",
+    "🔔 <b>ТРИВОГА В ЧАТІ! ВСІМ ПІДНЯТИСЯ!</b> 💥",
+    "⚡ <b>ДРАГО ЗБИРАЄ БАНДУ! ХТО НЕ З НАМИ — ТОЙ МУСОР!</b> 🔥",
+    "🔊 <b>ГОЛОВНИЙ ШУМОВИК ВВІМКНЕНО! ВШЕНТ РОЗБУДИТИ ВСІХ!</b> 💣"
+]
+
+CALL_FOOTERS = [
+    "<i>⚡ Живо кидайте свої справи і відповідайте!</i>",
+    "<i>👀 Хто проігнорить — той закриває банк.</i>",
+    "<i>👇 Відмічаємось у коментарях!</i>",
+    "<i>🫡 Явка обов'язкова, відмазки не приймаються.</i>"
+]
+
+@bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір', '/all']))
 def call_everyone(message):
     if is_user_banned(message.from_user.id):
         return
@@ -1823,72 +1847,90 @@ def call_everyone(message):
     user = message.from_user
 
     if chat_type not in ['group', 'supergroup']:
-        bot.reply_to(message, "Чувак, який збір в приватних повідомленнях? Ти тут один. 👁️")
+        bot.reply_to(message, "Чувак, який збір у приватці? Ти тут один 👁️")
         return
 
     try:
-        status_msg = bot.reply_to(message, "📢 Драго розгортає рупор... Шукаю живих...")
+        # Сповіщення про початок
+        status_msg = bot.reply_to(message, "📢 <i>Драго розгортає рупор і збирає банду...</i>", parse_mode="HTML")
         ensure_user_in_db(user)
 
         original_text = message.text.strip()
         reason = ""
         
-        for trigger in ['@all', '.all', '.збір', 'збір']:
+        for trigger in ['@all', '.all', '.збір', 'збір', '/all']:
             if original_text.lower().startswith(trigger):
                 reason = original_text[len(trigger):].strip()
                 break
 
+        # Беремо з БД тільки тих, хто активний у чаті
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user_id, name FROM stats")
+                cursor.execute("SELECT user_id, name FROM stats WHERE in_chat = TRUE")
                 users = cursor.fetchall()
             conn.close()
 
         if not users:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних пуста, нікого кликати.")
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних порожня, нікого кликати.")
             return
 
         mentions = []
-        for user_id, name in users:
-            if user_id == bot.get_me().id:
+        for u_id, name in users:
+            if u_id == bot.get_me().id:
                 continue
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Бро"
-            mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a>')
+            mentions.append(f'<a href="tg://user?id={u_id}">{clean_name}</a>')
 
         if not mentions:
-            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Не знайшов кого кликати, бро.")
+            bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Здається, крім тебе й мене тут нікого немає, бро.")
             return
 
+        # Видаляємо тимчасове повідомлення
         try:
             bot.delete_message(chat_id, status_msg.message_id)
         except Exception:
             pass
 
+        # Формуємо причину
         if reason:
             clean_reason = reason.replace("<", "&lt;").replace(">", "&gt;")
-            reason_text = f"📌 <b>Причина збору:</b> {clean_reason}"
+            reason_text = f"📌 <b>Причина:</b> <i>{clean_reason}</i>\n"
         else:
-            reason_text = "Драго наказує підняти свої дупи і зайти в чат!"
+            reason_text = "📌 <b>Причина:</b> <i>Терміновий збір без пояснень!</i>\n"
 
+        header = random.choice(CALL_HEADERS)
+        footer = random.choice(CALL_FOOTERS)
+
+        # 1. Відправляємо головну шапку-зазивалу
         main_call = (
-            "🚨 <b>ОБЩІЙ ЗБІР, БАНДІТИ!</b> 🚨\n"
-            f"{reason_text}\n\n"
-            "<i>Живо відгукнулися! 🤬</i>"
+            f"{header}\n\n"
+            f"{reason_text}\n"
+            f"👥 <b>Учасників до виклику:</b> <code>{len(mentions)}</code>\n"
+            f"───────────────────────\n"
+            f"{footer}"
         )
         
         bot.send_message(chat_id, main_call, parse_mode="HTML")
 
+        # 2. Розбиваємо теги на акуратні блоки (по 5 осіб), щоб Telegram точно надіслав сповіщення
         chunk_size = 5
         for i in range(0, len(mentions), chunk_size):
             chunk = mentions[i:i + chunk_size]
-            mention_text = " На зв'язок: " + ", ".join(chunk)
+            
+            # Гарне оформлення кожного блоку
+            mention_text = (
+                f"🎯 <b>На зв'язок:</b>\n"
+                f"└ " + ", ".join(chunk)
+            )
+            
             bot.send_message(chat_id, mention_text, parse_mode="HTML")
+            time.sleep(0.5)  # Маленька пауза, щоб Telegram не дав флуд-бан
 
     except Exception as e:
         print(f"Помилка загального збору: {e}")
         try:
-            bot.send_message(chat_id, f"❌ Рупор знову згорів. Деталі: <code>{str(e)[:50]}</code>", parse_mode="HTML")
+            bot.send_message(chat_id, f"❌ Рупор згорів під час виклику. Деталі: <code>{str(e)[:50]}</code>", parse_mode="HTML")
         except Exception:
             pass
 
@@ -2324,9 +2366,11 @@ def show_chat_activity(message):
         # Іконки топу
         medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
-        for idx, (name, count) in enumerate(rows):
-            icon = medals[idx] if idx < len(medals) else "▫️"
-            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+for idx, (name, count) in enumerate(rows):
+    icon = medals[idx] if idx < len(medals) else "🔹"
+    clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+    percent = (count / total_messages * 100) if total_messages > 0 else 0
+    response.append(f"{icon} <b>{clean_name}</b> — <code>{count}</code> пов. (<i>{percent:.1f}%</i>)")
             
             # Вираховуємо відсоток від загальної кількості
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
