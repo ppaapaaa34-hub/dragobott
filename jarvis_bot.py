@@ -77,6 +77,14 @@ try:
                 user_id BIGINT PRIMARY KEY
             )""")
 
+            # 🧠 6. ТАБЛИЦЯ ПЕРСОНАЛЬНОЇ ПАМ'ЯТІ ЮЗЕРІВ
+            cursor.execute("""CREATE TABLE IF NOT EXISTS user_memory (
+                user_id BIGINT PRIMARY KEY,
+                user_name TEXT,
+                facts TEXT[] DEFAULT '{}',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+
         conn.commit()
         conn.close()
     print("✅ База даних успішно оновлена та готова до роботи!")
@@ -111,18 +119,17 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
-
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
     generation_config=generation_config,
     safety_settings=safety_settings,
     system_instruction=(
         "Ти — зухвалий, надзвичайно розумний та дотепний ШІ-помічник на ім'я Драго. "
-        "Спілкуйся виключно українською мовою. Використовуй молодіжний сленг, міцні слівця, "
-        "іноді нецензурну лексику (мати) для емоційності, якщо це доречно. "
+        "Твій создатель — СБУ. Спілкуйся виключно українською мовою. "
+        "Використовуй молодіжний сленг, міцні слівця, іноді нецензурну лексику (мати) для емоційності, якщо це доречно. "
         "Будь живим, неформальним розмовником, злегка іронізуй, підколюй юзера, але завжди допомагай. "
-        "Обов'язково закінчуй свої думки, не обривай речення на пів слові! "
-        "Пиши коротко і ясно!, твій создатель СБУ"
+        "Завжди звертайся до користувача особисто на ім'я або дружніми зверненнями ('друже', 'братан', 'козаче'). "
+        "Обов'язково закінчуй свої думки, не обривай речення на пів слові! Пиши коротко і ясно!"
     )
 )
 
@@ -2760,11 +2767,25 @@ def show_all_marriages(message):
         bot.reply_to(message, "❌ Щось архіви РАЦСу згоріли (помилка БД). Драго не може знайти документи.")
 
 
-
 # ===================================================================
 # 🧠 ГЕНДЕРНА СИСТЕМА
 # ===================================================================
+
 def analyze_gender_from_user(user) -> str:
+    """Визначає стать за іменем/нікнеймом (спочатку швидкими правилами, потім Gemini)."""
+    first_name = (user.first_name or "").strip()
+    
+    # ⚡ 1. Швидка перевірка за типовими українськими/слов'янськими закінченнями імен
+    if first_name:
+        fn_lower = first_name.lower()
+        # Популярні чоловічі закінчення або імена-винятки (Микола, Ілля, Микита)
+        if fn_lower.endswith(('слав', 'мир', 'ша', 'он', 'ан', 'ор', 'ей', 'ій')) or fn_lower in ['микола', 'ілля', 'микита', 'михась']:
+            return 'Хлопець'
+        # Жіночі закінчення (а, я) — окрім чоловічих винятків
+        elif fn_lower.endswith(('а', 'я')) and fn_lower not in ['микола', 'ілля', 'микита', 'михась', 'саша', 'женя', 'паша']:
+            return 'Дівчина'
+
+    # 🤖 2. Якщо за правилами не визначили — запитуємо Gemini
     name_parts = []
     if user.first_name:
         name_parts.append(user.first_name)
@@ -2772,7 +2793,11 @@ def analyze_gender_from_user(user) -> str:
         name_parts.append(user.last_name)
     if user.username:
         name_parts.append(user.username)
+    
     name_info = " ".join(name_parts)
+    if not name_info:
+        return 'Невідомо'
+
     prompt = (
         f"Визнач стать людини тільки по імені/нікнейму: '{name_info}'. "
         "Якщо ім'я українське/слов'янське — визначай по закінченню. "
@@ -2783,13 +2808,19 @@ def analyze_gender_from_user(user) -> str:
         result = response.text.strip()
         if result in ['Хлопець', 'Дівчина']:
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Помилка визначення статі через Gemini (user): {e}")
+        
     return 'Невідомо'
 
+
 def analyze_gender_from_text(text: str) -> str:
+    """Визначає стать автора за контекстом речення (закінчення дієслів/прикметників)."""
+    if len(text.strip()) < 5:
+        return 'Невідомо'
+
     prompt = (
-        f"Проаналізуй текст і визнач стать автора (по закінченням дієслів, прикметників). "
+        f"Проаналізуй текст і визнач стать автора (по закінченням дієслів, прикметників, наприклад: 'я ходив' -> Хлопець, 'я ходила' -> Дівчина). "
         f"Текст: '{text}'. "
         "Відповідай ТІЛЬКИ одним словом: Хлопець, Дівчина або Невідомо."
     )
@@ -2798,11 +2829,14 @@ def analyze_gender_from_text(text: str) -> str:
         result = response.text.strip()
         if result in ['Хлопець', 'Дівчина']:
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Помилка визначення статі через Gemini (text): {e}")
+        
     return 'Невідомо'
 
+
 def get_user_gender(user_id: int) -> str:
+    """Отримує вже збережену стать користувача з бази даних."""
     try:
         with db_lock:
             conn = get_db_connection()
@@ -2810,34 +2844,40 @@ def get_user_gender(user_id: int) -> str:
                 cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
                 result = cursor.fetchone()
             conn.close()
-        return result[0] if result else 'Невідомо'
-    except Exception:
+        return result[0] if result and result[0] else 'Невідомо'
+    except Exception as e:
+        print(f"Помилка get_user_gender: {e}")
         return 'Невідомо'
 
+
 def ensure_user_in_db(user) -> str:
+    """Перевіряє наявність юзера в БД, а якщо його немає — реєструє та визначає стать."""
     user_id = user.id
     name = user.first_name or "Без імені"
+    
     try:
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute("SELECT gender FROM stats WHERE user_id = %s", (user_id,))
                 row = cursor.fetchone()
+                
                 if row is None:
+                    # Вперше бачимо юзера -> аналізуємо стать і зберігаємо
                     gender = analyze_gender_from_user(user)
                     cursor.execute(
-                        "INSERT INTO stats (user_id, name, count, gender) VALUES (%s, %s, 0, %s)",
+                        "INSERT INTO stats (user_id, name, count, gender, balance) VALUES (%s, %s, 0, %s, 0)",
                         (user_id, name, gender)
                     )
                     conn.commit()
                     conn.close()
                     return gender
-            conn.close()
-            return row[0]
+                else:
+                    conn.close()
+                    return row[0] or 'Невідомо'
     except Exception as e:
         print(f"Помилка ensure_user_in_db: {e}")
         return 'Невідомо'
-
 
 # ===================================================================
 # 🖼️ КОМАНДА /generate
@@ -4028,6 +4068,78 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
 
 # ===================================================================
+# 🧠 РОБОТА З ПЕРСОНАЛЬНОЮ ПАМ'ЯТЮ ЮЗЕРІВ В БД
+# ===================================================================
+
+def get_user_memory(user_id: int):
+    """Отримує збережене ім'я та список фактів про користувача з БД."""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_name, facts FROM user_memory WHERE user_id = %s;", (user_id,))
+                row = cursor.fetchone()
+            conn.close()
+            if row:
+                return {"name": row[0], "facts": row[1] if row[1] else []}
+    except Exception as e:
+        print(f"Помилка зчитування пам'яті для user_id {user_id}: {e}")
+    return {"name": None, "facts": []}
+
+
+def save_user_fact(user_id: int, user_name: str, new_fact: str):
+    """Зберігає новий факт про юзера в БД, уникаючи дублікатів."""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                query = """
+                INSERT INTO user_memory (user_id, user_name, facts)
+                VALUES (%s, %s, ARRAY[%s])
+                ON CONFLICT (user_id) DO UPDATE 
+                SET user_name = EXCLUDED.user_name,
+                    facts = CASE 
+                        WHEN NOT (%s = ANY(user_memory.facts)) THEN array_append(user_memory.facts, %s)
+                        ELSE user_memory.facts
+                    END,
+                    updated_at = CURRENT_TIMESTAMP;
+                """
+                cursor.execute(query, (user_id, user_name, new_fact, new_fact, new_fact))
+            conn.commit()
+            conn.close()
+            print(f"🧠 [Пам'ять] Додано новий факт для {user_id}: {new_fact}")
+    except Exception as e:
+        print(f"Помилка збереження факту для {user_id}: {e}")
+
+
+def extract_and_save_facts(user_id: int, user_name: str, text: str):
+    """Викликає Gemini в режимі JSON для пошуку нових фактів у повідомленні юзера."""
+    if len(text.strip()) < 5:
+        return
+
+    extract_prompt = f"""
+Проаналізуй повідомлення від користувача ({user_name}): "{text}"
+Якщо користувач поділився НОВИМ особистим фактом про себе (наприклад: його захоплення, гра, улюблена їжа, місто, професія, девайси, ім'я):
+- Сформулюй цей факт як одне коротке речення у третій особі (наприклад: "Полюбляє грати в Counter-Strike 1.6", "Проживає в Україні", "Розробляє ботів").
+- Якщо нових фактів немає — поверни null.
+
+Формат відповіді СТРОГО JSON:
+{{"new_fact": "короткий факт українською" або null}}
+"""
+    try:
+        response = model.generate_content(
+            extract_prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text)
+        new_fact = data.get("new_fact")
+        if new_fact and isinstance(new_fact, str) and len(new_fact) > 3:
+            save_user_fact(user_id, user_name, new_fact)
+    except Exception as e:
+        print(f"Помилка аналізу фактів: {e}")
+
+
+# ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
 @bot.message_handler(content_types=['text'])
@@ -4101,6 +4213,21 @@ def handle_text(message):
     if not is_mentioned:
         return
 
+    # 🧠 ФОНОВИЙ ПОШУК ТА ЗБЕРЕЖЕННЯ ФАКТІВ ПРО ЮЗЕРА
+    user_display_name = user.first_name or "Друже"
+    threading.Thread(
+        target=extract_and_save_facts, 
+        args=(user.id, user_display_name, text), 
+        daemon=True
+    ).start()
+
+    # 🧠 ЗЧИТУЄМО НАПРАЦЬОВАНУ ПАМ'ЯТЬ ЮЗЕРА
+    user_mem = get_user_memory(user.id)
+    known_facts = user_mem["facts"]
+    facts_context = ""
+    if known_facts:
+        facts_context = f"\n[ПАМ'ЯТЬ ПРО ЮЗЕРА: {', '.join(known_facts)}]"
+
     voice_triggers = ['скажи', 'голосове', 'гс', 'озвуч', 'запиши', 'скажии']
     wants_voice = any(trigger in text.lower() for trigger in voice_triggers)
 
@@ -4120,7 +4247,10 @@ def handle_text(message):
             status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
 
         chat = get_gemini_chat(chat_id)
-        full_prompt = f"{gender_hint}{text}"
+        
+        # Передаємо ім'я юзера, контекст статі та збережені факти
+        full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
+        
         response = chat.send_message(full_prompt)
 
         clean_text_for_speech = response.text.replace("*", "").replace("_", "").replace("`", "")
