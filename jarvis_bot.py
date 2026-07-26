@@ -16,6 +16,8 @@ from PIL import Image
 import psycopg2
 import discord
 from discord.ext import commands
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
