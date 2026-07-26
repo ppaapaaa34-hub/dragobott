@@ -1,5 +1,5 @@
-from telebot import types
 import json
+from telebot import types
 
 # URL де розміщений твій index.html (наприклад GitHub Pages)
 WEB_APP_URL = "https://your-username.github.io/my-drago-webapp/"
@@ -18,7 +18,7 @@ def open_profile_webapp(message):
 
     bot.reply_to(
         message, 
-        "🚪 **Натисни кнопку нижче, щоб відкрити свій інтерактивний профіль:**", 
+        "🚪 *Натисни кнопку нижче, щоб відкрити свій інтерактивний профіль:*", 
         parse_mode="Markdown", 
         reply_markup=markup
     )
@@ -33,16 +33,42 @@ def handle_web_app_data(message):
         user_id = message.from_user.id
 
         if action == "upgrade_lvl":
-            # Тут робиш апдейт в БД
+            UPGRADE_COST = 1000
+
             with db_lock:
                 conn = get_db_connection()
-                with conn.cursor() as cursor:
-                    # Наприклад, додаємо рівень або знімаємо баланс
-                    cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
-                conn.commit()
-                conn.close()
+                try:
+                    with conn.cursor() as cursor:
+                        # 1. Перевіряємо, чи є у користувача запис та достатній баланс
+                        cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                        res = cursor.fetchone()
+                        
+                        current_balance = res[0] if res else 0
 
-            bot.reply_to(message, "🚀 **Твій профіль успішно прокачано через Mini App!**", parse_mode="Markdown")
+                        if current_balance < UPGRADE_COST:
+                            bot.reply_to(
+                                message, 
+                                f"❌ *Нестача коштів!* Потрібно {UPGRADE_COST} монет, а у тебе {current_balance}.", 
+                                parse_mode="Markdown"
+                            )
+                            return
+
+                        # 2. Якщо монет вистачає — проводимо списання та прокачку
+                        cursor.execute(
+                            "UPDATE stats SET balance = balance - %s WHERE user_id = %s", 
+                            (UPGRADE_COST, user_id)
+                        )
+                        conn.commit()
+
+                    bot.reply_to(
+                        message, 
+                        "🚀 *Твій профіль успішно прокачано через Mini App!*", 
+                        parse_mode="Markdown"
+                    )
+
+                finally:
+                    # Гарантоване закриття з'єднання з БД навіть у разі помилки
+                    conn.close()
 
     except Exception as e:
         print(f"Помилка обробки WebApp: {e}")
