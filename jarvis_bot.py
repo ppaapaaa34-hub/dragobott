@@ -255,7 +255,7 @@ def safe_get_rank(msg_count):
 # 🌐 URL твоєї Web App сторінки (заміни на своє реальне посилання)
 WEB_APP_URL = "https://your-username.github.io/my-drago-webapp/"
 
-# Автоматична миграція БД, щоб уникнути помилки (Missing Column)
+# Автоматична міграція БД, щоб уникнути помилки (Missing Column)
 def ensure_profile_columns():
     try:
         with db_lock:
@@ -443,12 +443,26 @@ def show_user_profile(message):
         # 🔘 КНОПКИ ПІД ПРОФІЛЕМ
         markup = types.InlineKeyboardMarkup(row_width=1)
 
-        # 📱 1. Кнопка відкриття Mini App
-        web_app_btn = types.InlineKeyboardButton(
-            text="📱 Відкрити Профіль (Mini App)", 
-            web_app=types.WebAppInfo(url=WEB_APP_URL)
+        # 📱 1. Перевірка валідності посилання для Web App
+        is_valid_webapp_url = (
+            WEB_APP_URL 
+            and WEB_APP_URL.startswith("https://") 
+            and "your-username" not in WEB_APP_URL
         )
-        markup.add(web_app_btn)
+
+        if is_valid_webapp_url:
+            web_app_btn = types.InlineKeyboardButton(
+                text="📱 Відкрити Профіль (Mini App)", 
+                web_app=types.WebAppInfo(url=WEB_APP_URL)
+            )
+            markup.add(web_app_btn)
+        else:
+            # Захист від помилки BUTTON_TYPE_INVALID, якщо URL ще тестовий або некоректний
+            safe_url = WEB_APP_URL if WEB_APP_URL.startswith("http") else "https://telegram.org"
+            markup.add(types.InlineKeyboardButton(
+                text="🌐 Відкрити Web App", 
+                url=safe_url
+            ))
 
         # ⚙️ 2. Кнопка стандартних налаштувань (якщо це власний профіль)
         if is_self:
