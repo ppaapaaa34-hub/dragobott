@@ -4507,7 +4507,6 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
     except Exception as e:
         print(f"Помилка аналізу фактів: {e}")
 
-
 # ===================================================================
 # 📱 ОБРОБНИКИ MINI APP ТА ВІДКРИТТЯ ПРОФІЛЮ
 # ===================================================================
@@ -4579,7 +4578,11 @@ def handle_text(message):
     user = message.from_user
     chat_type = message.chat.type
 
-    if text and not text.startswith('/'):
+    # Ігноруємо команди, щоб вони оброблялися відповідними handlers вище
+    if text and text.startswith('/'):
+        return
+
+    if text:
         user_name = user.first_name or "Анонім"
         RECENT_MESSAGES.append({
             "user": user_name,
@@ -4650,7 +4653,7 @@ def handle_text(message):
 
     # 🧠 ЗЧИТУЄМО НАПРАЦЬОВАНУ ПАМ'ЯТЬ ЮЗЕРА
     user_mem = get_user_memory(user.id)
-    known_facts = user_mem["facts"]
+    known_facts = user_mem.get("facts", []) if user_mem else []
     facts_context = ""
     if known_facts:
         facts_context = f"\n[ПАМ'ЯТЬ ПРО ЮЗЕРА: {', '.join(known_facts)}]"
@@ -4719,3 +4722,4 @@ if __name__ == "__main__":
     
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query', 'web_app_data'])
+
