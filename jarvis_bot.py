@@ -2283,7 +2283,10 @@ def search_and_send_music(message):
                         )
                 finally:
                     if os.path.exists(mp3_filename):
-                        os.remove(mp3_filename)
+                        try:
+                            os.remove(mp3_filename)
+                        except Exception:
+                            pass
             else:
                 found_file = None
                 for file in os.listdir('downloads'):
@@ -2305,7 +2308,10 @@ def search_and_send_music(message):
                             )
                     finally:
                         if os.path.exists(found_file):
-                            os.remove(found_file)
+                            try:
+                                os.remove(found_file)
+                            except Exception:
+                                pass
                 else:
                     raise Exception("Файл MP3 не знайдено на сервері.")
                 
@@ -2320,12 +2326,11 @@ def search_and_send_music(message):
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
-                text=f"❌ <b>Не зміг знайти або завантажити трек.</b>\nСпробуй написати трохи інакше або перевір назву!",
+                text="❌ <b>Не зміг знайти або завантажити трек.</b>\nСпробуй написати трохи інакше або перевір назву!",
                 parse_mode="HTML"
             )
         except Exception:
             pass
-
 
 # ===================================================================
 # 📊 ТОП АКТИВНОСТІ (Стиль бота Соняшник)
