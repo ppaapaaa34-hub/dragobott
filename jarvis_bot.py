@@ -857,7 +857,7 @@ def is_chat_admin(chat_id, user_id):
     """
     Перевіряє 3 рівні доступу:
     1. Суперадмін бота (ти через is_admin).
-    2. Призначений через /addmod модератор.
+    2. Призначений через модератор з БД.
     3. Стандартний адмін Telegram-групи.
     """
     # 1. Глобальний адмін бота
@@ -886,19 +886,34 @@ def is_chat_admin(chat_id, user_id):
 
 
 def parse_time(time_str):
-    """Парсить час для муту (наприклад: 10m, 2h, 1d) -> повертає секунди"""
-    unit = time_str[-1].lower()
-    if not time_str[:-1].isdigit():
+    """Парсить час для муту (10m, 10хв, 2h, 2год, 1d, 1день) -> повертає секунди"""
+    time_str = time_str.lower().strip()
+    
+    # Словник позначень часу (українські та англійські)
+    units = {
+        'хв': 60, 'м': 60, 'm': 60, 'хвилин': 60, 'хвилину': 60, 'хвилини': 60,
+        'год': 3600, 'г': 3600, 'h': 3600, 'годин': 3600, 'годину': 3600, 'години': 3600,
+        'д': 86400, 'd': 86400, 'день': 86400, 'днів': 86400, 'дня': 86400,
+        'с': 1, 's': 1, 'сек': 1
+    }
+
+    val_str = ""
+    unit_str = ""
+    for char in time_str:
+        if char.isdigit():
+            val_str += char
+        else:
+            unit_str += char
+
+    if not val_str or not unit_str:
         return None
-    val = int(time_str[:-1])
-    if unit == 'm':
-        return val * 60
-    elif unit == 'h':
-        return val * 3600
-    elif unit == 'd':
-        return val * 86400
-    elif unit == 's':
-        return val
+
+    val = int(val_str)
+    unit_str = unit_str.strip()
+
+    if unit_str in units:
+        return val * units[unit_str]
+    
     return None
 
 
@@ -906,8 +921,9 @@ def parse_time(time_str):
 # 3. КОМАНДИ КЕРУВАННЯ МОДЕРАТОРАМИ (ТІЛЬКИ ДЛЯ ТЕБЕ)
 # ===================================================================
 
-# ➕ Додати модератора (/addmod у відповідь або /addmod ID)
+# ➕ Додати модератора (/addmod, додати модератора, +мод)
 @bot.message_handler(commands=['addmod'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('додати модератора', '+мод', 'додати мода')))
 def add_moderator(message):
     if not is_admin(message.from_user.id):
         return bot.reply_to(message, "❌ Цю команду може використовувати лише Творець бота!")
@@ -920,16 +936,16 @@ def add_moderator(message):
         target_name = message.reply_to_message.from_user.first_name
     else:
         args = message.text.split()
-        if len(args) > 1 and args[1].isdigit():
-            target_id = int(args[1])
+        if len(args) > 1 and args[-1].isdigit():
+            target_id = int(args[-1])
             target_name = f"ID: {target_id}"
 
     if not target_id:
         return bot.reply_to(
             message, 
             "⚠️ **Як використовувати:**\n"
-            "1. Відповіж командою `/addmod` на повідомлення користувача.\n"
-            "2. Або напиши: `/addmod [ID_користувача]`",
+            "1. Відповіж командою `/addmod` або `додати модератора` на повідомлення.\n"
+            "2. Або напиши: `додати модератора [ID_користувача]`",
             parse_mode="Markdown"
         )
 
@@ -950,8 +966,9 @@ def add_moderator(message):
         bot.reply_to(message, f"❌ Помилка БД: `{e}`", parse_mode="Markdown")
 
 
-# ➖ Забрати права модератора (/delmod у відповідь або /delmod ID)
+# ➖ Забрати права модератора (/delmod, видалити модератора, -мод)
 @bot.message_handler(commands=['delmod', 'rmmod'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('видалити модератора', 'зняти модератора', '-мод', 'зняти мода')))
 def remove_moderator(message):
     if not is_admin(message.from_user.id):
         return bot.reply_to(message, "❌ Цю команду може використовувати лише Творець бота!")
@@ -964,12 +981,12 @@ def remove_moderator(message):
         target_name = message.reply_to_message.from_user.first_name
     else:
         args = message.text.split()
-        if len(args) > 1 and args[1].isdigit():
-            target_id = int(args[1])
+        if len(args) > 1 and args[-1].isdigit():
+            target_id = int(args[-1])
             target_name = f"ID: {target_id}"
 
     if not target_id:
-        return bot.reply_to(message, "⚠️ Відповіж на повідомлення або вкажи ID!\nПриклад: `/delmod 12345678`", parse_mode="Markdown")
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення або вкажи ID!\nПриклад: `зняти модератора 12345678`", parse_mode="Markdown")
 
     try:
         with db_lock:
@@ -984,8 +1001,9 @@ def remove_moderator(message):
         bot.reply_to(message, f"❌ Помилка БД: `{e}`", parse_mode="Markdown")
 
 
-# 📋 Список призначених модераторів (/modlist)
+# 📋 Список призначених модераторів (/modlist, список модераторів)
 @bot.message_handler(commands=['modlist', 'mods'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower() in ['список модераторів', 'модератори', 'список модів'])
 def list_moderators(message):
     if not is_admin(message.from_user.id):
         return bot.reply_to(message, "❌ Доступ заборонено!")
@@ -1014,8 +1032,9 @@ def list_moderators(message):
 # 4. КОМАНДИ МОДЕРАЦІЇ ЧАТУ (ДЛЯ ТЕБЕ ТА ПРИЗНАЧЕНИХ МОДЕРАТОРІВ)
 # ===================================================================
 
-# 🔇 МУТ
+# 🔇 МУТ (/mute, мут, замутити)
 @bot.message_handler(commands=['mute'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('мут', 'замутити')))
 def mute_user(message):
     if message.chat.type == 'private':
         return bot.reply_to(message, "⚠️ Ця команда працює лише в групах!")
@@ -1024,7 +1043,7 @@ def mute_user(message):
         return bot.reply_to(message, "❌ У тебе немає прав модератора!")
 
     if not message.reply_to_message:
-        return bot.reply_to(message, "⚠️ Відповіж на повідомлення порушника!\nПриклад: `/mute 30m спам`", parse_mode="Markdown")
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення порушника!\nПриклад: `мут 10хв спам` або `/mute 30m`", parse_mode="Markdown")
 
     target_user = message.reply_to_message.from_user
     if is_chat_admin(message.chat.id, target_user.id):
@@ -1052,17 +1071,28 @@ def mute_user(message):
             until_date=until_date,
             permissions=telebot.types.ChatPermissions(can_send_messages=False)
         )
+        
+        if duration_sec >= 86400:
+            time_display = f"{duration_sec // 86400} дн."
+        elif duration_sec >= 3600:
+            time_display = f"{duration_sec // 3600} год."
+        elif duration_sec >= 60:
+            time_display = f"{duration_sec // 60} хв."
+        else:
+            time_display = f"{duration_sec} сек."
+
         bot.reply_to(
             message,
-            f"🔇 Користувача **{target_user.first_name}** замучено на **{duration_sec // 60} хв.**\n📝 **Причина:** {reason}",
+            f"🔇 Користувача **{target_user.first_name}** замучено на **{time_display}**\n📝 **Причина:** {reason}",
             parse_mode="Markdown"
         )
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка муту (перевірте права бота): `{e}`", parse_mode="Markdown")
 
 
-# 🔊 РОЗМУТ
+# 🔊 РОЗМУТ (/unmute, розмут, зняти мут)
 @bot.message_handler(commands=['unmute'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('розмут', 'зняти мут', 'размут')))
 def unmute_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1089,8 +1119,9 @@ def unmute_user(message):
         bot.reply_to(message, f"❌ Помилка розмуту: `{e}`", parse_mode="Markdown")
 
 
-# 🔨 БАН
+# 🔨 БАН (/ban, бан, забанити)
 @bot.message_handler(commands=['ban'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('бан', 'забанити')))
 def ban_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1117,8 +1148,9 @@ def ban_user(message):
         bot.reply_to(message, f"❌ Помилка бану: `{e}`", parse_mode="Markdown")
 
 
-# 🔓 РОЗБАН
+# 🔓 РОЗБАН (/unban, розбан, розбанити)
 @bot.message_handler(commands=['unban'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('розбан', 'розбанити', 'разбан')))
 def unban_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1136,8 +1168,9 @@ def unban_user(message):
         bot.reply_to(message, f"❌ Помилка розбану: `{e}`", parse_mode="Markdown")
 
 
-# 👞 КІК
+# 👞 КІК (/kick, кік, вигнати)
 @bot.message_handler(commands=['kick'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('кік', 'кик', 'вигнати')))
 def kick_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1158,8 +1191,9 @@ def kick_user(message):
         bot.reply_to(message, f"❌ Помилка кіку: `{e}`", parse_mode="Markdown")
 
 
-# 🧹 ОЧИЩЕННЯ ПОВІДОМЛЕНЬ (/clear 10)
+# 🧹 ОЧИЩЕННЯ ПОВІДОМЛЕНЬ (/clear 10, очистити 10, почистити 10)
 @bot.message_handler(commands=['clear', 'purge'])
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('очистити', 'почистити', 'чистка')))
 def clear_messages(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1167,7 +1201,7 @@ def clear_messages(message):
 
     args = message.text.split()
     if len(args) < 2 or not args[1].isdigit():
-        return bot.reply_to(message, "⚠️ Вкажи кількість повідомлень.\nПриклад: `/clear 15`", parse_mode="Markdown")
+        return bot.reply_to(message, "⚠️ Вкажи кількість повідомлень.\nПриклад: `очистити 15` або `/clear 15`", parse_mode="Markdown")
 
     count = int(args[1])
     if count > 100:
