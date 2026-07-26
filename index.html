@@ -69,9 +69,6 @@
         .user-info h2 {
             margin: 0;
             font-size: 20px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
         }
 
         .user-info p {
@@ -113,20 +110,17 @@
             color: var(--hint-color);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
-        .inventory-list {
+        .custom-list {
             background: rgba(255, 255, 255, 0.03);
             border-radius: 10px;
             padding: 8px;
-            min-height: 40px;
+            min-height: 35px;
             font-size: 14px;
         }
 
-        .inventory-item {
+        .list-item {
             padding: 8px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             display: flex;
@@ -134,7 +128,7 @@
             align-items: center;
         }
 
-        .inventory-item:last-child {
+        .list-item:last-child {
             border-bottom: none;
         }
 
@@ -172,18 +166,8 @@
             cursor: pointer;
             width: 100%;
             margin-top: 15px;
-            transition: opacity 0.2s;
         }
 
-        button.action-btn.secondary {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        button:active {
-            opacity: 0.8;
-        }
-
-        /* Форма редагування */
         .edit-form {
             display: none;
             flex-direction: column;
@@ -218,7 +202,6 @@
 <body>
 
     <div class="profile-card">
-        <!-- Шапка -->
         <div class="header">
             <div class="avatar" id="user-avatar">🐲</div>
             <div class="user-info">
@@ -227,7 +210,6 @@
             </div>
         </div>
 
-        <!-- Форма редагування (прихована) -->
         <div class="edit-form" id="edit-form">
             <label>Ігровий нікнейм:</label>
             <input type="text" id="edit-name-input" placeholder="Введи свій нік">
@@ -240,7 +222,6 @@
             </select>
         </div>
 
-        <!-- Статистика -->
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="stat-label">⭐ Рівень</div>
@@ -260,15 +241,17 @@
             </div>
         </div>
 
-        <!-- Майно -->
-        <div class="section-title">
-            <span>📦 Майно та предмети</span>
-        </div>
-        <div class="inventory-list" id="inventory-container">
+        <!-- Спеціальні Блоки -->
+        <div class="section-title">💼 Мої Бізнеси</div>
+        <div class="custom-list" id="businesses-container">
             <i>Завантаження...</i>
         </div>
 
-        <!-- Кнопки дій -->
+        <div class="section-title">📦 Майно та предмети</div>
+        <div class="custom-list" id="inventory-container">
+            <i>Завантаження...</i>
+        </div>
+
         <button class="action-btn" id="edit-toggle-btn" onclick="toggleEditMode()">⚙️ Редагувати профіль</button>
         <div id="status-msg"></div>
     </div>
@@ -285,7 +268,8 @@
         let currentData = {
             name: '',
             gender: '',
-            items: []
+            items: [],
+            businesses: []
         };
         let isEditMode = false;
 
@@ -309,6 +293,7 @@
                     currentData.name = data.name || tgUser.first_name;
                     currentData.gender = data.gender || 'Невідомо';
                     currentData.items = data.items || [];
+                    currentData.businesses = data.businesses || [];
 
                     renderUI(data);
                 }
@@ -327,45 +312,52 @@
             document.getElementById('edit-name-input').value = currentData.name;
             document.getElementById('edit-gender-select').value = currentData.gender;
 
-            renderInventory();
+            renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
+            renderList('inventory-container', currentData.items, '🔹', 'items');
         }
 
-        function renderInventory() {
-            const container = document.getElementById('inventory-container');
-            if (currentData.items.length === 0) {
-                container.innerHTML = '<i style="color: var(--hint-color)">Порожньо...</i>';
+        function renderList(containerId, listData, icon, type) {
+            const container = document.getElementById(containerId);
+            if (listData.length === 0) {
+                container.innerHTML = '<i style="color: var(--hint-color)">Немає...</i>';
                 return;
             }
 
-            container.innerHTML = currentData.items.map((item, index) => `
-                <div class="inventory-item">
-                    <span>🔹 ${item}</span>
+            container.innerHTML = listData.map((item, index) => `
+                <div class="list-item">
+                    <span>${icon} ${item}</span>
                     <div class="reorder-btns">
-                        <button class="btn-mini" onclick="moveItem(${index}, -1)">⬆️</button>
-                        <button class="btn-mini" onclick="moveItem(${index}, 1)">⬇️</button>
+                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">⬆️</button>
+                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">⬇️</button>
                     </div>
                 </div>
             `).join('');
         }
 
-        function moveItem(index, direction) {
+        function moveItem(type, index, direction) {
+            const list = currentData[type];
             const newIndex = index + direction;
-            if (newIndex < 0 || newIndex >= currentData.items.length) return;
+            if (newIndex < 0 || newIndex >= list.length) return;
 
-            const temp = currentData.items[index];
-            currentData.items[index] = currentData.items[newIndex];
-            currentData.items[newIndex] = temp;
+            const temp = list[index];
+            list[index] = list[newIndex];
+            list[newIndex] = temp;
 
-            renderInventory();
-            saveInventoryOrder();
+            if (type === 'items') {
+                renderList('inventory-container', currentData.items, '🔹', 'items');
+                saveOrder(`${API_URL}/api/update_inventory_order`, { items: currentData.items });
+            } else if (type === 'businesses') {
+                renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
+                saveOrder(`${API_URL}/api/update_businesses_order`, { businesses: currentData.businesses });
+            }
         }
 
-        async function saveInventoryOrder() {
+        async function saveOrder(url, payload) {
             try {
-                await fetch(`${API_URL}/api/update_inventory_order`, {
+                await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, items: currentData.items })
+                    body: JSON.stringify({ user_id: userId, ...payload })
                 });
             } catch (e) {
                 console.error("Помилка збереження порядку:", e);
@@ -378,13 +370,11 @@
             const card = document.querySelector('.profile-card');
 
             if (!isEditMode) {
-                // Вмикаємо режим редагування
                 isEditMode = true;
                 form.style.display = 'flex';
                 card.classList.add('edit-mode');
                 btn.innerText = '💾 Зберегти зміни';
             } else {
-                // Зберігаємо зміни
                 const newName = document.getElementById('edit-name-input').value.trim();
                 const newGender = document.getElementById('edit-gender-select').value;
 
