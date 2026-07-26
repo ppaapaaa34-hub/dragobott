@@ -255,7 +255,7 @@ def safe_get_rank(msg_count):
 # 🪪 2. ВІДОБРАЖЕННЯ ТА НАЛАШТУВАННЯ ПРОФІЛЮ
 # ===================================================================
 
-# 🌐 URL твоєї Web App сторінки (заміни на своє реальне посилання)
+# 🌐 URL твоєї Web App сторінки
 WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 
 # Автоматична міграція БД, щоб уникнути помилки (Missing Column)
@@ -446,26 +446,12 @@ def show_user_profile(message):
         # 🔘 КНОПКИ ПІД ПРОФІЛЕМ
         markup = types.InlineKeyboardMarkup(row_width=1)
 
-        # 📱 1. Перевірка валідності посилання для Web App
-        is_valid_webapp_url = (
-            WEB_APP_URL 
-            and WEB_APP_URL.startswith("https://") 
-            and "your-username" not in WEB_APP_URL
+        # 📱 Чиста та надійна Web App кнопка
+        web_app_btn = types.InlineKeyboardButton(
+            text="📱 Відкрити Профіль (Mini App)", 
+            web_app=types.WebAppInfo(url=WEB_APP_URL)
         )
-
-        if is_valid_webapp_url:
-            web_app_btn = types.InlineKeyboardButton(
-                text="📱 Відкрити Профіль (Mini App)", 
-                web_app=types.WebAppInfo(url=WEB_APP_URL)
-            )
-            markup.add(web_app_btn)
-        else:
-            # Захист від помилки BUTTON_TYPE_INVALID, якщо URL ще тестовий або некоректний
-            safe_url = WEB_APP_URL if WEB_APP_URL.startswith("http") else "https://telegram.org"
-            markup.add(types.InlineKeyboardButton(
-                text="🌐 Відкрити Web App", 
-                url=safe_url
-            ))
+        markup.add(web_app_btn)
 
         # ⚙️ 2. Кнопка стандартних налаштувань (якщо це власний профіль)
         if is_self:
