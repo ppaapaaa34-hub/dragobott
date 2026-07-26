@@ -4561,6 +4561,115 @@ def run_flask_app():
 
 
 # ===================================================================
+# 🌐 FLASK API ДЛЯ MINI APP (ОБРОБКА FETCH ЗАПИТІВ З GITHUB PAGES)
+# ===================================================================
+app = Flask(__name__)
+CORS(app)  # Дозволяє запити з веб-інтерфейсу (GitHub Pages)
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Drago Server is Live!", 200
+
+# 1. Отримання ПОВНОГО профілю в Mini App
+@app.route('/api/get_stats', methods=['POST'])
+def api_get_stats():
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({"error": "No user_id provided"}), 400
+
+        balance = 0
+        msg_count = 0
+        gender = "Невідомо"
+        user_name = "Гравець"
+        items = []
+
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Зчитуємо статистику користувача з БД
+                cursor.execute(
+                    "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
+                    (user_id,)
+                )
+                res = cursor.fetchone()
+                if res:
+                    user_name = res[0] or user_name
+                    balance = res[1] or 0
+                    msg_count = res[2] or 0
+                    gender = res[3] or "Невідомо"
+
+                # Зчитуємо майно / інвентар користувача
+                try:
+                    cursor.execute(
+                        "SELECT item_name FROM inventory WHERE user_id = %s", 
+                        (user_id,)
+                    )
+                    inventory_res = cursor.fetchall()
+                    if inventory_res:
+                        items = [row[0] for row in inventory_res]
+                except Exception as inv_err:
+                    print(f"Попередження (інвентар не зчитано або таблиця відсутня): {inv_err}")
+
+            conn.close()
+
+        # Розрахунок рівня (наприклад: 1 рівень за кожні 50 повідомлень)
+        level = max(1, msg_count // 50 + 1)
+
+        return jsonify({
+            "user_id": user_id,
+            "name": user_name,
+            "balance": balance,
+            "msg_count": msg_count,
+            "gender": gender,
+            "level": level,
+            "items": items
+        }), 200
+
+    except Exception as e:
+        print(f"Помилка /api/get_stats: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+# 2. Прокачка навичок / майна з Mini App
+@app.route('/api/upgrade', methods=['POST'])
+def api_upgrade():
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        skill_id = data.get('skill_id')
+
+        if not user_id:
+            return jsonify({"success": False, "message": "Відсутній user_id"}), 400
+
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                current_balance = res[0] if res and res[0] else 0
+
+                if current_balance < 1000:
+                    conn.close()
+                    return jsonify({"success": False, "message": "Недостатньо коштів! Потрібно 1000 грн"}), 200
+
+                cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
+            conn.commit()
+            conn.close()
+
+        return jsonify({"success": True, "message": "Силу успішно прокачано!"}), 200
+
+    except Exception as e:
+        print(f"Помилка /api/upgrade: {e}")
+        return jsonify({"success": False, "message": "Помилка сервера"}), 500
+
+def run_flask_app():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+
+# ===================================================================
 # 📱 ОБРОБНИКИ MINI APP ТА ВІДКРИТТЯ ПРОФІЛЮ
 # ===================================================================
 
@@ -4768,7 +4877,7 @@ if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    # Запускаємо Flask API сервер замість dummy
+    # Запускаємо Flask API сервер паралельно в окремому потоці
     server_thread = threading.Thread(target=run_flask_app, daemon=True)
     server_thread.start()
     print("🚀 Flask API сервер успішно запущено.")
