@@ -57,6 +57,7 @@
             font-weight: bold;
             color: #fff;
             overflow: hidden;
+            flex-shrink: 0;
         }
 
         .avatar img {
@@ -68,6 +69,9 @@
         .user-info h2 {
             margin: 0;
             font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .user-info p {
@@ -97,38 +101,67 @@
         }
 
         .stat-value {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             color: var(--button-color);
         }
 
         .section-title {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: bold;
             margin: 15px 0 8px 0;
             color: var(--hint-color);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .inventory-list {
             background: rgba(255, 255, 255, 0.03);
             border-radius: 10px;
-            padding: 10px;
+            padding: 8px;
             min-height: 40px;
             font-size: 14px;
         }
 
         .inventory-item {
-            padding: 4px 0;
+            padding: 8px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .inventory-item:last-child {
             border-bottom: none;
         }
 
-        button {
+        .reorder-btns {
+            display: none;
+            gap: 4px;
+        }
+
+        .edit-mode .reorder-btns {
+            display: flex;
+        }
+
+        .btn-mini {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: var(--text-color);
+            border-radius: 6px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn-mini:active {
+            background: var(--button-color);
+        }
+
+        button.action-btn {
             background-color: var(--button-color);
             color: var(--button-text-color);
             border: none;
@@ -142,8 +175,37 @@
             transition: opacity 0.2s;
         }
 
+        button.action-btn.secondary {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
         button:active {
             opacity: 0.8;
+        }
+
+        /* Форма редагування */
+        .edit-form {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 10px;
+        }
+
+        .edit-form label {
+            font-size: 12px;
+            color: var(--hint-color);
+        }
+
+        .edit-form input, .edit-form select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 14px;
         }
 
         #status-msg {
@@ -156,13 +218,26 @@
 <body>
 
     <div class="profile-card">
-        <!-- Шапка профілю -->
+        <!-- Шапка -->
         <div class="header">
             <div class="avatar" id="user-avatar">🐲</div>
             <div class="user-info">
                 <h2 id="user-name">Завантаження...</h2>
                 <p id="user-username">@username</p>
             </div>
+        </div>
+
+        <!-- Форма редагування (прихована) -->
+        <div class="edit-form" id="edit-form">
+            <label>Ігровий нікнейм:</label>
+            <input type="text" id="edit-name-input" placeholder="Введи свій нік">
+
+            <label>Стать:</label>
+            <select id="edit-gender-select">
+                <option value="Хлопець">Хлопець</option>
+                <option value="Дівчина">Дівчина</option>
+                <option value="Невідомо">Невідомо</option>
+            </select>
         </div>
 
         <!-- Статистика -->
@@ -185,14 +260,16 @@
             </div>
         </div>
 
-        <!-- Інвентар / Майно -->
-        <div class="section-title">📦 Майно та предмети</div>
+        <!-- Майно -->
+        <div class="section-title">
+            <span>📦 Майно та предмети</span>
+        </div>
         <div class="inventory-list" id="inventory-container">
-            <i>Завантаження інвентарю...</i>
+            <i>Завантаження...</i>
         </div>
 
         <!-- Кнопки дій -->
-        <button id="upgrade-btn" onclick="upgradeSkill('power')">⚡ Прокачати Силу (-1000 грн)</button>
+        <button class="action-btn" id="edit-toggle-btn" onclick="toggleEditMode()">⚙️ Редагувати профіль</button>
         <div id="status-msg"></div>
     </div>
 
@@ -202,87 +279,147 @@
         tg.expand();
 
         const API_URL = 'https://dragobott.onrender.com';
-
-        // Витягуємо дані користувача з Telegram SDK
         const tgUser = tg.initDataUnsafe?.user || {};
-        const userId = tgUser.id || 0; // Для тестів у браузері підставиться ID або 0
+        const userId = tgUser.id || 0;
 
-        // 1. Завантаження профілю
+        let currentData = {
+            name: '',
+            gender: '',
+            items: []
+        };
+        let isEditMode = false;
+
         async function loadProfile() {
-            // Відображаємо дані з Telegram одразу, поки вантажиться БД
             document.getElementById('user-name').innerText = tgUser.first_name || 'Гравець';
             document.getElementById('user-username').innerText = tgUser.username ? `@${tgUser.username}` : `ID: ${userId}`;
             
             if (tgUser.photo_url) {
                 document.getElementById('user-avatar').innerHTML = `<img src="${tgUser.photo_url}" alt="avatar">`;
-            } else if (tgUser.first_name) {
-                document.getElementById('user-avatar').innerText = tgUser.first_name[0].toUpperCase();
             }
 
             try {
                 const response = await fetch(`${API_URL}/api/get_stats`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        initData: tg.initData,
-                        user_id: userId 
-                    })
+                    body: JSON.stringify({ user_id: userId })
                 });
 
                 if (response.ok) {
                     const data = await response.json();
-                    
-                    document.getElementById('user-name').innerText = data.name || tgUser.first_name;
-                    document.getElementById('user-level').innerText = data.level;
-                    document.getElementById('user-balance').innerText = `${data.balance.toLocaleString()} грн`;
-                    document.getElementById('user-msgs').innerText = data.msg_count;
-                    document.getElementById('user-gender').innerText = data.gender;
+                    currentData.name = data.name || tgUser.first_name;
+                    currentData.gender = data.gender || 'Невідомо';
+                    currentData.items = data.items || [];
 
-                    // Відображення інвентарю
-                    const invContainer = document.getElementById('inventory-container');
-                    if (data.items && data.items.length > 0) {
-                        invContainer.innerHTML = data.items.map(item => `<div class="inventory-item">🔹 ${item}</div>`).join('');
-                    } else {
-                        invContainer.innerHTML = '<i style="color: var(--hint-color)">Порожньо...</i>';
-                    }
-                } else {
-                    showStatus('❌ Не вдалося завантажити дані з БД', true);
+                    renderUI(data);
                 }
             } catch (err) {
-                console.error(err);
                 showStatus('❌ Помилка зєднання з сервером', true);
             }
         }
 
-        // 2. Прокачка
-        async function upgradeSkill(skillId) {
-            const btn = document.getElementById('upgrade-btn');
-            btn.disabled = true;
+        function renderUI(data) {
+            document.getElementById('user-name').innerText = currentData.name;
+            document.getElementById('user-level').innerText = data.level || 1;
+            document.getElementById('user-balance').innerText = `${(data.balance || 0).toLocaleString()} грн`;
+            document.getElementById('user-msgs').innerText = data.msg_count || 0;
+            document.getElementById('user-gender').innerText = currentData.gender;
 
+            document.getElementById('edit-name-input').value = currentData.name;
+            document.getElementById('edit-gender-select').value = currentData.gender;
+
+            renderInventory();
+        }
+
+        function renderInventory() {
+            const container = document.getElementById('inventory-container');
+            if (currentData.items.length === 0) {
+                container.innerHTML = '<i style="color: var(--hint-color)">Порожньо...</i>';
+                return;
+            }
+
+            container.innerHTML = currentData.items.map((item, index) => `
+                <div class="inventory-item">
+                    <span>🔹 ${item}</span>
+                    <div class="reorder-btns">
+                        <button class="btn-mini" onclick="moveItem(${index}, -1)">⬆️</button>
+                        <button class="btn-mini" onclick="moveItem(${index}, 1)">⬇️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function moveItem(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= currentData.items.length) return;
+
+            const temp = currentData.items[index];
+            currentData.items[index] = currentData.items[newIndex];
+            currentData.items[newIndex] = temp;
+
+            renderInventory();
+            saveInventoryOrder();
+        }
+
+        async function saveInventoryOrder() {
             try {
-                const response = await fetch(`${API_URL}/api/upgrade`, {
+                await fetch(`${API_URL}/api/update_inventory_order`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        initData: tg.initData,
-                        user_id: userId,
-                        skill_id: skillId
-                    })
+                    body: JSON.stringify({ user_id: userId, items: currentData.items })
                 });
-
-                const result = await response.json();
-                if (result.success) {
-                    showStatus('✅ Успішно прокачано!');
-                    loadProfile(); // Перезавантажуємо профіль з оновленими цифрами
-                    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-                } else {
-                    showStatus(`⚠️ ${result.message || 'Недостатньо коштів'}`, true);
-                    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-                }
             } catch (e) {
-                showStatus('❌ Сервер не відповідає', true);
-            } finally {
-                btn.disabled = false;
+                console.error("Помилка збереження порядку:", e);
+            }
+        }
+
+        async function toggleEditMode() {
+            const form = document.getElementById('edit-form');
+            const btn = document.getElementById('edit-toggle-btn');
+            const card = document.querySelector('.profile-card');
+
+            if (!isEditMode) {
+                // Вмикаємо режим редагування
+                isEditMode = true;
+                form.style.display = 'flex';
+                card.classList.add('edit-mode');
+                btn.innerText = '💾 Зберегти зміни';
+            } else {
+                // Зберігаємо зміни
+                const newName = document.getElementById('edit-name-input').value.trim();
+                const newGender = document.getElementById('edit-gender-select').value;
+
+                if (newName) currentData.name = newName;
+                currentData.gender = newGender;
+
+                btn.disabled = true;
+                showStatus('Збереження...');
+
+                try {
+                    const res = await fetch(`${API_URL}/api/update_profile`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: userId,
+                            name: currentData.name,
+                            gender: currentData.gender
+                        })
+                    });
+
+                    if (res.ok) {
+                        showStatus('✅ Профіль оновлено!');
+                        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    }
+                } catch (e) {
+                    showStatus('❌ Помилка збереження', true);
+                } finally {
+                    btn.disabled = false;
+                    isEditMode = false;
+                    form.style.display = 'none';
+                    card.classList.remove('edit-mode');
+                    btn.innerText = '⚙️ Редагувати профіль';
+                    document.getElementById('user-name').innerText = currentData.name;
+                    document.getElementById('user-gender').innerText = currentData.gender;
+                }
             }
         }
 
