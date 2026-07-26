@@ -1,0 +1,49 @@
+from telebot import types
+import json
+
+# URL де розміщений твій index.html (наприклад GitHub Pages)
+WEB_APP_URL = "https://your-username.github.io/my-drago-webapp/"
+
+# 🪪 КОМАНДА ДЛЯ ВІДКРИТТЯ MINI APP
+@bot.message_handler(commands=['app', 'app_profile', 'профіль_app'])
+def open_profile_webapp(message):
+    markup = types.InlineKeyboardMarkup()
+    
+    # Створюємо спеціальну WebApp кнопку
+    web_app_btn = types.InlineKeyboardButton(
+        text="📱 Відкрити Профіль (Mini App)", 
+        web_app=types.WebAppInfo(url=WEB_APP_URL)
+    )
+    markup.add(web_app_btn)
+
+    bot.reply_to(
+        message, 
+        "🚪 **Натисни кнопку нижче, щоб відкрити свій інтерактивний профіль:**", 
+        parse_mode="Markdown", 
+        reply_markup=markup
+    )
+
+
+# 📩 ОБРОБКА ДАНИХ, ЯКІ ПРИЙШЛИ З WEB APP (через tg.sendData)
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_data(message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        action = data.get("action")
+        user_id = message.from_user.id
+
+        if action == "upgrade_lvl":
+            # Тут робиш апдейт в БД
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    # Наприклад, додаємо рівень або знімаємо баланс
+                    cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
+                conn.commit()
+                conn.close()
+
+            bot.reply_to(message, "🚀 **Твій профіль успішно прокачано через Mini App!**", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Помилка обробки WebApp: {e}")
+        bot.reply_to(message, "❌ Виникла помилка під час оновлення даних з Web App.")
