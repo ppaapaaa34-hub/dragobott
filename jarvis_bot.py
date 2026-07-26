@@ -4632,13 +4632,14 @@ def api_get_stats():
         print(f"Помилка /api/get_stats: {e}")
         return jsonify({"error": "Помилка сервера"}), 500
 
-# 2. Прокачка навичок / майна з Mini App
-@app.route('/api/upgrade', methods=['POST'])
-def api_upgrade():
+# 2. Оновлення даних профілю (нікнейм та стать)
+@app.route('/api/update_profile', methods=['POST'])
+def api_update_profile():
     try:
         data = request.get_json() or {}
         user_id = data.get('user_id')
-        skill_id = data.get('skill_id')
+        new_name = data.get('name')
+        new_gender = data.get('gender')
 
         if not user_id:
             return jsonify({"success": False, "message": "Відсутній user_id"}), 400
@@ -4646,22 +4647,45 @@ def api_upgrade():
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                res = cursor.fetchone()
-                current_balance = res[0] if res and res[0] else 0
-
-                if current_balance < 1000:
-                    conn.close()
-                    return jsonify({"success": False, "message": "Недостатньо коштів! Потрібно 1000 грн"}), 200
-
-                cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
+                cursor.execute(
+                    "UPDATE stats SET name = %s, gender = %s WHERE user_id = %s",
+                    (new_name, new_gender, user_id)
+                )
             conn.commit()
             conn.close()
 
-        return jsonify({"success": True, "message": "Силу успішно прокачано!"}), 200
-
+        return jsonify({"success": True, "message": "Профіль оновлено!"}), 200
     except Exception as e:
-        print(f"Помилка /api/upgrade: {e}")
+        print(f"Помилка /api/update_profile: {e}")
+        return jsonify({"success": False, "message": "Помилка сервера"}), 500
+
+# 3. Збереження нового порядку предметів в інвентарі
+@app.route('/api/update_inventory_order', methods=['POST'])
+def api_update_inventory_order():
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        items = data.get('items', [])
+
+        if not user_id:
+            return jsonify({"success": False, "message": "Відсутній user_id"}), 400
+
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Перезаписуємо інвентар у новому порядку
+                cursor.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
+                for item in items:
+                    cursor.execute(
+                        "INSERT INTO inventory (user_id, item_name) VALUES (%s, %s)",
+                        (user_id, item)
+                    )
+            conn.commit()
+            conn.close()
+
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        print(f"Помилка /api/update_inventory_order: {e}")
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
 
 def run_flask_app():
@@ -4701,31 +4725,14 @@ def open_profile_webapp(message):
         reply_markup=markup
     )
 
-# 📩 ОБРОБКА ДАНИХ, ЯКІ ПРИЙШЛИ З WEB APP (через tg.sendData)
+# 📩 ОБРОБКА ДАНИХ, ЯКІ ПРИЙШЛИ З WEB APP (за потреби)
 @bot.message_handler(content_types=['web_app_data'])
 def handle_web_app_data(message):
     try:
         data = json.loads(message.web_app_data.data)
-        action = data.get("action")
-        user_id = message.from_user.id
-        
-        if action == "upgrade_lvl":
-            with db_lock:
-                conn = get_db_connection()
-                with conn.cursor() as cursor:
-                    cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
-                conn.commit()
-                conn.close()
-                
-            bot.reply_to(
-                message, 
-                "🚀 **Твій профіль успішно прокачано через Mini App!**", 
-                parse_mode="Markdown"
-            )
+        # Тут можна обробляти інші спец-події з WebApp
     except Exception as e:
         print(f"Помилка обробки WebApp: {e}")
-        bot.reply_to(message, "❌ Виникла помилка під час оновлення даних з Web App.")
-
 
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
