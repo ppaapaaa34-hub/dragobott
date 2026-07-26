@@ -1573,10 +1573,13 @@ def add_family_bank(message):
         bot.reply_to(message, f"❌ Помилка БД: <code>{e}</code>", parse_mode="HTML")
 
 
+# ===================================================================
 # 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
+# ===================================================================
 @bot.message_handler(commands=['divorce', 'розлучення'])
 def divorce_command(message):
-    if is_user_banned(message.from_user.id): return
+    if is_user_banned(message.from_user.id): 
+        return
     
     user_id = message.from_user.id
     spouse_id, pair_key = get_marriage_pair(user_id)
@@ -1594,12 +1597,14 @@ def divorce_command(message):
                 if pair_key:
                     cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
                     res = cursor.fetchone()
-                    if res: shared_money = res[0]
+                    if res: 
+                        shared_money = res[0] or 0
 
                 # Видаляємо запис про шлюб та сімейний банк
                 cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
                 if pair_key:
                     cursor.execute("DELETE FROM shared_wallets WHERE pair_id = %s", (pair_key,))
+                
                 conn.commit()
             conn.close()
 
@@ -1618,13 +1623,28 @@ def divorce_command(message):
             parse_mode="HTML"
         )
     except Exception as e:
-        bot.reply_to(message, f"❌ Помилка БД: {e}")
+        print(f"Помилка розлучення: {e}")
+        bot.reply_to(message, f"❌ Помилка БД при розлученні: {e}")
 
-# 6. Спільні гаманці для пар
-cursor.execute("""CREATE TABLE IF NOT EXISTS shared_wallets (
-    pair_id VARCHAR(100) PRIMARY KEY,
-    balance BIGINT DEFAULT 0
-)""")
+
+# ===================================================================
+# 📦 ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (Всі CREATE TABLE тримаємо тут!)
+# ===================================================================
+def init_db():
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            # 6. Спільні гаманці для пар
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS shared_wallets (
+                    pair_id VARCHAR(100) PRIMARY KEY,
+                    balance BIGINT DEFAULT 0
+                )
+            """)
+            conn.commit()
+        conn.close()
+
+# Обов'язково викликай init_db() під час старту бота (наприклад, у if __name__ == '__main__':)
 
 # ===================================================================
 # 📋 СПИСОК УСІХ ПАР ЧАТУ (/marriages, /пари, /шлюби)
