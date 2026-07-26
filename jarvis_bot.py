@@ -97,6 +97,9 @@ API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
+
+# 🌐 Посилання на твій Mini App
+WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 # ======================================================
 
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
