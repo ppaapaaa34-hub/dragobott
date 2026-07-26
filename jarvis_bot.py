@@ -1321,6 +1321,37 @@ def show_all_commands(message):
 # 💍 СИСТЕМА ОДРУЖЕННЯ ТА СІМЕЙНОГО БЮДЖЕТУ
 # ===================================================================
 
+def get_user_balance(user_id: int) -> int:
+    """Отримує поточний баланс користувача з бази даних"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+            conn.close()
+        return res[0] if res and res[0] is not None else 0
+    except Exception as e:
+        print(f"Помилка get_user_balance: {e}")
+        return 0
+
+
+def update_user_balance(user_id: int, amount: int):
+    """Змінює баланс користувача (на + або -)"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO stats (user_id, balance) VALUES (%s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET balance = stats.balance + EXCLUDED.balance;
+                """, (user_id, amount))
+                conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка update_user_balance: {e}")
+
+
 def get_marriage_pair(user_id):
     """Повертає spouse_id та унікальний pair_key для спільного банку"""
     try:
@@ -1363,7 +1394,7 @@ def propose_marriage(message):
         bot.reply_to(message, "🛑 На ботах не одружуємося! Відхилено.")
         return
 
-    # Перевірка, чи хтось із них вже у шлюбі (одним запитом для обох)
+    # Перевірка, чи хтось із них вже у шлюбі
     try:
         with db_lock:
             conn = get_db_connection()
@@ -1534,10 +1565,8 @@ def show_family_bank(message):
 
 
 # 4. 📥 ПОПОВНЕННЯ СІМЕЙНОГО БАНКУ (/поповнити_банк [сума])
-@bot.message_handler(func=lambda message: message.text and (
-    message.text.startswith('/поповнити_банк') or 
-    message.text.startswith('/add_family_bank') or
-    message.text.startswith('/пополнить_банк')
+@bot.message_handler(func=lambda message: message.text and any(
+    message.text.strip().lower().startswith(cmd) for cmd in ['/поповнити_банк', '/add_family_bank', '/пополнить_банк']
 ))
 def add_family_bank(message):
     if is_user_banned(message.from_user.id): return
@@ -1563,8 +1592,9 @@ def add_family_bank(message):
         bot.reply_to(message, "❌ Сума має бути більшою за 0!")
         return
 
-    if get_user_balance(user_id) < amount:
-        bot.reply_to(message, "💸 Брак коштів на гаманці!")
+    user_bal = get_user_balance(user_id)
+    if user_bal < amount:
+        bot.reply_to(message, f"💸 <b>Брак коштів!</b> На гаманці лише <b>{user_bal:,} грн</b>.", parse_mode="HTML")
         return
 
     try:
@@ -1587,11 +1617,9 @@ def add_family_bank(message):
         bot.reply_to(message, f"❌ Помилка БД: <code>{e}</code>", parse_mode="HTML")
 
 
-# 4.1 📤 НОВА КОМАНДА: ЗНЯТТЯ З СІМЕЙНОГО БАНКУ (/зняти_банк [сума])
-@bot.message_handler(func=lambda message: message.text and (
-    message.text.startswith('/зняти_банк') or 
-    message.text.startswith('/withdraw_family_bank') or
-    message.text.startswith('/снять_банк')
+# 4.1 📤 ЗНЯТТЯ З СІМЕЙНОГО БАНКУ (/зняти_банк [сума])
+@bot.message_handler(func=lambda message: message.text and any(
+    message.text.strip().lower().startswith(cmd) for cmd in ['/зняти_банк', '/withdraw_family_bank', '/снять_банк']
 ))
 def withdraw_family_bank(message):
     if is_user_banned(message.from_user.id): return
@@ -1635,7 +1663,7 @@ def withdraw_family_bank(message):
             conn.close()
 
         update_user_balance(user_id, amount)
-        bot.reply_to(message, f"💸 Ти зняв <b>{amount:,} грн</b> із сімейного банку себе на рахунок!", parse_mode="HTML")
+        bot.reply_to(message, f"💸 Ти зняв <b>{amount:,} грн</b> із сімейного банку собі на рахунок!", parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка зняття з банку: {e}")
@@ -1690,7 +1718,6 @@ def divorce_command(message):
     except Exception as e:
         print(f"Помилка розлучення: {e}")
         bot.reply_to(message, f"❌ Помилка БД при розлученні: {e}")
-
 
 # ===================================================================
 # 📦 ІНІЦІАЛІЗАЦІЯ БАЗИ ДАНИХ (Всі CREATE TABLE тримаємо тут!)
