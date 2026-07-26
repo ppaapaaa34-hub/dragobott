@@ -512,18 +512,13 @@ def handle_profile_settings(call):
         call.data = 'prof_main_menu'
         handle_profile_settings(call)
 
-    # 2. Перемикач показу інвентаря
+    # 2. Показуємо майно та AI-картину
     elif call.data == 'prof_toggle_inv':
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("UPDATE stats SET show_full_inventory = NOT COALESCE(show_full_inventory, TRUE) WHERE user_id = %s", (user_id,))
-            conn.commit()
-            conn.close()
-        bot.answer_callback_query(call.id, "✅ Режим відображення майна змінено!")
-        
-        call.data = 'prof_main_menu'
-        handle_profile_settings(call)
+        bot.answer_callback_query(call.id)
+        try:
+            handle_view_inventory_callback(call)
+        except Exception as e:
+            print(f"Помилка відкриття майна з налаштувань: {e}")
 
     # 3. Встановлення Нікнейму
     elif call.data == 'prof_set_nick':
@@ -550,7 +545,6 @@ def handle_profile_settings(call):
     # Закрити
     elif call.data == 'prof_close':
         bot.delete_message(call.message.chat.id, call.message.message_id)
-
 
 # -------------------------------------------------------------------
 # 🛠 ОБРОБНИКИ КРОКІВ (ВВІД ТЕКСТУ / ФОТО)
