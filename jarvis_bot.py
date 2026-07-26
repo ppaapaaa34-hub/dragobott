@@ -256,7 +256,7 @@ def safe_get_rank(msg_count):
 # ===================================================================
 
 # 🌐 URL твоєї Web App сторінки (заміни на своє реальне посилання)
-WEB_APP_URL = "https://your-username.github.io/my-drago-webapp/"
+WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 
 # Автоматична міграція БД, щоб уникнути помилки (Missing Column)
 def ensure_profile_columns():
