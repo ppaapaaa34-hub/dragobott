@@ -99,7 +99,7 @@ TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
 
 # 🌐 Посилання на твій Mini App
-WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
+WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/](https://ppaapaaa34-hub.github.io/dragobott/"
 # ======================================================
 
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
