@@ -249,13 +249,16 @@ def show_user_profile(message):
     if is_user_banned(message.from_user.id): return
 
     chat_id = message.chat.id
-    user = message.from_user
+    target_user = message.from_user
+    is_self = True
     
     if message.reply_to_message:
-        user = message.reply_to_message.from_user
+        target_user = message.reply_to_message.from_user
+        if target_user.id != message.from_user.id:
+            is_self = False
 
     bot.send_chat_action(chat_id, 'upload_photo')
-    ensure_user_in_db(user)
+    ensure_user_in_db(target_user)
     
     try:
         with db_lock:
@@ -263,17 +266,17 @@ def show_user_profile(message):
             with conn.cursor() as cursor:
                 # 1. Дані користувача з теми
                 cursor.execute("""
-                    SELECT count, balance, gender 
+                    SELECT count, balance, gender, custom_photo, custom_nick, show_full_inventory 
                     FROM stats WHERE user_id = %s
-                """, (user.id,))
+                """, (target_user.id,))
                 stats_res = cursor.fetchone()
                 
                 # 2. Інвентар
-                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user.id,))
+                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (target_user.id,))
                 inventory_res = cursor.fetchall()
 
                 # 3. Бізнеси
-                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (user.id,))
+                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (target_user.id,))
                 biz_res = cursor.fetchall()
                 
                 # 4. Шлюб
@@ -283,7 +286,7 @@ def show_user_profile(message):
                     JOIN stats s1 ON m.user1_id = s1.user_id
                     JOIN stats s2 ON m.user2_id = s2.user_id
                     WHERE m.user1_id = %s OR m.user2_id = %s
-                """, (user.id, user.id))
+                """, (target_user.id, target_user.id))
                 marriage_res = cursor.fetchone()
                 
             conn.close()
@@ -292,13 +295,17 @@ def show_user_profile(message):
         msg_count = stats_res[0] if stats_res and stats_res[0] else 0
         balance = stats_res[1] if stats_res and stats_res[1] else 0
         gender = stats_res[2] if stats_res and stats_res[2] else "Невідомо"
+        custom_photo = stats_res[3] if stats_res else None
+        custom_nick = stats_res[4] if stats_res else None
+        show_full_inv = stats_res[5] if stats_res and stats_res[5] is not None else True
 
-        # Ім'я та ранг
-        clean_name = user.first_name.replace("<", "&lt;").replace(">", "&gt;")
+        # Відображення імені (кастомне або первинне)
+        display_name = custom_nick if custom_nick else target_user.first_name
+        clean_name = display_name.replace("<", "&lt;").replace(">", "&gt;")
+        
         rank = safe_get_rank(msg_count)
         gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
 
-        # Словники-заглушки
         biz_dict = globals().get('BUSINESSES', {})
         shop_dict = globals().get('SHOP_ITEMS', {})
 
@@ -322,8 +329,11 @@ def show_user_profile(message):
                 b_name = biz_dict[b_code]["name"] if b_code in biz_dict else b_code.upper()
                 c_str = f" x{b_count}" if b_count > 1 else ""
                 biz_list.append(f"{b_name}{c_str}")
-            biz_text = ", ".join(biz_list)
-            if len(biz_text) > 100: biz_text = biz_text[:95] + "..."
+            
+            if show_full_inv:
+                biz_text = ", ".join(biz_list)
+            else:
+                biz_text = f"<b>{len(owned_biz_codes)} об'єктів</b> (приховано)"
 
         # 📦 Підрахунок МАЙНА
         total_property_value = 0
@@ -344,25 +354,28 @@ def show_user_profile(message):
                 i_name = item_names_map[code]
                 c_str = f" x{i_count}" if i_count > 1 else ""
                 property_list.append(f"{i_name}{c_str}")
-            property_text = ", ".join(property_list)
-            if len(property_text) > 100: property_text = property_text[:95] + "..."
+            
+            if show_full_inv:
+                property_text = ", ".join(property_list)
+                if len(property_text) > 120: property_text = property_text[:115] + "..."
+            else:
+                property_text = f"<b>{len(inventory_res)} предметів</b> (приховано)"
 
         # 💍 Шлюб
         if marriage_res:
             name1, name2, u1_id, u2_id = marriage_res
-            spouse_name = name2 if user.id == u1_id else name1
+            spouse_name = name2 if target_user.id == u1_id else name1
             marriage_status = f"💍 У шлюбі з <b>{spouse_name.replace('<', '&lt;').replace('>', '&gt;')}</b>"
         else:
             marriage_status = "🐺 Статус: <i>Самотній вовк</i>"
 
-        # Загальний капітал
         total_net_worth = balance + total_property_value + total_biz_value
 
-        # 📜 Формування картки
+        # 📜 Картка профілю
         profile_card = (
             f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
             f"───────────────────────\n"
-            f"{gender_icon} <b>Ранг у чаті:</b> <code>{rank}</code>\n"
+            f"{gender_icon} <b>Ранг:</b> <code>{rank}</code>\n"
             f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
             f"───────────────────────\n"
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>\n"
@@ -377,30 +390,169 @@ def show_user_profile(message):
             f"🚬 <i>База даних СБУ оновлена. Перевірку пройдено.</i>"
         )
 
-        # 📸 Стандартна аватарка з профілю Telegram
-        final_photo = None
-        try:
-            photos = bot.get_user_profile_photos(user.id, limit=1)
-            if photos and photos.total_count > 0:
-                final_photo = photos.photos[0][-1].file_id
-        except Exception:
-            pass
+        # 📸 Встановити аватарку (Кастомну або стандартну з ТГ)
+        final_photo = custom_photo
+        if not final_photo:
+            try:
+                photos = bot.get_user_profile_photos(target_user.id, limit=1)
+                if photos and photos.total_count > 0:
+                    final_photo = photos.photos[0][-1].file_id
+            except Exception:
+                pass
         
         if not final_photo:
             final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
 
-        # Відправка
+        # Кнопки для налаштування
+        markup = types.InlineKeyboardMarkup()
+        if is_self:
+            markup.add(types.InlineKeyboardButton("⚙️ Налаштувати профіль", callback_data=f"edit_profile_{target_user.id}"))
+
         bot.send_photo(
             chat_id, 
             photo=final_photo, 
             caption=profile_card, 
             parse_mode="HTML", 
+            reply_markup=markup,
             reply_to_message_id=message.message_id
         )
 
     except Exception as e:
         print(f"Помилка створення профілю: {e}")
         bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
+
+
+# ===================================================================
+# ⚙️ МЕНЮ НАЛАШТУВАННЯ ПРОФІЛЮ (INLINE)
+# ===================================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('edit_profile_') or call.data.startswith('prof_'))
+def handle_profile_settings(call):
+    user_id = call.from_user.id
+    
+    # Перевірка власника
+    if call.data.startswith('edit_profile_'):
+        owner_id = int(call.data.split('_')[2])
+        if user_id != owner_id:
+            bot.answer_callback_query(call.id, "⚠️ Це не твій профіль!", show_alert=True)
+            return
+
+    # Головне меню налаштувань
+    if call.data.startswith('edit_profile_') or call.data == 'prof_main_menu':
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✏️ Змінити Нік", callback_data="prof_set_nick"),
+            types.InlineKeyboardButton("🖼 Змінити Аватар", callback_data="prof_set_photo"),
+            types.InlineKeyboardButton("🔄 Скинути Аватар", callback_data="prof_reset_photo"),
+            types.InlineKeyboardButton("👤 Змінити Стать", callback_data="prof_set_gender"),
+            types.InlineKeyboardButton("👁 Вигляд майна", callback_data="prof_toggle_inv")
+        )
+        markup.add(types.InlineKeyboardButton("❌ Закрити", callback_data="prof_close"))
+
+        text = "⚙️ <b>НАЛАШТУВАННЯ ПРОФІЛЮ</b>\n\nОбери елемент, який хочеш змінити:"
+        
+        try:
+            bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption=text, parse_mode="HTML", reply_markup=markup)
+        except Exception:
+            bot.send_message(call.message.chat.id, text, parse_mode="HTML", reply_markup=markup)
+
+    # 1. Зміна статі
+    elif call.data == 'prof_set_gender':
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("🕺 Хлопець", callback_data="prof_gender_Хлопець"),
+            types.InlineKeyboardButton("💃 Дівчина", callback_data="prof_gender_Дівчина")
+        )
+        markup.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="prof_main_menu"))
+        bot.edit_message_caption(chat_id=call.message.chat.id, message_id=call.message.message_id, caption="Обери свою стать:", reply_markup=markup)
+
+    elif call.data.startswith('prof_gender_'):
+        new_gender = call.data.split('_')[2]
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (new_gender, user_id))
+            conn.commit()
+            conn.close()
+        bot.answer_callback_query(call.id, f"✅ Стать змінено на: {new_gender}")
+        handle_profile_settings(type('obj', (object,), {'data': 'prof_main_menu', 'from_user': call.from_user, 'message': call.message, 'id': call.id}))
+
+    # 2. Перемикач показу инвентаря
+    elif call.data == 'prof_toggle_inv':
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE stats SET show_full_inventory = NOT COALESCE(show_full_inventory, TRUE) WHERE user_id = %s", (user_id,))
+            conn.commit()
+            conn.close()
+        bot.answer_callback_query(call.id, "✅ Режим відображення майна змінено!")
+        handle_profile_settings(type('obj', (object,), {'data': 'prof_main_menu', 'from_user': call.from_user, 'message': call.message, 'id': call.id}))
+
+    # 3. Встановлення Нікнейму
+    elif call.data == 'prof_set_nick':
+        msg = bot.send_message(call.message.chat.id, "✏️ **Введи свій новий нікнейм** (до 20 символів або напиши `-`, щоб повернути стандартний):", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_nick_change)
+
+    # 4. Встановлення Аватарки
+    elif call.data == 'prof_set_photo':
+        msg = bot.send_message(call.message.chat.id, "🖼 **Надішли фотографію**, яку хочеш поставити на аватарку профілю:")
+        bot.register_next_step_handler(msg, process_photo_change)
+
+    # 5. Скидання Аватарки
+    elif call.data == 'prof_reset_photo':
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE stats SET custom_photo = NULL WHERE user_id = %s", (user_id,))
+            conn.commit()
+            conn.close()
+        bot.answer_callback_query(call.id, "✅ Аватарку скинуто до стандартної!", show_alert=True)
+
+    # Закрити
+    elif call.data == 'prof_close':
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+
+
+# -------------------------------------------------------------------
+# 🛠 ОБРОБНИКИ КРОКІВ (ВВІД ТЕКСТУ / ФОТО)
+# -------------------------------------------------------------------
+
+def process_nick_change(message):
+    if not message.text:
+        bot.reply_to(message, "❌ Це не текстове повідомлення.")
+        return
+
+    new_nick = message.text.strip()
+    if new_nick == "-":
+        new_nick = None
+    elif len(new_nick) > 20:
+        bot.reply_to(message, "❌ Нікнейм занадто довгий (максимум 20 символів).")
+        return
+
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE stats SET custom_nick = %s WHERE user_id = %s", (new_nick, message.from_user.id))
+        conn.commit()
+        conn.close()
+
+    bot.reply_to(message, "✅ **Нікнейм успішно оновлено!** Перевір свій `/профіль`.", parse_mode="Markdown")
+
+def process_photo_change(message):
+    if not message.photo:
+        bot.reply_to(message, "❌ Це не фотографія! Будь ласка, надішли зображення.")
+        return
+
+    file_id = message.photo[-1].file_id
+
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE stats SET custom_photo = %s WHERE user_id = %s", (file_id, message.from_user.id))
+        conn.commit()
+        conn.close()
+
+    bot.reply_to(message, "✅ **Нову аватарку встановлено!** Перевір свій `/профіль`.", parse_mode="Markdown")
 
 
 # ===================================================================
@@ -1944,82 +2096,6 @@ def show_inventory(message):
             except: pass
             
         bot.reply_to(message, f"❌ Помилка бази даних:\n<code>{error_details[:100]}</code>", parse_mode="HTML")
-
-
-# ===================================================================
-# 🔄 ЗМІНА ПОРЯДКУ БІЗНЕСІВ / ПРЕДМЕТІВ (/swap, /переставити)
-# ===================================================================
-@bot.message_handler(commands=['swap', 'переставити', 'порядок'])
-def swap_businesses(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split()
-
-    if len(args) < 3:
-        return bot.reply_to(
-            message, 
-            "⚠️ **Вкажи два номери бізнесів для зміни порядку!**\n"
-            "Приклад: `/swap 1 3` (поміняє 1-й та 3-й бізнес місцями)", 
-            parse_mode="Markdown"
-        )
-
-    try:
-        pos1 = int(args[1])
-        pos2 = int(args[2])
-    except ValueError:
-        return bot.reply_to(message, "❌ Номери мають бути цілими числами!")
-
-    if pos1 <= 0 or pos2 <= 0:
-        return bot.reply_to(message, "❌ Номери мають бути більшими за 0!")
-
-    if pos1 == pos2:
-        return bot.reply_to(message, "🤡 Ти вказав два однакових номери!")
-
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Отримуємо всі бізнеси користувача, впорядковані за поточним порядком
-                cursor.execute("""
-                    SELECT id, position 
-                    FROM user_businesses 
-                    WHERE user_id = %s 
-                    ORDER BY position ASC, id ASC
-                """, (user_id,))
-                items = cursor.fetchall()
-
-                if not items or len(items) < max(pos1, pos2):
-                    conn.close()
-                    return bot.reply_to(message, f"❌ У тебе немає бізнесу з номером `{max(pos1, pos2)}`!", parse_mode="Markdown")
-
-                # Нормалізуємо індекси (позиції в масиві з 0)
-                idx1 = pos1 - 1
-                idx2 = pos2 - 1
-
-                id1, current_pos1 = items[idx1][0], items[idx1][1]
-                id2, current_pos2 = items[idx2][0], items[idx2][1]
-
-                # Якщо позиції однакові (наприклад, нова колонка ще не заповнювалася), 
-                # задаємо їм явні індекси на основі їхнього поточного порядку в масиві
-                new_pos1 = idx2 + 1
-                new_pos2 = idx1 + 1
-
-                # Оновлюємо позиції елементів місцями
-                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (new_pos1, id1))
-                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (new_pos2, id2))
-
-                conn.commit()
-            conn.close()
-
-        bot.reply_to(
-            message, 
-            f"✅ **Порядок змінено!**\nБізнеси під №`{pos1}` та №`{pos2}` успішно помінялися місцями.", 
-            parse_mode="Markdown"
-        )
-
-    except Exception as e:
-        print(f"Помилка зміни порядку бізнесів: {e}")
-        bot.reply_to(message, "❌ Сталася помилка при зміні порядку.")
 
 
 # ===================================================================
