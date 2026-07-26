@@ -1520,7 +1520,11 @@ def show_family_bank(message):
 
 
 # 4. 📥 ПОПОВНЕННЯ СІМЕЙНОГО БАНКУ (/поповнити_банк [сума])
-@bot.message_handler(commands=['add_family_bank', 'поповнити_банк'])
+@bot.message_handler(func=lambda message: message.text and (
+    message.text.startswith('/поповнити_банк') or 
+    message.text.startswith('/add_family_bank') or
+    message.text.startswith('/пополнить_банк')
+))
 def add_family_bank(message):
     if is_user_banned(message.from_user.id): return
     user_id = message.from_user.id
@@ -1530,7 +1534,8 @@ def add_family_bank(message):
         bot.reply_to(message, "💔 Спочатку знайди собі пару!")
         return
 
-    args = message.text.split()
+    # Очищаємо текст від зайвих пробілів і розбиваємо
+    args = message.text.strip().split()
     if len(args) < 2:
         bot.reply_to(message, "❌ <b>Формат:</b> <code>/поповнити_банк 50000</code>", parse_mode="HTML")
         return
@@ -1538,7 +1543,7 @@ def add_family_bank(message):
     try:
         amount = int(args[1])
     except ValueError:
-        bot.reply_to(message, "❌ Сума має бути числом!")
+        bot.reply_to(message, "❌ Сума має бути цілим числом!")
         return
 
     if amount <= 0:
@@ -1553,24 +1558,20 @@ def add_family_bank(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Перевіряємо, чи існує банк для цієї пари, якщо ні — створюємо
                 cursor.execute("SELECT balance FROM shared_wallets WHERE pair_id = %s", (pair_key,))
                 if not cursor.fetchone():
                     cursor.execute("INSERT INTO shared_wallets (pair_id, balance) VALUES (%s, 0)", (pair_key,))
 
-                # Оновлюємо баланс спільного банку
                 cursor.execute("UPDATE shared_wallets SET balance = balance + %s WHERE pair_id = %s", (amount, pair_key))
                 conn.commit()
             conn.close()
 
-        # Знімаємо гроші з балансу користувача тільки після успішного оновлення банку
         update_user_balance(user_id, -amount)
-
         bot.reply_to(message, f"🏦 Ти успішно закинув <b>{amount:,} грн</b> у сімейний банк!", parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка поповнення банку: {e}")
-        bot.reply_to(message, f"❌ Помилка БД при поповненні банку: <code>{e}</code>", parse_mode="HTML")
+        bot.reply_to(message, f"❌ Помилка БД: <code>{e}</code>", parse_mode="HTML")
 
 
 # 5. 💔 РОЗЛУЧЕННЯ З ПОДІЛОМ МАЙНА/БАНКУ (/розлучення)
