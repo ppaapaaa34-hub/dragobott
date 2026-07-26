@@ -4628,8 +4628,12 @@ def handle_text(message):
     if chat_type in ['group', 'supergroup']:
         trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
         first_word = text.split()[0].lower() if text.split() else ""
+        
+        # Використовуємо кешоване або отримане ім'я бота
+        bot_username = bot.get_me().username
+        
         if (first_word in trigger_words
-                or f"@{bot.get_me().username}" in text
+                or f"@{bot_username}" in text
                 or (message.reply_to_message
                     and message.reply_to_message.from_user.id == bot.get_me().id)):
             is_mentioned = True
@@ -4692,6 +4696,7 @@ def handle_text(message):
                 pass
             send_voice_reply(chat_id, clean_text_for_speech, reply_to_id=message.message_id)
         else:
+            # Блок із безпечним редагуванням тексту без падінь через Markdown
             try:
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
             except Exception:
@@ -4722,4 +4727,3 @@ if __name__ == "__main__":
     
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query', 'web_app_data'])
-
