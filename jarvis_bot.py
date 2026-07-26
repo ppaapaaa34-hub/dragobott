@@ -1612,6 +1612,83 @@ def show_inventory(message):
             
         bot.reply_to(message, f"❌ Помилка бази даних:\n<code>{error_details[:100]}</code>", parse_mode="HTML")
 
+
+# ===================================================================
+# 🔄 ЗМІНА ПОРЯДКУ БІЗНЕСІВ / ПРЕДМЕТІВ (/swap, /переставити)
+# ===================================================================
+@bot.message_handler(commands=['swap', 'переставити', 'порядок'])
+def swap_businesses(message):
+    if is_user_banned(message.from_user.id): return
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) < 3:
+        return bot.reply_to(
+            message, 
+            "⚠️ **Вкажи два номери бізнесів для зміни порядку!**\n"
+            "Приклад: `/swap 1 3` (поміняє 1-й та 3-й бізнес місцями)", 
+            parse_mode="Markdown"
+        )
+
+    try:
+        pos1 = int(args[1])
+        pos2 = int(args[2])
+    except ValueError:
+        return bot.reply_to(message, "❌ Номери мають бути цілими числами!")
+
+    if pos1 <= 0 or pos2 <= 0:
+        return bot.reply_to(message, "❌ Номери мають бути більшими за 0!")
+
+    if pos1 == pos2:
+        return bot.reply_to(message, "🤡 Ти вказав два однакових номери!")
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                # Отримуємо всі бізнеси користувача, впорядковані за поточним порядком
+                cursor.execute("""
+                    SELECT id, position 
+                    FROM user_businesses 
+                    WHERE user_id = %s 
+                    ORDER BY position ASC, id ASC
+                """, (user_id,))
+                items = cursor.fetchall()
+
+                if not items or len(items) < max(pos1, pos2):
+                    conn.close()
+                    return bot.reply_to(message, f"❌ У тебе немає бізнесу з номером `{max(pos1, pos2)}`!", parse_mode="Markdown")
+
+                # Нормалізуємо індекси (позиції в масиві з 0)
+                idx1 = pos1 - 1
+                idx2 = pos2 - 1
+
+                id1, current_pos1 = items[idx1][0], items[idx1][1]
+                id2, current_pos2 = items[idx2][0], items[idx2][1]
+
+                # Якщо позиції однакові (наприклад, нова колонка ще не заповнювалася), 
+                # задаємо їм явні індекси на основі їхнього поточного порядку в масиві
+                new_pos1 = idx2 + 1
+                new_pos2 = idx1 + 1
+
+                # Оновлюємо позиції елементів місцями
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (new_pos1, id1))
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (new_pos2, id2))
+
+                conn.commit()
+            conn.close()
+
+        bot.reply_to(
+            message, 
+            f"✅ **Порядок змінено!**\nБізнеси під №`{pos1}` та №`{pos2}` успішно помінялися місцями.", 
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        print(f"Помилка зміни порядку бізнесів: {e}")
+        bot.reply_to(message, "❌ Сталася помилка при зміні порядку.")
+
+
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
