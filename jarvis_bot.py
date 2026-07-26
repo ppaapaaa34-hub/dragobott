@@ -247,13 +247,32 @@ def safe_get_rank(msg_count):
     return "Новачок 🐣"
 
 
-# -------------------------------------------------------------------
-# 🪪 2. ВІДОБРАЖЕННЯ ПРОФІЛЮ
-# -------------------------------------------------------------------
+# ===================================================================
+# 🪪 2. ВІДОБРАЖЕННЯ ТА НАЛАШТУВАННЯ ПРОФІЛЮ
+# ===================================================================
+
+# Автоматична миграція БД, щоб уникнути помилки (Missing Column)
+def ensure_profile_columns():
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS show_full_inventory BOOLEAN DEFAULT TRUE;")
+                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_photo TEXT DEFAULT NULL;")
+                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS custom_nick VARCHAR(20) DEFAULT NULL;")
+                cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS gender VARCHAR(20) DEFAULT 'Невідомо';")
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка ініціалізації полів профілю: {e}")
+
+ensure_profile_columns()
+
 
 @bot.message_handler(regexp=r'^[/#!]?(?:профіль|profile)(?:\s+|$)')
 def show_user_profile(message):
-    if is_user_banned(message.from_user.id): return
+    if is_user_banned(message.from_user.id): 
+        return
 
     chat_id = message.chat.id
     target_user = message.from_user
@@ -271,9 +290,15 @@ def show_user_profile(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # 1. Дані користувача з теми
+                # 1. Дані користувача з теми (з COALESCE для безпеки від NULL)
                 cursor.execute("""
-                    SELECT count, balance, gender, custom_photo, custom_nick, show_full_inventory 
+                    SELECT 
+                        COALESCE(count, 0), 
+                        COALESCE(balance, 0), 
+                        COALESCE(gender, 'Невідомо'), 
+                        custom_photo, 
+                        custom_nick, 
+                        COALESCE(show_full_inventory, TRUE) 
                     FROM stats WHERE user_id = %s
                 """, (target_user.id,))
                 stats_res = cursor.fetchone()
@@ -299,12 +324,12 @@ def show_user_profile(message):
             conn.close()
 
         # Розпаковка даних
-        msg_count = stats_res[0] if stats_res and stats_res[0] else 0
-        balance = stats_res[1] if stats_res and stats_res[1] else 0
-        gender = stats_res[2] if stats_res and stats_res[2] else "Невідомо"
+        msg_count = stats_res[0] if stats_res else 0
+        balance = stats_res[1] if stats_res else 0
+        gender = stats_res[2] if stats_res else "Невідомо"
         custom_photo = stats_res[3] if stats_res else None
         custom_nick = stats_res[4] if stats_res else None
-        show_full_inv = stats_res[5] if stats_res and stats_res[5] is not None else True
+        show_full_inv = stats_res[5] if stats_res else True
 
         # Відображення імені (кастомне або первинне)
         display_name = custom_nick if custom_nick else target_user.first_name
@@ -340,7 +365,7 @@ def show_user_profile(message):
             if show_full_inv:
                 biz_text = ", ".join(biz_list)
             else:
-                biz_text = f"<b>{len(owned_biz_codes)} об'єктів</b> (приховано)"
+                biz_text = f"<b>{len(owned_biz_codes)} об'єктів</b> <i>(приховано)</i>"
 
         # 📦 Підрахунок МАЙНА
         total_property_value = 0
@@ -364,9 +389,10 @@ def show_user_profile(message):
             
             if show_full_inv:
                 property_text = ", ".join(property_list)
-                if len(property_text) > 120: property_text = property_text[:115] + "..."
+                if len(property_text) > 120: 
+                    property_text = property_text[:115] + "..."
             else:
-                property_text = f"<b>{len(inventory_res)} предметів</b> (приховано)"
+                property_text = f"<b>{len(inventory_res)} предметів</b> <i>(приховано)</i>"
 
         # 💍 Шлюб
         if marriage_res:
@@ -441,8 +467,7 @@ def handle_profile_settings(call):
     if call.data.startswith('edit_profile_'):
         owner_id = int(call.data.split('_')[2])
         if user_id != owner_id:
-            bot.answer_callback_query(call.id, "⚠️ Це не твій профіль!", show_alert=True)
-            return
+            return bot.answer_callback_query(call.id, "⚠️ Це не твій профіль!", show_alert=True)
 
     # Головне меню налаштувань
     if call.data.startswith('edit_profile_') or call.data == 'prof_main_menu':
@@ -482,9 +507,12 @@ def handle_profile_settings(call):
             conn.commit()
             conn.close()
         bot.answer_callback_query(call.id, f"✅ Стать змінено на: {new_gender}")
-        handle_profile_settings(type('obj', (object,), {'data': 'prof_main_menu', 'from_user': call.from_user, 'message': call.message, 'id': call.id}))
+        
+        # Перехід назад в меню
+        call.data = 'prof_main_menu'
+        handle_profile_settings(call)
 
-    # 2. Перемикач показу инвентаря
+    # 2. Перемикач показу інвентаря
     elif call.data == 'prof_toggle_inv':
         with db_lock:
             conn = get_db_connection()
@@ -493,15 +521,19 @@ def handle_profile_settings(call):
             conn.commit()
             conn.close()
         bot.answer_callback_query(call.id, "✅ Режим відображення майна змінено!")
-        handle_profile_settings(type('obj', (object,), {'data': 'prof_main_menu', 'from_user': call.from_user, 'message': call.message, 'id': call.id}))
+        
+        call.data = 'prof_main_menu'
+        handle_profile_settings(call)
 
     # 3. Встановлення Нікнейму
     elif call.data == 'prof_set_nick':
+        bot.answer_callback_query(call.id)
         msg = bot.send_message(call.message.chat.id, "✏️ **Введи свій новий нікнейм** (до 20 символів або напиши `-`, щоб повернути стандартний):", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_nick_change)
 
     # 4. Встановлення Аватарки
     elif call.data == 'prof_set_photo':
+        bot.answer_callback_query(call.id)
         msg = bot.send_message(call.message.chat.id, "🖼 **Надішли фотографію**, яку хочеш поставити на аватарку профілю:")
         bot.register_next_step_handler(msg, process_photo_change)
 
@@ -526,15 +558,13 @@ def handle_profile_settings(call):
 
 def process_nick_change(message):
     if not message.text:
-        bot.reply_to(message, "❌ Це не текстове повідомлення.")
-        return
+        return bot.reply_to(message, "❌ Це не текстове повідомлення.")
 
     new_nick = message.text.strip()
     if new_nick == "-":
         new_nick = None
     elif len(new_nick) > 20:
-        bot.reply_to(message, "❌ Нікнейм занадто довгий (максимум 20 символів).")
-        return
+        return bot.reply_to(message, "❌ Нікнейм занадто довгий (максимум 20 символів).")
 
     with db_lock:
         conn = get_db_connection()
@@ -543,12 +573,12 @@ def process_nick_change(message):
         conn.commit()
         conn.close()
 
-    bot.reply_to(message, "✅ **Нікнейм успішно оновлено!** Перевір свій `/профіль`.", parse_mode="Markdown")
+    bot.reply_to(message, "✅ **Нікнейм успішно оновлено!** Напиши `профіль`, щоб перевірити.", parse_mode="Markdown")
+
 
 def process_photo_change(message):
     if not message.photo:
-        bot.reply_to(message, "❌ Це не фотографія! Будь ласка, надішли зображення.")
-        return
+        return bot.reply_to(message, "❌ Це не фотографія! Будь ласка, надішли зображення.")
 
     file_id = message.photo[-1].file_id
 
@@ -559,7 +589,7 @@ def process_photo_change(message):
         conn.commit()
         conn.close()
 
-    bot.reply_to(message, "✅ **Нову аватарку встановлено!** Перевір свій `/профіль`.", parse_mode="Markdown")
+    bot.reply_to(message, "✅ **Нову аватарку встановлено!** Напиши `профіль`, щоб перевірити.", parse_mode="Markdown")
 
 
 # ===================================================================
