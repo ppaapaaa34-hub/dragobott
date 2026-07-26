@@ -4509,6 +4509,64 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
 
 
 # ===================================================================
+# 📱 ОБРОБНИКИ MINI APP ТА ВІДКРИТТЯ ПРОФІЛЮ
+# ===================================================================
+
+@bot.message_handler(commands=['app', 'app_profile', 'профіль_app'])
+def open_profile_webapp(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    markup = types.InlineKeyboardMarkup()
+    
+    # В ЛС даємо пряму кнопку Web App, у групових чатах — перенаправлення в ЛС
+    if message.chat.type == 'private':
+        web_app_btn = types.InlineKeyboardButton(
+            text="📱 Відкрити Профіль (Mini App)",
+            web_app=types.WebAppInfo(url=WEB_APP_URL)
+        )
+    else:
+        bot_username = bot.get_me().username
+        web_app_btn = types.InlineKeyboardButton(
+            text="📱 Відкрити Mini App в ЛС",
+            url=f"https://t.me/{bot_username}?start=profile"
+        )
+        
+    markup.add(web_app_btn)
+    bot.reply_to(
+        message, 
+        "🚪 **Натисни кнопку нижче, щоб відкрити свій інтерактивний профіль:**", 
+        parse_mode="Markdown", 
+        reply_markup=markup
+    )
+
+# 📩 ОБРОБКА ДАНИХ, ЯКІ ПРИЙШЛИ З WEB APP (через tg.sendData)
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_data(message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        action = data.get("action")
+        user_id = message.from_user.id
+        
+        if action == "upgrade_lvl":
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET balance = balance - 1000 WHERE user_id = %s", (user_id,))
+                conn.commit()
+                conn.close()
+                
+            bot.reply_to(
+                message, 
+                "🚀 **Твій профіль успішно прокачано через Mini App!**", 
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        print(f"Помилка обробки WebApp: {e}")
+        bot.reply_to(message, "❌ Виникла помилка під час оновлення даних з Web App.")
+
+
+# ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
 @bot.message_handler(content_types=['text'])
@@ -4660,4 +4718,4 @@ if __name__ == "__main__":
     discord_thread.start()
     
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
-    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
+    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query', 'web_app_data'])
