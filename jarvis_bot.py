@@ -446,12 +446,22 @@ def show_user_profile(message):
         # 🔘 КНОПКИ ПІД ПРОФІЛЕМ
         markup = types.InlineKeyboardMarkup(row_width=1)
 
-        # 📱 Чиста та надійна Web App кнопка
-        web_app_btn = types.InlineKeyboardButton(
-            text="📱 Відкрити Профіль (Mini App)", 
-            web_app=types.WebAppInfo(url=WEB_APP_URL)
-        )
-        markup.add(web_app_btn)
+        # Перевірка: ЛС чи група
+        if message.chat.type == 'private':
+            # В особистих повідомленнях відкриваємо Mini App прямо з кнопки
+            web_app_btn = types.InlineKeyboardButton(
+                text="📱 Відкрити Профіль (Mini App)", 
+                web_app=types.WebAppInfo(url=WEB_APP_URL)
+            )
+            markup.add(web_app_btn)
+        else:
+            # У групі додаємо кнопку переходу в ЛС бота
+            bot_username = bot.get_me().username
+            pm_btn = types.InlineKeyboardButton(
+                text="📱 Відкрити Mini App в ЛС", 
+                url=f"https://t.me/{bot_username}?start=profile"
+            )
+            markup.add(pm_btn)
 
         # ⚙️ 2. Кнопка стандартних налаштувань (якщо це власний профіль)
         if is_self:
@@ -469,7 +479,6 @@ def show_user_profile(message):
     except Exception as e:
         print(f"Помилка створення профілю: {e}")
         bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
-
 
 # ===================================================================
 # ⚙️ МЕНЮ НАЛАШТУВАННЯ ПРОФІЛЮ (INLINE)
