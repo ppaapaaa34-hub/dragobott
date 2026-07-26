@@ -2338,11 +2338,14 @@ def search_and_send_music(message):
 
 @bot.message_handler(commands=['top', 'stats', 'топ'])
 def show_chat_activity(message):
-    if is_user_banned(message.from_user.id): return
+    if is_user_banned(message.from_user.id): 
+        return
+    
     chat_id = message.chat.id
     
     try:
         bot.send_chat_action(chat_id, 'typing')
+        
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
@@ -2370,17 +2373,16 @@ def show_chat_activity(message):
         # Іконки топу
         medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
-for idx, (name, count) in enumerate(rows):
-    icon = medals[idx] if idx < len(medals) else "🔹"
-    clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
-    percent = (count / total_messages * 100) if total_messages > 0 else 0
-    response.append(f"{icon} <b>{clean_name}</b> — <code>{count}</code> пов. (<i>{percent:.1f}%</i>)")
+        # Формування списку активності з правильними відступами
+        for idx, (name, count) in enumerate(rows):
+            icon = medals[idx] if idx < len(medals) else "🔹"
+            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
             
             # Вираховуємо відсоток від загальної кількості
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
             
-            # Чистий вивід у стилі Соняшника
-            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> <i>({percent:.1f}%)</i>")
+            # Форматований вивід у стилі Соняшника
+            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)")
 
         # Підвал
         response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
