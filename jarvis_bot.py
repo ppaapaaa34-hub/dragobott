@@ -5,12 +5,11 @@ import time
 import random
 import io
 import threading
-import json
-from telebot import types
 import asyncio
 import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
+import json
 from telebot import types
 import google.generativeai as genai
 from PIL import Image
