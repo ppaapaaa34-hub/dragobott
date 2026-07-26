@@ -4510,6 +4510,57 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
         print(f"Помилка аналізу фактів: {e}")
 
 # ===================================================================
+# 🌐 FLASK API ДЛЯ MINI APP (ОБРОБКА FETCH ЗАПИТІВ З GITHUB PAGES)
+# ===================================================================
+app = Flask(__name__)
+CORS(app)  # Дозволяє крос-доменні запити з GitHub Pages
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Drago API Server is Live!", 200
+
+# 1. Отримання статистики в Mini App з Neon DB
+@app.route('/api/get_stats', methods=['POST'])
+def api_get_stats():
+    try:
+        data = request.get_json() or {}
+        init_data = data.get('initData')
+        
+        # За замовчуванням (або витягни з бази Neon DB, якщо розпарсити initData)
+        level = 1
+        coins = 0
+
+        return jsonify({
+            "level": level,
+            "coins": coins
+        }), 200
+    except Exception as e:
+        print(f"Помилка /api/get_stats: {e}")
+        return jsonify({"error": "Помилка сервера"}), 500
+
+# 2. Прокачка навичок з Mini App
+@app.route('/api/upgrade', methods=['POST'])
+def api_upgrade():
+    try:
+        data = request.get_json() or {}
+        skill_id = data.get('skill_id')
+        
+        # Логіка списування монет і підвищення рівня
+        return jsonify({
+            "success": True,
+            "new_level": 2,
+            "new_coins": 100
+        }), 200
+    except Exception as e:
+        print(f"Помилка /api/upgrade: {e}")
+        return jsonify({"success": False, "message": "Помилка сервера"}), 500
+
+def run_flask_app():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+
+# ===================================================================
 # 📱 ОБРОБНИКИ MINI APP ТА ВІДКРИТТЯ ПРОФІЛЮ
 # ===================================================================
 
@@ -4631,7 +4682,6 @@ def handle_text(message):
         trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
         first_word = text.split()[0].lower() if text.split() else ""
         
-        # Використовуємо кешоване або отримане ім'я бота
         bot_username = bot.get_me().username
         
         if (first_word in trigger_words
@@ -4684,7 +4734,6 @@ def handle_text(message):
 
         chat = get_gemini_chat(chat_id)
         
-        # Передаємо ім'я юзера, контекст статі та збережені факти
         full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
         
         response = chat.send_message(full_prompt)
@@ -4698,7 +4747,6 @@ def handle_text(message):
                 pass
             send_voice_reply(chat_id, clean_text_for_speech, reply_to_id=message.message_id)
         else:
-            # Блок із безпечним редагуванням тексту без падінь через Markdown
             try:
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
             except Exception:
@@ -4720,9 +4768,10 @@ if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    # Запускаємо Flask API сервер замість dummy
+    server_thread = threading.Thread(target=run_flask_app, daemon=True)
     server_thread.start()
-    print("🚀 Dummy-сервер успішно запущено.")
+    print("🚀 Flask API сервер успішно запущено.")
 
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
