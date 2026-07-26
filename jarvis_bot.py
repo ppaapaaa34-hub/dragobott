@@ -3456,10 +3456,11 @@ def handle_photo(message):
 @bot.chat_member_handler()
 def handle_member_updates(message: types.ChatMemberUpdated):
     user = message.new_chat_member.user
-    
-    # 1. ЮЗЕР ЗАЙШОВ АБО ПОВЕРНУВСЯ
-    if (message.new_chat_member.status in ['member', 'administrator', 'restricted']
-            and not user.is_bot):
+    old_status = message.old_chat_member.status
+    new_status = message.new_chat_member.status
+
+    # 1. ЮЗЕР ДІЙСНО ЗАЙШОВ АБО ПОВЕРНУВСЯ В ЧАТ (з 'left' або 'kicked')
+    if old_status in ['left', 'kicked'] and new_status in ['member', 'administrator', 'restricted'] and not user.is_bot:
         gender = ensure_user_in_db(user)
         name = user.first_name
         
@@ -3480,11 +3481,11 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             greeting = f"Йо, <b>{name}</b>, вітаємо в чаті! 🤝\nРадий бачити тебе тут, бро!"
         else:
             greeting = f"Вітаємо в нашій групі, <b>{name}</b>! 🤍\nРозкажи трохи про себе!"
+            
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
-    # 2. ЮЗЕР ВИЙШОВ АБО ЙОГО ВИГНАЛИ
-    elif (message.old_chat_member.status in ['member', 'administrator', 'restricted']
-          and message.new_chat_member.status in ['left', 'kicked']):
+    # 2. ЮЗЕР ДІЙСНО ВИЙШОВ АБО ЙОГО ВИГНАЛИ
+    elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
         name = message.old_chat_member.user.first_name
         
         # ВИКРЕСЛЮЄМО З ТОПІВ
