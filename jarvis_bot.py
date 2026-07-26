@@ -1741,7 +1741,7 @@ SHOP_ITEMS = {
     "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"},
     "sub": {"name": " подводний човен (Субмарина)", "price": 180000000, "cat": "Люкс", "ai_desc": "black stealth submarine in ocean surface"},
     "island": {"name": "🏝️ Приватний острів на Карибах", "price": 500000000, "cat": "Люкс", "ai_desc": "exotic tropical private island with white beaches and palm trees"},
-    "stadium": {"name": "🏟️ Футбольний стадіон", "price": 1000000000, "cat": "Люкс", "ai_desc": "huge crowded illuminated football sports stadium at night"}
+    "stadium": {"name": "🏟️ Футбольный стадіон", "price": 1000000000, "cat": "Люкс", "ai_desc": "huge crowded illuminated football sports stadium at night"}
 }
 
 SHOP_ITEMS_PER_PAGE = 4
@@ -2030,7 +2030,7 @@ def transfer_money(message):
         print(f"Помилка переказу: {e}")
         bot.reply_to(message, f"❌ Помилка під час транзакції: <code>{str(e)[:100]}</code>", parse_mode="HTML")
 
-# 💼 👑 МАЙНО ТА ПРОФІЛЬ (/money, /balance, /майно, /гаманець, /баланс, /профіль)
+# 💼 👑 МАЙНО ТА ПРОФІЛЬ ТЕКСТОВОЮ КОМАНДОЮ (/money, /balance, /майно, /гаманець, /баланс, /профіль)
 @bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс', 'профіль', 'profile'])
 def show_inventory(message):
     if is_user_banned(message.from_user.id): return
@@ -2133,6 +2133,94 @@ def show_inventory(message):
             except: pass
             
         bot.reply_to(message, f"❌ Помилка бази даних:\n<code>{error_details[:100]}</code>", parse_mode="HTML")
+
+# 👁️ 🔘 НОВИЙ ХЕНДЛЕР: ОБРОБКА ІНЛАЙН-КНОПКИ "ВИГЛЯД МАЙНА" З НАЛАШТУВАНЬ
+@bot.callback_query_handler(func=lambda call: call.data in ['show_inventory', 'view_inventory', 'profile_inventory', 'майно'])
+def handle_view_inventory_callback(call):
+    if is_user_banned(call.from_user.id): return
+
+    bot.answer_callback_query(call.id)
+
+    user_id = call.from_user.id
+    user_name = call.from_user.first_name or "Користувач"
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
+                res = cursor.fetchone()
+                balance = res[0] if res else 0
+                
+                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (user_id,))
+                items = cursor.fetchall()
+            conn.close()
+            
+        clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
+        
+        response = [
+            f"👑 <b>ФІНАНСОВИЙ АУДІТ АКТИВІВ</b> 👑",
+            f"👤 <b>Власник:</b> {clean_name.upper()}\n",
+            f"────────────────────",
+            f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>",
+        ]
+        
+        if not items:
+            response.append(f"────────────────────")
+            response.append("🎰 <b>Статус:</b> <i>Повний голяк. Тільки шкарпетки й телефон, з якого ти пишеш. Бігом на заробітки! 🏃‍♂️</i>")
+            bot.send_message(call.message.chat.id, "\n".join(response), parse_mode="HTML")
+            return
+
+        total_property_value = 0
+        item_counts = {}
+        unique_codes = []
+        
+        for item in items:
+            code, name = item[0], item[1]
+            item_counts[name] = item_counts.get(name, 0) + 1
+            if code not in unique_codes:
+                unique_codes.append(code)
+            if code in SHOP_ITEMS:
+                total_property_value += SHOP_ITEMS[code].get("price", 0)
+        
+        response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
+        response.append(f"────────────────────")
+        response.append("📊 <b>СПИСОК ЗАРЕЄСТРОВАНОГО МАЙНА:</b>")
+        
+        for name, count in item_counts.items():
+            count_str = f" <code>[x{count}]</code>" if count > 1 else ""
+            response.append(f" ╰┈➤ {name}{count_str}")
+        
+        caption_text = "\n".join(response)
+
+        status_msg = bot.send_message(
+            call.message.chat.id, 
+            "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
+            parse_mode="HTML"
+        )
+
+        photo_bio = generate_inventory_ai_image(unique_codes)
+
+        if photo_bio:
+            try: bot.delete_message(call.message.chat.id, status_msg.message_id)
+            except: pass
+            
+            bot.send_photo(
+                call.message.chat.id, 
+                photo=photo_bio, 
+                caption=caption_text, 
+                parse_mode="HTML"
+            )
+        else:
+            bot.edit_message_text(
+                caption_text, 
+                chat_id=call.message.chat.id, 
+                message_id=status_msg.message_id, 
+                parse_mode="HTML"
+            )
+        
+    except Exception as e:
+        print(f"❌ Помилка кнопки майна: {e}")
 
 
 # ===================================================================
