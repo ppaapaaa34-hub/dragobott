@@ -853,7 +853,7 @@ def is_chat_admin(chat_id, user_id):
     3. Стандартний адмін Telegram-групи.
     """
     # 1. Глобальний адмін бота
-    if is_admin(user_id):
+    if is_admin(user_id):5512316636
         return True
 
     # 2. Перевірка динамічного модератора в БД
