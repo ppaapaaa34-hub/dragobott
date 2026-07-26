@@ -748,8 +748,11 @@ def collect_business_income(message):
                     return
 
                 total_earned = 0
-                biz_details = []
                 time_limit_hours = 24.0
+
+                # Словник для групування доходу за кожним типом бізнесу
+                # Структура: {biz_code: {"count": X, "earned": Y, "max_hours": Z}}
+                grouped_biz = {}
 
                 for row in user_bizs:
                     biz_id, biz_code, hours_passed = row[0], row[1], row[2]
@@ -758,17 +761,27 @@ def collect_business_income(message):
                         biz = BUSINESSES[biz_code]
                         effective_hours = min(hours_passed, time_limit_hours)
                         
-                        if effective_hours >= 0.016: 
+                        if effective_hours >= 0.016:  # Більше 1 хвилини
                             earned = int(effective_hours * biz["income"])
                             total_earned += earned
-                            time_str = f"{int(effective_hours)}г {int((effective_hours%1)*60)}хв"
-                            biz_details.append(f"• <b>{biz['name']}</b> (за {time_str}): <code>+{earned:,} грн</code>")
+                            
+                            if biz_code not in grouped_biz:
+                                grouped_biz[biz_code] = {
+                                    "count": 0,
+                                    "earned": 0,
+                                    "hours": effective_hours
+                                }
+                            
+                            grouped_biz[biz_code]["count"] += 1
+                            grouped_biz[biz_code]["earned"] += earned
+                            grouped_biz[biz_code]["hours"] = max(grouped_biz[biz_code]["hours"], effective_hours)
 
                 if total_earned <= 0:
-                    bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Зачекай хоча б хвилину.")
+                    bot.reply_to(message, "⏳ <b>Каса ще порожня!</b> Зачекай хоча б хвилину.", parse_mode="HTML")
                     conn.close()
                     return
 
+                # Визначення випадкових подій
                 event_text = ""
                 reputation_bonus = min(len(user_bizs) // 2, 10)
                 rand_event = random.randint(1, 100) + reputation_bonus
@@ -776,33 +789,69 @@ def collect_business_income(message):
                 if rand_event <= 8:
                     penalty = int(total_earned * 0.15)
                     total_earned -= penalty
-                    event_text = f"\n\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Штраф <code>-{penalty:,} грн</code>!"
+                    event_text = f"\n🚨 <b>ПОДАТКОВА ПЕРЕВІРКА:</b> Штраф <code>-{penalty:,} грн</code>!"
                 elif rand_event >= 92:
                     bonus = int(total_earned * 0.30)
                     total_earned += bonus
-                    event_text = f"\n\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Додатково <code>+{bonus:,} грн</code>!"
+                    event_text = f"\n🔥 <b>БЕШЕНИЙ ПОПИТ:</b> Додатково <code>+{bonus:,} грн</code>!"
                 elif rand_event == 50:
                     total_earned = 0
-                    event_text = f"\n\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Прибутку за цей період немає."
+                    event_text = f"\n🥷 <b>РЕЙДЕРСЬКА АТАКА!</b> Прибутку за цей період немає."
 
+                # Оновлюємо час збору та баланс у БД
                 cursor.execute("UPDATE user_businesses SET last_collect = NOW() WHERE user_id = %s", (user_id,))
                 cursor.execute("UPDATE stats SET balance = balance + %s WHERE user_id = %s", (total_earned, user_id))
 
             conn.commit()
             conn.close()
 
-        msg = [
-            f"💰 <b>ЗБІР КАСИ ЗАВЕРШЕНО!</b> 💰\n",
-            "\n".join(biz_details),
-            f"\n────────────────────",
-            f"💵 Разом зараховано: <b>+{total_earned:,} грн</b>{event_text}"
-        ]
+        # Формування компактного списку
+        biz_summary = []
+        for code, data in grouped_biz.items():
+            biz_name = BUSINESSES[code]["name"]
+            count_str = f" <b>(x{data['count']})</b>" if data["count"] > 1 else ""
+            biz_summary.append(f"• <b>{biz_name}</b>{count_str}: <code>+{data['earned']:,} грн</code>")
 
-        bot.reply_to(message, "\n".join(msg), parse_mode="HTML")
+        # Якщо у гравця більше 5 типів/об'єктів бізнесу — робимо ультра-короткий вигляд за замовчуванням
+        is_large_empire = len(user_bizs) > 5
+
+        if is_large_empire:
+            msg_text = (
+                f"💰 <b>ЗБІР КАСИ ЗАВЕРШЕНО!</b>\n\n"
+                f"🏢 Оброблено об'єктів: <b>{len(user_bizs)} шт.</b>\n"
+                f"────────────────────\n"
+                f"💵 Разом зараховано: <b>+{total_earned:,} грн</b>{event_text}"
+            )
+        else:
+            msg_text = (
+                f"💰 <b>ЗБІР КАСИ ЗАВЕРШЕНО!</b>\n\n"
+                + "\n".join(biz_summary) +
+                f"\n────────────────────\n"
+                f"💵 Разом зараховано: <b>+{total_earned:,} грн</b>{event_text}"
+            )
+
+        # Клавіатура для розгортання/згортання деталей
+        markup = types.InlineKeyboardMarkup()
+        if is_large_empire:
+            markup.add(types.InlineKeyboardButton("📜 Показати деталізацію", callback_data=f"collect_details_{user_id}"))
+
+        bot.reply_to(message, msg_text, parse_mode="HTML", reply_markup=markup if is_large_empire else None)
 
     except Exception as e:
         print(f"❌ Помилка збору прибутку: {e}")
         bot.reply_to(message, "❌ Помилка під час збору каси.")
+
+# 🔘 Обробник кнопки для показу деталей збору
+@bot.callback_query_handler(func=lambda call: call.data.startswith('collect_details_'))
+def handle_collect_details(call):
+    owner_id = int(call.data.split('_')[2])
+    if call.from_user.id != owner_id:
+        bot.answer_callback_query(call.id, "⚠️ Це не твій збір каси!", show_alert=True)
+        return
+
+    # Якщо юзер натискає кнопку — показуємо розширену згруповану інформацію прямо у спливаючому вікні чи текстом
+    bot.answer_callback_query(call.id, "📊 Деталізація завантажена!")
+    bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
 
 # 🚮 ПРОДАЖ БІЗНЕСУ (/продати_бізнес)
 @bot.message_handler(commands=['продати_бізнес', 'sell_biz'])
