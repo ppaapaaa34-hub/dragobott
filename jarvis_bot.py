@@ -821,6 +821,369 @@ def sell_business(message):
 
 
 # ===================================================================
+# 1. СТВОРЕННЯ ТАБЛИЦІ МОДЕРАТОРІВ В БД
+# ===================================================================
+def init_moderators_db():
+    """Створює таблицю модераторів у PostgreSQL, якщо її ще немає"""
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bot_moderators (
+                    user_id BIGINT PRIMARY KEY,
+                    added_by BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.commit()
+        conn.close()
+
+# Обов'язкова ініціалізація при запуску
+init_moderators_db()
+
+
+# ===================================================================
+# 2. ДОПОМІЖНІ ФУНКЦІЇ ТА ПЕРЕВІРКА ПРАВ
+# ===================================================================
+def is_chat_admin(chat_id, user_id):
+    """
+    Перевіряє 3 рівні доступу:
+    1. Суперадмін бота (ти через is_admin).
+    2. Призначений через /addmod модератор.
+    3. Стандартний адмін Telegram-групи.
+    """
+    # 1. Глобальний адмін бота
+    if is_admin(user_id):
+        return True
+
+    # 2. Перевірка динамічного модератора в БД
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM bot_moderators WHERE user_id = %s", (user_id,))
+                is_mod = cursor.fetchone()
+            conn.close()
+            if is_mod:
+                return True
+    except Exception as e:
+        print(f"Помилка перевірки модератора в БД: {e}")
+
+    # 3. Перевірка адміна в самому чаті
+    try:
+        member = bot.get_chat_member(chat_id, user_id)
+        return member.status in ['administrator', 'creator']
+    except Exception:
+        return False
+
+
+def parse_time(time_str):
+    """Парсить час для муту (наприклад: 10m, 2h, 1d) -> повертає секунди"""
+    unit = time_str[-1].lower()
+    if not time_str[:-1].isdigit():
+        return None
+    val = int(time_str[:-1])
+    if unit == 'm':
+        return val * 60
+    elif unit == 'h':
+        return val * 3600
+    elif unit == 'd':
+        return val * 86400
+    elif unit == 's':
+        return val
+    return None
+
+
+# ===================================================================
+# 3. КОМАНДИ КЕРУВАННЯ МОДЕРАТОРАМИ (ТІЛЬКИ ДЛЯ ТЕБЕ)
+# ===================================================================
+
+# ➕ Додати модератора (/addmod у відповідь або /addmod ID)
+@bot.message_handler(commands=['addmod'])
+def add_moderator(message):
+    if not is_admin(message.from_user.id):
+        return bot.reply_to(message, "❌ Цю команду може використовувати лише Творець бота!")
+
+    target_id = None
+    target_name = "Користувач"
+
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        target_name = message.reply_to_message.from_user.first_name
+    else:
+        args = message.text.split()
+        if len(args) > 1 and args[1].isdigit():
+            target_id = int(args[1])
+            target_name = f"ID: {target_id}"
+
+    if not target_id:
+        return bot.reply_to(
+            message, 
+            "⚠️ **Як використовувати:**\n"
+            "1. Відповіж командою `/addmod` на повідомлення користувача.\n"
+            "2. Або напиши: `/addmod [ID_користувача]`",
+            parse_mode="Markdown"
+        )
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO bot_moderators (user_id, added_by) 
+                    VALUES (%s, %s) 
+                    ON CONFLICT (user_id) DO NOTHING
+                """, (target_id, message.from_user.id))
+                conn.commit()
+            conn.close()
+
+        bot.reply_to(message, f"✅ **{target_name}** успішно отримав(ла) права модератора бота!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка БД: `{e}`", parse_mode="Markdown")
+
+
+# ➖ Забрати права модератора (/delmod у відповідь або /delmod ID)
+@bot.message_handler(commands=['delmod', 'rmmod'])
+def remove_moderator(message):
+    if not is_admin(message.from_user.id):
+        return bot.reply_to(message, "❌ Цю команду може використовувати лише Творець бота!")
+
+    target_id = None
+    target_name = "Користувач"
+
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        target_name = message.reply_to_message.from_user.first_name
+    else:
+        args = message.text.split()
+        if len(args) > 1 and args[1].isdigit():
+            target_id = int(args[1])
+            target_name = f"ID: {target_id}"
+
+    if not target_id:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення або вкажи ID!\nПриклад: `/delmod 12345678`", parse_mode="Markdown")
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM bot_moderators WHERE user_id = %s", (target_id,))
+                conn.commit()
+            conn.close()
+
+        bot.reply_to(message, f"🗑️ З **{target_name}** знято права модератора бота!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка БД: `{e}`", parse_mode="Markdown")
+
+
+# 📋 Список призначених модераторів (/modlist)
+@bot.message_handler(commands=['modlist', 'mods'])
+def list_moderators(message):
+    if not is_admin(message.from_user.id):
+        return bot.reply_to(message, "❌ Доступ заборонено!")
+
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, created_at FROM bot_moderators")
+                rows = cursor.fetchall()
+            conn.close()
+
+        if not rows:
+            return bot.reply_to(message, "📜 Список модераторів бота порожній.")
+
+        text = "🛡️ **Список призначених модераторів:**\n\n"
+        for idx, row in enumerate(rows, 1):
+            text += f"{idx}. `ID: {row[0]}` (додано: {row[1].strftime('%Y-%m-%d')})\n"
+
+        bot.reply_to(message, text, parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка отримання списку: `{e}`", parse_mode="Markdown")
+
+
+# ===================================================================
+# 4. КОМАНДИ МОДЕРАЦІЇ ЧАТУ (ДЛЯ ТЕБЕ ТА ПРИЗНАЧЕНИХ МОДЕРАТОРІВ)
+# ===================================================================
+
+# 🔇 МУТ
+@bot.message_handler(commands=['mute'])
+def mute_user(message):
+    if message.chat.type == 'private':
+        return bot.reply_to(message, "⚠️ Ця команда працює лише в групах!")
+
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення порушника!\nПриклад: `/mute 30m спам`", parse_mode="Markdown")
+
+    target_user = message.reply_to_message.from_user
+    if is_chat_admin(message.chat.id, target_user.id):
+        return bot.reply_to(message, "🛡️ Не можна замутити адміна/модератора!")
+
+    args = message.text.split(maxsplit=2)
+    duration_sec = 600  # Дефолтний мут: 10 хвилин
+    reason = "Порушення правил чату"
+
+    if len(args) > 1:
+        parsed_sec = parse_time(args[1])
+        if parsed_sec:
+            duration_sec = parsed_sec
+            if len(args) > 2:
+                reason = args[2]
+        else:
+            reason = " ".join(args[1:])
+
+    until_date = int(time.time()) + duration_sec
+
+    try:
+        bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=target_user.id,
+            until_date=until_date,
+            permissions=telebot.types.ChatPermissions(can_send_messages=False)
+        )
+        bot.reply_to(
+            message,
+            f"🔇 Користувача **{target_user.first_name}** замучено на **{duration_sec // 60} хв.**\n📝 **Причина:** {reason}",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка муту (перевірте права бота): `{e}`", parse_mode="Markdown")
+
+
+# 🔊 РОЗМУТ
+@bot.message_handler(commands=['unmute'])
+def unmute_user(message):
+    if message.chat.type == 'private': return
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення користувача, якого треба розмутити!")
+
+    target_user = message.reply_to_message.from_user
+
+    try:
+        bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=target_user.id,
+            permissions=telebot.types.ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True
+            )
+        )
+        bot.reply_to(message, f"🔊 З користувача **{target_user.first_name}** знято мут!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка розмуту: `{e}`", parse_mode="Markdown")
+
+
+# 🔨 БАН
+@bot.message_handler(commands=['ban'])
+def ban_user(message):
+    if message.chat.type == 'private': return
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення порушника для бану!")
+
+    target_user = message.reply_to_message.from_user
+    if is_chat_admin(message.chat.id, target_user.id):
+        return bot.reply_to(message, "🛡️ Не можна забанити адміна/модератора!")
+
+    args = message.text.split(maxsplit=1)
+    reason = args[1] if len(args) > 1 else "Не вказана"
+
+    try:
+        bot.ban_chat_member(message.chat.id, target_user.id)
+        bot.reply_to(
+            message, 
+            f"🔨 Користувача **{target_user.first_name}** забанено!\n📝 **Причина:** {reason}", 
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка бану: `{e}`", parse_mode="Markdown")
+
+
+# 🔓 РОЗБАН
+@bot.message_handler(commands=['unban'])
+def unban_user(message):
+    if message.chat.type == 'private': return
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення користувача для розбану!")
+
+    target_user = message.reply_to_message.from_user
+
+    try:
+        bot.unban_chat_member(message.chat.id, target_user.id, only_if_banned=True)
+        bot.reply_to(message, f"✅ Користувача **{target_user.first_name}** розбанено!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка розбану: `{e}`", parse_mode="Markdown")
+
+
+# 👞 КІК
+@bot.message_handler(commands=['kick'])
+def kick_user(message):
+    if message.chat.type == 'private': return
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення того, кого треба вигнати!")
+
+    target_user = message.reply_to_message.from_user
+    if is_chat_admin(message.chat.id, target_user.id):
+        return bot.reply_to(message, "🛡️ Не можна вигнати адміна/модератора!")
+
+    try:
+        bot.ban_chat_member(message.chat.id, target_user.id)
+        bot.unban_chat_member(message.chat.id, target_user.id)
+        bot.reply_to(message, f"👞 Користувач **{target_user.first_name}** вигнаний з чату!", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка кіку: `{e}`", parse_mode="Markdown")
+
+
+# 🧹 ОЧИЩЕННЯ ПОВІДОМЛЕНЬ (/clear 10)
+@bot.message_handler(commands=['clear', 'purge'])
+def clear_messages(message):
+    if message.chat.type == 'private': return
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    args = message.text.split()
+    if len(args) < 2 or not args[1].isdigit():
+        return bot.reply_to(message, "⚠️ Вкажи кількість повідомлень.\nПриклад: `/clear 15`", parse_mode="Markdown")
+
+    count = int(args[1])
+    if count > 100:
+        count = 100  # Обмеження Telegram API
+
+    current_id = message.message_id
+    deleted = 0
+
+    for i in range(count + 1):
+        try:
+            bot.delete_message(message.chat.id, current_id - i)
+            deleted += 1
+        except Exception:
+            pass
+
+    temp_msg = bot.send_message(message.chat.id, f"🧹 Успішно видалено **{deleted}** повідомлень!", parse_mode="Markdown")
+    time.sleep(3)
+    try:
+        bot.delete_message(message.chat.id, temp_msg.message_id)
+    except Exception:
+        pass
+        
+
+# ===================================================================
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
 
