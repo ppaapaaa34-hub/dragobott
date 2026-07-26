@@ -4570,7 +4570,7 @@ CORS(app)  # Дозволяє запити з веб-інтерфейсу (GitHu
 def home():
     return "Drago Server is Live!", 200
 
-# 1. Отримання ПОВНОГО профілю в Mini App
+# 1. Отримання ПОВНОГО профілю в Mini App (включаючи бізнеси)
 @app.route('/api/get_stats', methods=['POST'])
 def api_get_stats():
     try:
@@ -4585,11 +4585,12 @@ def api_get_stats():
         gender = "Невідомо"
         user_name = "Гравець"
         items = []
+        businesses = []
 
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Зчитуємо статистику користувача з БД
+                # Зчитуємо статистику користувача
                 cursor.execute(
                     "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
                     (user_id,)
@@ -4601,7 +4602,7 @@ def api_get_stats():
                     msg_count = res[2] or 0
                     gender = res[3] or "Невідомо"
 
-                # Зчитуємо майно / інвентар користувача
+                # Зчитуємо інвентар / майно
                 try:
                     cursor.execute(
                         "SELECT item_name FROM inventory WHERE user_id = %s", 
@@ -4611,11 +4612,22 @@ def api_get_stats():
                     if inventory_res:
                         items = [row[0] for row in inventory_res]
                 except Exception as inv_err:
-                    print(f"Попередження (інвентар не зчитано або таблиця відсутня): {inv_err}")
+                    print(f"Попередження (інвентар): {inv_err}")
+
+                # Зчитуємо бізнеси користувача
+                try:
+                    cursor.execute(
+                        "SELECT business_name FROM businesses WHERE user_id = %s", 
+                        (user_id,)
+                    )
+                    biz_res = cursor.fetchall()
+                    if biz_res:
+                        businesses = [row[0] for row in biz_res]
+                except Exception as biz_err:
+                    print(f"Попередження (бізнеси): {biz_err}")
 
             conn.close()
 
-        # Розрахунок рівня (наприклад: 1 рівень за кожні 50 повідомлень)
         level = max(1, msg_count // 50 + 1)
 
         return jsonify({
@@ -4625,7 +4637,8 @@ def api_get_stats():
             "msg_count": msg_count,
             "gender": gender,
             "level": level,
-            "items": items
+            "items": items,
+            "businesses": businesses
         }), 200
 
     except Exception as e:
@@ -4673,7 +4686,6 @@ def api_update_inventory_order():
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Перезаписуємо інвентар у новому порядку
                 cursor.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
                 for item in items:
                     cursor.execute(
@@ -4686,6 +4698,34 @@ def api_update_inventory_order():
         return jsonify({"success": True}), 200
     except Exception as e:
         print(f"Помилка /api/update_inventory_order: {e}")
+        return jsonify({"success": False, "message": "Помилка сервера"}), 500
+
+# 4. Збереження нового порядку бізнесів
+@app.route('/api/update_businesses_order', methods=['POST'])
+def api_update_businesses_order():
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id')
+        businesses = data.get('businesses', [])
+
+        if not user_id:
+            return jsonify({"success": False, "message": "Відсутній user_id"}), 400
+
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM businesses WHERE user_id = %s", (user_id,))
+                for biz in businesses:
+                    cursor.execute(
+                        "INSERT INTO businesses (user_id, business_name) VALUES (%s, %s)",
+                        (user_id, biz)
+                    )
+            conn.commit()
+            conn.close()
+
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        print(f"Помилка /api/update_businesses_order: {e}")
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
 
 def run_flask_app():
