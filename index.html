@@ -447,7 +447,43 @@ window.switchTab = function(tabName, element) {
     document.getElementById(`tab-${tabName}`).classList.add('active');
     element.classList.add('active');
 }
+// Збереження даних у пам'ять браузера
+function saveProgress() {
+    const data = {
+        money,
+        tapPower,
+        energy,
+        passiveIncome,
+        cards
+    };
+    localStorage.setItem("drago_tap_save", JSON.stringify(data));
+}
 
+// Завантаження даних при відкритті
+function loadProgress() {
+    const saved = localStorage.getItem("drago_tap_save");
+    if (saved) {
+        const data = JSON.parse(saved);
+        money = data.money || 0;
+        tapPower = data.tapPower || 1;
+        energy = data.energy || 1000;
+        passiveIncome = data.passiveIncome || 0;
+        if (data.cards) {
+            data.cards.forEach((savedCard, i) => {
+                if (cards[i]) {
+                    cards[i].lvl = savedCard.lvl;
+                    cards[i].cost = savedCard.cost;
+                }
+            });
+        }
+    }
+}
+
+// Виклич завантаження на самому початку, а збереження — кожні 5 секунд
+loadProgress();
+setInterval(saveProgress, 5000);
+
+    
 // Перший запуск
 updateUI();
 </script>
