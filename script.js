@@ -1,5 +1,5 @@
 // ⚠️ Замініть на ваше актуальне посилання з Render (наприклад: https://drago-backend.onrender.com)
-const SERVER_URL = "https://your-render-app-name.onrender.com";
+const SERVER_URL = "https://dragobott.onrender.com";
 
 // ==================== ДАНІ КОРИСТУВАЧА ТА АДМІНКИ ====================
 let userTelegramId = 5512316636;
