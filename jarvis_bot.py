@@ -2307,7 +2307,7 @@ def show_inventory(message):
         clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
         
         response = [
-            f"👑 <b>ФІНАНСОВИЙ АУДІТ АКТИВІВ</b> 👑",
+            f"👑 <b>ФІНАНСОВИЙ АУДИТ АКТИВІВ</b> 👑",
             f"👤 <b>Власник:</b> {clean_name.upper()}\n",
             f"────────────────────",
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>",
@@ -2330,7 +2330,7 @@ def show_inventory(message):
             item_counts[name] = item_counts.get(name, 0) + 1
             if code not in unique_codes:
                 unique_codes.append(code)
-            if code in SHOP_ITEMS:
+            if 'SHOP_ITEMS' in globals() and code in SHOP_ITEMS:
                 total_property_value += SHOP_ITEMS[code].get("price", 0)
         
         response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
@@ -2349,7 +2349,9 @@ def show_inventory(message):
             parse_mode="HTML"
         )
 
-        photo_bio = generate_inventory_ai_image(unique_codes)
+        # 🔹 БЕРЕМО ЛИШЕ ПЕРШІ 3 ПРЕДМЕТИ ДЛЯ ГЕНЕРАЦІЇ 🔹
+        top_3_codes = unique_codes[:3]
+        photo_bio = generate_inventory_ai_image(top_3_codes)
 
         if photo_bio:
             try: bot.delete_message(message.chat.id, status_msg.message_id)
@@ -2412,7 +2414,7 @@ def handle_view_inventory_callback(call):
         clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
         
         response = [
-            f"👑 <b>ФІНАНСОВИЙ АУДІТ АКТИВІВ</b> 👑",
+            f"👑 <b>ФІНАНСОВИЙ АУДИТ АКТИВІВ</b> 👑",
             f"👤 <b>Власник:</b> {clean_name.upper()}\n",
             f"────────────────────",
             f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>",
@@ -2433,7 +2435,7 @@ def handle_view_inventory_callback(call):
             item_counts[name] = item_counts.get(name, 0) + 1
             if code not in unique_codes:
                 unique_codes.append(code)
-            if code in SHOP_ITEMS:
+            if 'SHOP_ITEMS' in globals() and code in SHOP_ITEMS:
                 total_property_value += SHOP_ITEMS[code].get("price", 0)
         
         response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
@@ -2452,7 +2454,9 @@ def handle_view_inventory_callback(call):
             parse_mode="HTML"
         )
 
-        photo_bio = generate_inventory_ai_image(unique_codes)
+        # 🔹 БЕРЕМО ЛИШЕ ПЕРШІ 3 ПРЕДМЕТИ ДЛЯ ГЕНЕРАЦІЇ 🔹
+        top_3_codes = unique_codes[:3]
+        photo_bio = generate_inventory_ai_image(top_3_codes)
 
         if photo_bio:
             try: bot.delete_message(call.message.chat.id, status_msg.message_id)
