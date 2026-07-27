@@ -448,16 +448,6 @@ def ensure_user_in_db(user):
     except Exception as e:
         print(f"Помилка ensure_user_in_db: {e}")
 
-def safe_get_rank(msg_count):
-    """Резервний підрахунок рангу, якщо немає зовнішньої get_rank_title"""
-    if 'get_rank_title' in globals():
-        return get_rank_title(msg_count)
-    
-    if msg_count > 1000: return "Місцева Легенда 👑"
-    if msg_count > 500: return "Завзятий Дописувач 🔥"
-    if msg_count > 100: return "Чатер 💬"
-    return "Новачок 🐣"
-
 
 # ===================================================================
 # 🪪 2. ВІДОБРАЖЕННЯ ТА НАЛАШТУВАННЯ ПРОФІЛЮ
