@@ -2019,7 +2019,7 @@ def build_shop_page(page=0):
 def generate_inventory_ai_image(bought_codes):
     if not bought_codes:
         return None
-        
+
     ai_descriptions = []
     for code in bought_codes:
         if code in SHOP_ITEMS and "ai_desc" in SHOP_ITEMS[code]:
@@ -2029,40 +2029,40 @@ def generate_inventory_ai_image(bought_codes):
 
     if not ai_descriptions:
         return None
-        
-   # Беремо тільки перші 3 предмети
-selected_items = ai_descriptions[:3]
 
-items_prompt = " and ".join(selected_items)
+    # Беремо тільки перші 3 предмети
+    selected_items = ai_descriptions[:3]
 
-full_prompt = (
-    f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
-    "All listed objects must be clearly visible in one scene. "
-    "Do not add other objects. "
-    "Photorealistic, 8k, ultra detailed."
-)
-    
+    items_prompt = " and ".join(selected_items)
+
+    full_prompt = (
+        f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
+        "All listed objects must be clearly visible in one scene. "
+        "Do not add other objects. "
+        "Photorealistic, 8k, ultra detailed."
+    )
+
     try:
         encoded_prompt = requests.utils.quote(full_prompt)
         seed = random.randint(1, 999999)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
-        
-        # Ставимо таймаут 15 сек, щоб бот не подвисав занадто довго
+
         response = requests.get(image_url, timeout=15)
-        
+
         if response.status_code == 200:
-            if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
+            if "image" not in response.headers.get("Content-Type", ""):
                 return None
-                
+
             img = Image.open(io.BytesIO(response.content)).convert("RGB")
             bio = io.BytesIO()
-            bio.name = 'inventory_art.jpg'
-            img.save(bio, 'JPEG', quality=90)
+            bio.name = "inventory_art.jpg"
+            img.save(bio, "JPEG", quality=90)
             bio.seek(0)
             return bio
+
     except Exception as e:
         print(f"⚠️ Помилка генерації AI майна: {e}")
-        
+
     return None
 
 # 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (РЕДАКТОР/ВІДПОВІДЬ)
