@@ -4471,47 +4471,48 @@ def api_get_stats():
 
         with db_lock:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Зчитуємо статистику користувача
-                try:
-                    cursor.execute(
-                        "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
-                        (user_id,)
-                    )
-                    res = cursor.fetchone()
-                    if res:
-                        user_name = res[0] or user_name
-                        balance = res[1] or 0
-                        msg_count = res[2] or 0
-                        gender = res[3] or "Невідомо"
-                except Exception as e:
-                    print(f"Помилка stats: {e}")
+            try:
+                with conn.cursor() as cursor:
+                    # Зчитуємо статистику користувача
+                    try:
+                        cursor.execute(
+                            "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
+                            (user_id,)
+                        )
+                        res = cursor.fetchone()
+                        if res:
+                            user_name = res[0] or user_name
+                            balance = res[1] or 0
+                            msg_count = res[2] or 0
+                            gender = res[3] or "Невідомо"
+                    except Exception as e:
+                        print(f"Помилка stats: {e}")
 
-                # Зчитуємо інвентар / майно
-                try:
-                    cursor.execute(
-                        "SELECT item_name FROM inventory WHERE user_id = %s", 
-                        (user_id,)
-                    )
-                    inventory_res = cursor.fetchall()
-                    if inventory_res:
-                        items = [row[0] for row in inventory_res]
-                except Exception as inv_err:
-                    print(f"Попередження (інвентар): {inv_err}")
+                    # Зчитуємо інвентар / майно (з сортуванням по id)
+                    try:
+                        cursor.execute(
+                            "SELECT item_name FROM inventory WHERE user_id = %s ORDER BY id ASC", 
+                            (user_id,)
+                        )
+                        inventory_res = cursor.fetchall()
+                        if inventory_res:
+                            items = [row[0] for row in inventory_res]
+                    except Exception as inv_err:
+                        print(f"Попередження (інвентар): {inv_err}")
 
-                # Зчитуємо бізнеси користувача
-                try:
-                    cursor.execute(
-                        "SELECT business_name FROM businesses WHERE user_id = %s", 
-                        (user_id,)
-                    )
-                    biz_res = cursor.fetchall()
-                    if biz_res:
-                        businesses = [row[0] for row in biz_res]
-                except Exception as biz_err:
-                    print(f"Попередження (бізнеси): {biz_err}")
-
-            conn.close()
+                    # Зчитуємо бізнеси користувача (з сортуванням по id)
+                    try:
+                        cursor.execute(
+                            "SELECT business_name FROM businesses WHERE user_id = %s ORDER BY id ASC", 
+                            (user_id,)
+                        )
+                        biz_res = cursor.fetchall()
+                        if biz_res:
+                            businesses = [row[0] for row in biz_res]
+                    except Exception as biz_err:
+                        print(f"Попередження (бізнеси): {biz_err}")
+            finally:
+                conn.close()  # Закриваємо з'єднання в будь-якому випадку
 
         level = max(1, msg_count // 50 + 1)
 
@@ -4544,15 +4545,17 @@ def api_update_profile():
 
         with db_lock:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE stats SET name = %s, gender = %s WHERE user_id = %s",
-                    (new_name, new_gender, user_id)
-                )
-            conn.commit()
-            conn.close()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE stats SET name = %s, gender = %s WHERE user_id = %s",
+                        (new_name, new_gender, user_id)
+                    )
+                conn.commit()
+            finally:
+                conn.close()
 
-        return jsonify({"success": True, "message": "Профіль оновлено!"}), 200
+        return jsonify({"success": True, "status": "success", "message": "Профіль оновлено!"}), 200
     except Exception as e:
         print(f"Помилка /api/update_profile: {e}")
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
@@ -4570,17 +4573,19 @@ def api_update_inventory_order():
 
         with db_lock:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
-                for item in items:
-                    cursor.execute(
-                        "INSERT INTO inventory (user_id, item_name) VALUES (%s, %s)",
-                        (user_id, item)
-                    )
-            conn.commit()
-            conn.close()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
+                    for item in items:
+                        cursor.execute(
+                            "INSERT INTO inventory (user_id, item_name) VALUES (%s, %s)",
+                            (user_id, item)
+                        )
+                conn.commit()
+            finally:
+                conn.close()
 
-        return jsonify({"success": True}), 200
+        return jsonify({"success": True, "status": "success"}), 200
     except Exception as e:
         print(f"Помилка /api/update_inventory_order: {e}")
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
@@ -4598,17 +4603,19 @@ def api_update_businesses_order():
 
         with db_lock:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM businesses WHERE user_id = %s", (user_id,))
-                for biz in businesses:
-                    cursor.execute(
-                        "INSERT INTO businesses (user_id, business_name) VALUES (%s, %s)",
-                        (user_id, biz)
-                    )
-            conn.commit()
-            conn.close()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM businesses WHERE user_id = %s", (user_id,))
+                    for biz in businesses:
+                        cursor.execute(
+                            "INSERT INTO businesses (user_id, business_name) VALUES (%s, %s)",
+                            (user_id, biz)
+                        )
+                conn.commit()
+            finally:
+                conn.close()
 
-        return jsonify({"success": True}), 200
+        return jsonify({"success": True, "status": "success"}), 200
     except Exception as e:
         print(f"Помилка /api/update_businesses_order: {e}")
         return jsonify({"success": False, "message": "Помилка сервера"}), 500
@@ -4616,7 +4623,6 @@ def api_update_businesses_order():
 def run_flask_app():
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
 
 # ===================================================================
 # 📱 ОБРОБНИКИ MINI APP ТА ВІДКРИТТЯ ПРОФІЛЮ
