@@ -4509,68 +4509,18 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
     except Exception as e:
         print(f"Помилка аналізу фактів: {e}")
 
-# ===================================================================
-# 🌐 FLASK API ДЛЯ MINI APP (ОБРОБКА FETCH ЗАПИТІВ З GITHUB PAGES)
-# ===================================================================
-app = Flask(__name__)
-CORS(app)  # Дозволяє крос-доменні запити з GitHub Pages
-
-@app.route('/', methods=['GET'])
-def home():
-    return "Drago API Server is Live!", 200
-
-# 1. Отримання статистики в Mini App з Neon DB
-@app.route('/api/get_stats', methods=['POST'])
-def api_get_stats():
-    try:
-        data = request.get_json() or {}
-        init_data = data.get('initData')
-        
-        # За замовчуванням (або витягни з бази Neon DB, якщо розпарсити initData)
-        level = 1
-        coins = 0
-
-        return jsonify({
-            "level": level,
-            "coins": coins
-        }), 200
-    except Exception as e:
-        print(f"Помилка /api/get_stats: {e}")
-        return jsonify({"error": "Помилка сервера"}), 500
-
-# 2. Прокачка навичок з Mini App
-@app.route('/api/upgrade', methods=['POST'])
-def api_upgrade():
-    try:
-        data = request.get_json() or {}
-        skill_id = data.get('skill_id')
-        
-        # Логіка списування монет і підвищення рівня
-        return jsonify({
-            "success": True,
-            "new_level": 2,
-            "new_coins": 100
-        }), 200
-    except Exception as e:
-        print(f"Помилка /api/upgrade: {e}")
-        return jsonify({"success": False, "message": "Помилка сервера"}), 500
-
-def run_flask_app():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
 
 # ===================================================================
 # 🌐 FLASK API ДЛЯ MINI APP (ОБРОБКА FETCH ЗАПИТІВ З GITHUB PAGES)
 # ===================================================================
 app = Flask(__name__)
-CORS(app)  # Дозволяє запити з веб-інтерфейсу (GitHub Pages)
+CORS(app, resources={r"/api/*": {"origins": "*"}})  # Дозволяємо крос-доменні запити з GitHub Pages
 
 @app.route('/', methods=['GET'])
 def home():
     return "Drago Server is Live!", 200
 
-# 1. Отримання ПОВНОГО профілю в Mini App (включаючи бізнеси)
+# 1. Отримання ПОВНОГО профілю в Mini App (включаючи бізнеси та інвентар)
 @app.route('/api/get_stats', methods=['POST'])
 def api_get_stats():
     try:
@@ -4591,16 +4541,19 @@ def api_get_stats():
             conn = get_db_connection()
             with conn.cursor() as cursor:
                 # Зчитуємо статистику користувача
-                cursor.execute(
-                    "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
-                    (user_id,)
-                )
-                res = cursor.fetchone()
-                if res:
-                    user_name = res[0] or user_name
-                    balance = res[1] or 0
-                    msg_count = res[2] or 0
-                    gender = res[3] or "Невідомо"
+                try:
+                    cursor.execute(
+                        "SELECT name, balance, count, gender FROM stats WHERE user_id = %s", 
+                        (user_id,)
+                    )
+                    res = cursor.fetchone()
+                    if res:
+                        user_name = res[0] or user_name
+                        balance = res[1] or 0
+                        msg_count = res[2] or 0
+                        gender = res[3] or "Невідомо"
+                except Exception as e:
+                    print(f"Помилка stats: {e}")
 
                 # Зчитуємо інвентар / майно
                 try:
@@ -4643,7 +4596,7 @@ def api_get_stats():
 
     except Exception as e:
         print(f"Помилка /api/get_stats: {e}")
-        return jsonify({"error": "Помилка сервера"}), 500
+        return jsonify({"error": str(e)}), 500
 
 # 2. Оновлення даних профілю (нікнейм та стать)
 @app.route('/api/update_profile', methods=['POST'])
@@ -4907,7 +4860,7 @@ def handle_text(message):
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
             except Exception:
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
-            
+        
     except Exception as e:
         print(f"Помилка Gemini в handle_text: {e}")
         if status_msg:
