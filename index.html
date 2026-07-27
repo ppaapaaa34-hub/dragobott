@@ -2,62 +2,88 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <title>Профіль Драго</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: var(--tg-theme-bg-color, #121212);
-            --text-color: var(--tg-theme-text-color, #ffffff);
-            --button-color: var(--tg-theme-button-color, #2ea6ff);
+            --bg-color: var(--tg-theme-bg-color, #0f172a);
+            --text-color: var(--tg-theme-text-color, #f8fafc);
+            --button-color: var(--tg-theme-button-color, #3b82f6);
             --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-            --hint-color: var(--tg-theme-hint-color, #aaaaaa);
-            --card-bg: var(--tg-theme-secondary-bg-color, #1e1e1e);
+            --hint-color: var(--tg-theme-hint-color, #94a3b8);
+            --card-bg: var(--tg-theme-secondary-bg-color, rgba(30, 41, 59, 0.7));
+            --accent-glow: rgba(59, 130, 246, 0.25);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.12) 0px, transparent 50%);
+            background-attachment: fixed;
             color: var(--text-color);
             margin: 0;
-            padding: 15px;
+            padding: 16px;
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
         }
 
-        .profile-card {
-            background-color: var(--card-bg);
-            border-radius: 16px;
-            padding: 20px;
+        .container {
             width: 100%;
-            max-width: 380px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-            box-sizing: border-box;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* 👑 Картка профілю */
+        .profile-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.37);
         }
 
         .header {
             display: flex;
             align-items: center;
-            gap: 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding-bottom: 15px;
-            margin-bottom: 15px;
+            gap: 16px;
+            position: relative;
+        }
+
+        .avatar-container {
+            position: relative;
         }
 
         .avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background-color: var(--button-color);
+            width: 68px;
+            height: 68px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, var(--button-color), #8b5cf6);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
+            font-size: 28px;
+            font-weight: 700;
             color: #fff;
             overflow: hidden;
-            flex-shrink: 0;
+            box-shadow: 0 4px 16px var(--accent-glow);
+            border: 2px solid rgba(255, 255, 255, 0.1);
         }
 
         .avatar img {
@@ -66,193 +92,355 @@
             object-fit: cover;
         }
 
+        .user-info {
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
         .user-info h2 {
             margin: 0;
             font-size: 20px;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .user-info p {
             margin: 4px 0 0 0;
             font-size: 13px;
             color: var(--hint-color);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
 
+        /* 📈 XP / Level Bar */
+        .xp-container {
+            margin-top: 16px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .xp-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: var(--hint-color);
+            font-weight: 500;
+        }
+
+        .xp-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .xp-fill {
+            height: 100%;
+            width: 65%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 10px;
+            transition: width 0.4s ease;
+        }
+
+        /* 📊 Сітка статистики */
         .stats-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(2, 1fr);
             gap: 10px;
-            margin-bottom: 15px;
+            margin-top: 16px;
         }
 
         .stat-box {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px 12px;
-            border-radius: 10px;
-            text-align: center;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            border-radius: 16px;
+            transition: transform 0.2s;
+        }
+
+        .stat-box:active {
+            transform: scale(0.98);
         }
 
         .stat-label {
-            font-size: 12px;
-            color: var(--hint-color);
-            margin-bottom: 4px;
-        }
-
-        .stat-value {
-            font-size: 15px;
-            font-weight: bold;
-            color: var(--button-color);
-        }
-
-        .section-title {
-            font-size: 13px;
-            font-weight: bold;
-            margin: 15px 0 8px 0;
+            font-size: 11px;
             color: var(--hint-color);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-value.highlight {
+            color: #38bdf8;
+        }
+
+        /* 📑 Перемикач Вкладок (Tabs) */
+        .tabs {
+            display: flex;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 4px;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            gap: 4px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: transparent;
+            color: var(--hint-color);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .tab-btn.active {
+            background: var(--button-color);
+            color: var(--button-text-color);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        /* 📦 Списки даних */
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .custom-list {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 10px;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
             padding: 8px;
-            min-height: 35px;
-            font-size: 14px;
+            min-height: 120px;
         }
 
         .list-item {
-            padding: 8px 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .list-item:last-child {
             border-bottom: none;
         }
 
-        .reorder-btns {
-            display: none;
-            gap: 4px;
+        .empty-state {
+            text-align: center;
+            padding: 30px 10px;
+            color: var(--hint-color);
+            font-size: 13px;
         }
 
-        .edit-mode .reorder-btns {
+        /* ⚙️ Форма редагування */
+        .edit-form {
             display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            color: var(--hint-color);
+            font-weight: 600;
+        }
+
+        .form-group input, .form-group select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 12px 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--button-color);
+        }
+
+        button.action-btn {
+            background: linear-gradient(135deg, var(--button-color), #2563eb);
+            color: var(--button-text-color);
+            border: none;
+            border-radius: 16px;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            box-shadow: 0 4px 16px var(--accent-glow);
+            transition: all 0.2s;
+        }
+
+        button.action-btn:active {
+            transform: scale(0.98);
         }
 
         .btn-mini {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-color);
             color: var(--text-color);
-            border-radius: 6px;
-            padding: 4px 8px;
+            border-radius: 8px;
+            padding: 6px 10px;
             cursor: pointer;
             font-size: 12px;
+            transition: background 0.2s;
         }
 
         .btn-mini:active {
             background: var(--button-color);
         }
 
-        button.action-btn {
-            background-color: var(--button-color);
-            color: var(--button-text-color);
-            border: none;
-            border-radius: 10px;
-            padding: 12px;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 15px;
-        }
-
-        .edit-form {
-            display: none;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 15px;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 12px;
-            border-radius: 10px;
-        }
-
-        .edit-form label {
-            font-size: 12px;
-            color: var(--hint-color);
-        }
-
-        .edit-form input, .edit-form select {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #fff;
-            padding: 8px;
-            border-radius: 8px;
-            font-size: 14px;
+        .reorder-btns {
+            display: flex;
+            gap: 6px;
         }
 
         #status-msg {
             text-align: center;
             font-size: 13px;
-            margin-top: 10px;
+            font-weight: 500;
+            min-height: 18px;
         }
     </style>
 </head>
 <body>
 
-    <div class="profile-card">
-        <div class="header">
-            <div class="avatar" id="user-avatar">🐲</div>
-            <div class="user-info">
-                <h2 id="user-name">Завантаження...</h2>
-                <p id="user-username">@username</p>
+    <div class="container">
+        <!-- 🔥 Головна Картка Профілю -->
+        <div class="profile-card">
+            <div class="header">
+                <div class="avatar-container">
+                    <div class="avatar" id="user-avatar">🐲</div>
+                </div>
+                <div class="user-info">
+                    <h2 id="user-name">Завантаження...</h2>
+                    <p id="user-username" onclick="copyToClipboard(this.innerText)">@username</p>
+                </div>
+            </div>
+
+            <div class="xp-container">
+                <div class="xp-header">
+                    <span>Прогрес рівня</span>
+                    <span id="xp-text">LVL 1</span>
+                </div>
+                <div class="xp-bar">
+                    <div class="xp-fill" id="xp-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-label">💳 Баланс</div>
+                    <div class="stat-value highlight" id="user-balance">... грн</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">⭐ Рівень</div>
+                    <div class="stat-value" id="user-level">...</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">💬 Повідомлень</div>
+                    <div class="stat-value" id="user-msgs">...</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">👤 Стать</div>
+                    <div class="stat-value" id="user-gender">...</div>
+                </div>
             </div>
         </div>
 
-        <div class="edit-form" id="edit-form">
-            <label>Ігровий нікнейм:</label>
-            <input type="text" id="edit-name-input" placeholder="Введи свій нік">
-
-            <label>Стать:</label>
-            <select id="edit-gender-select">
-                <option value="Хлопець">Хлопець</option>
-                <option value="Дівчина">Дівчина</option>
-                <option value="Невідомо">Невідомо</option>
-            </select>
+        <!-- 📑 Перемикач вкладок -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('tab-biz')">🏢 Бізнеси</button>
+            <button class="tab-btn" onclick="switchTab('tab-inv')">📦 Майно</button>
+            <button class="tab-btn" onclick="switchTab('tab-settings')">⚙️ Опції</button>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-label">⭐ Рівень</div>
-                <div class="stat-value" id="user-level">...</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">💳 Баланс</div>
-                <div class="stat-value" id="user-balance">... грн</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">💬 Повідомлень</div>
-                <div class="stat-value" id="user-msgs">...</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">👤 Стать</div>
-                <div class="stat-value" id="user-gender">...</div>
+        <!-- 🏢 Вкладка 1: Бізнеси -->
+        <div class="tab-content active" id="tab-biz">
+            <div class="custom-list" id="businesses-container">
+                <div class="empty-state">Завантаження...</div>
             </div>
         </div>
 
-        <!-- Спеціальні Блоки -->
-        <div class="section-title">💼 Мої Бізнеси</div>
-        <div class="custom-list" id="businesses-container">
-            <i>Завантаження...</i>
+        <!-- 📦 Вкладка 2: Майно -->
+        <div class="tab-content" id="tab-inv">
+            <div class="custom-list" id="inventory-container">
+                <div class="empty-state">Завантаження...</div>
+            </div>
         </div>
 
-        <div class="section-title">📦 Майно та предмети</div>
-        <div class="custom-list" id="inventory-container">
-            <i>Завантаження...</i>
+        <!-- ⚙️ Вкладка 3: Налаштування / Редагування -->
+        <div class="tab-content" id="tab-settings">
+            <div class="edit-form">
+                <div class="form-group">
+                    <label>Ігровий нікнейм</label>
+                    <input type="text" id="edit-name-input" placeholder="Введи свій нік">
+                </div>
+
+                <div class="form-group">
+                    <label>Стать</label>
+                    <select id="edit-gender-select">
+                        <option value="Хлопець">Чоловіча ♂️</option>
+                        <option value="Дівчина">Жіноча ♀️</option>
+                        <option value="Невідомо">Приховати 👤</option>
+                    </select>
+                </div>
+
+                <button class="action-btn" id="save-btn" onclick="saveProfileChanges()">💾 Зберегти зміни</button>
+            </div>
         </div>
 
-        <button class="action-btn" id="edit-toggle-btn" onclick="toggleEditMode()">⚙️ Редагувати профіль</button>
         <div id="status-msg"></div>
     </div>
 
@@ -271,7 +459,23 @@
             items: [],
             businesses: []
         };
-        let isEditMode = false;
+
+        function triggerHaptic(type = 'light') {
+            if (tg.HapticFeedback) {
+                if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+                else if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
+                else tg.HapticFeedback.impactOccurred(type);
+            }
+        }
+
+        function switchTab(tabId) {
+            triggerHaptic('light');
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.currentTarget.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
 
         async function loadProfile() {
             document.getElementById('user-name').innerText = tgUser.first_name || 'Гравець';
@@ -279,6 +483,8 @@
             
             if (tgUser.photo_url) {
                 document.getElementById('user-avatar').innerHTML = `<img src="${tgUser.photo_url}" alt="avatar">`;
+            } else if (tgUser.first_name) {
+                document.getElementById('user-avatar').innerText = tgUser.first_name[0].toUpperCase();
             }
 
             try {
@@ -298,7 +504,7 @@
                     renderUI(data);
                 }
             } catch (err) {
-                showStatus('❌ Помилка зєднання з сервером', true);
+                showStatus('❌ Помилка з\'єднання з сервером', true);
             }
         }
 
@@ -306,20 +512,26 @@
             document.getElementById('user-name').innerText = currentData.name;
             document.getElementById('user-level').innerText = data.level || 1;
             document.getElementById('user-balance').innerText = `${(data.balance || 0).toLocaleString()} грн`;
-            document.getElementById('user-msgs').innerText = data.msg_count || 0;
+            document.getElementById('user-msgs').innerText = (data.msg_count || 0).toLocaleString();
             document.getElementById('user-gender').innerText = currentData.gender;
+
+            // XP Bar Анімація
+            const currentMsgs = data.msg_count || 0;
+            const xpPercent = Math.min(100, (currentMsgs % 100)); // Кожні 100 повідомлень = Новий рівень
+            document.getElementById('xp-fill').style.width = `${xpPercent}%`;
+            document.getElementById('xp-text').innerText = `LVL ${data.level || 1}`;
 
             document.getElementById('edit-name-input').value = currentData.name;
             document.getElementById('edit-gender-select').value = currentData.gender;
 
             renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
-            renderList('inventory-container', currentData.items, '🔹', 'items');
+            renderList('inventory-container', currentData.items, '💎', 'items');
         }
 
         function renderList(containerId, listData, icon, type) {
             const container = document.getElementById(containerId);
-            if (listData.length === 0) {
-                container.innerHTML = '<i style="color: var(--hint-color)">Немає...</i>';
+            if (!listData || listData.length === 0) {
+                container.innerHTML = '<div class="empty-state">У вас поки немає активів у цієї категорії.</div>';
                 return;
             }
 
@@ -327,14 +539,15 @@
                 <div class="list-item">
                     <span>${icon} ${item}</span>
                     <div class="reorder-btns">
-                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">⬆️</button>
-                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">⬇️</button>
+                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">▲</button>
+                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">▼</button>
                     </div>
                 </div>
             `).join('');
         }
 
         function moveItem(type, index, direction) {
+            triggerHaptic('medium');
             const list = currentData[type];
             const newIndex = index + direction;
             if (newIndex < 0 || newIndex >= list.length) return;
@@ -344,7 +557,7 @@
             list[newIndex] = temp;
 
             if (type === 'items') {
-                renderList('inventory-container', currentData.items, '🔹', 'items');
+                renderList('inventory-container', currentData.items, '💎', 'items');
                 saveOrder(`${API_URL}/api/update_inventory_order`, { items: currentData.items });
             } else if (type === 'businesses') {
                 renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
@@ -364,59 +577,56 @@
             }
         }
 
-        async function toggleEditMode() {
-            const form = document.getElementById('edit-form');
-            const btn = document.getElementById('edit-toggle-btn');
-            const card = document.querySelector('.profile-card');
+        async function saveProfileChanges() {
+            const btn = document.getElementById('save-btn');
+            const newName = document.getElementById('edit-name-input').value.trim();
+            const newGender = document.getElementById('edit-gender-select').value;
 
-            if (!isEditMode) {
-                isEditMode = true;
-                form.style.display = 'flex';
-                card.classList.add('edit-mode');
-                btn.innerText = '💾 Зберегти зміни';
-            } else {
-                const newName = document.getElementById('edit-name-input').value.trim();
-                const newGender = document.getElementById('edit-gender-select').value;
+            if (newName) currentData.name = newName;
+            currentData.gender = newGender;
 
-                if (newName) currentData.name = newName;
-                currentData.gender = newGender;
+            btn.disabled = true;
+            showStatus('Збереження...');
 
-                btn.disabled = true;
-                showStatus('Збереження...');
+            try {
+                const res = await fetch(`${API_URL}/api/update_profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        name: currentData.name,
+                        gender: currentData.gender
+                    })
+                });
 
-                try {
-                    const res = await fetch(`${API_URL}/api/update_profile`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            user_id: userId,
-                            name: currentData.name,
-                            gender: currentData.gender
-                        })
-                    });
-
-                    if (res.ok) {
-                        showStatus('✅ Профіль оновлено!');
-                        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-                    }
-                } catch (e) {
-                    showStatus('❌ Помилка збереження', true);
-                } finally {
-                    btn.disabled = false;
-                    isEditMode = false;
-                    form.style.display = 'none';
-                    card.classList.remove('edit-mode');
-                    btn.innerText = '⚙️ Редагувати профіль';
+                if (res.ok) {
+                    showStatus('✅ Профіль успішно оновлено!');
+                    triggerHaptic('success');
                     document.getElementById('user-name').innerText = currentData.name;
                     document.getElementById('user-gender').innerText = currentData.gender;
+                } else {
+                    showStatus('❌ Помилка при збереженні', true);
+                    triggerHaptic('error');
                 }
+            } catch (e) {
+                showStatus('❌ Помилка зєднання', true);
+                triggerHaptic('error');
+            } finally {
+                btn.disabled = false;
             }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                triggerHaptic('light');
+                showStatus('📋 Скопійовано в буфер!');
+            });
         }
 
         function showStatus(msg, isError = false) {
             const el = document.getElementById('status-msg');
             el.innerText = msg;
-            el.style.color = isError ? '#ff5252' : '#4caf50';
+            el.style.color = isError ? 'var(--danger-color)' : 'var(--success-color)';
             setTimeout(() => { el.innerText = ''; }, 3000);
         }
 
