@@ -579,18 +579,22 @@
             }
         }
 
-        async function saveOrder(url, payload) {
-            try {
-                await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, ...payload })
-                });
-            } catch (e) {
-                console.error("Помилка збереження порядку:", e);
-            }
-        }
-
+     async function saveOrder(url, payload) {
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                ...payload
+            })
+        });
+    } catch (e) {
+        console.error("Помилка збереження порядку:", e);
+    }
+}
         async function saveProfileChanges() {
             const btn = document.getElementById('save-btn');
             const newName = document.getElementById('edit-name-input').value.trim();
