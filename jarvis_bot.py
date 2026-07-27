@@ -1342,54 +1342,6 @@ def sell_business(message):
         print(f"❌ Помилка продажу: {e}")
         bot.reply_to(message, "❌ Помилка під час продажу.")
 
-# 🔄 ЗМІНА ПОРЯДКУ БІЗНЕСІВ (/swap, /переставити)
-@bot.message_handler(commands=['swap', 'переставити', 'порядок'])
-def swap_businesses(message):
-    if is_user_banned(message.from_user.id): return
-    user_id = message.from_user.id
-    args = message.text.split()
-
-    if len(args) < 3:
-        return bot.reply_to(message, "⚠️ **Вкажи два номери бізнесів!**\nПриклад: `/swap 1 3`", parse_mode="Markdown")
-
-    try:
-        pos1, pos2 = int(args[1]), int(args[2])
-    except ValueError:
-        return bot.reply_to(message, "❌ Номери мають бути цілими числами!")
-
-    if pos1 <= 0 or pos2 <= 0 or pos1 == pos2:
-        return bot.reply_to(message, "❌ Вкажи два різних номери більших за 0!")
-
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT id, position 
-                    FROM user_businesses 
-                    WHERE user_id = %s 
-                    ORDER BY position ASC, id ASC
-                """, (user_id,))
-                items = cursor.fetchall()
-
-                if not items or len(items) < max(pos1, pos2):
-                    conn.close()
-                    return bot.reply_to(message, f"❌ У тебе немає бізнесу з номером `{max(pos1, pos2)}`!", parse_mode="Markdown")
-
-                idx1, idx2 = pos1 - 1, pos2 - 1
-                id1, id2 = items[idx1][0], items[idx2][0]
-
-                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (idx2 + 1, id1))
-                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (idx1 + 1, id2))
-
-                conn.commit()
-            conn.close()
-
-        bot.reply_to(message, f"✅ **Порядок змінено!** Бізнеси №`{pos1}` та №`{pos2}` помінялися місцями.", parse_mode="Markdown")
-
-    except Exception as e:
-        print(f"Помилка зміни порядку: {e}")
-        bot.reply_to(message, "❌ Помилка при зміні порядку.")
 
 # ===================================================================
 # 🔄 ОБРОБНИКИ КНОПОК ПАГІНАЦІЇ
@@ -2078,11 +2030,17 @@ def generate_inventory_ai_image(bought_codes):
     if not ai_descriptions:
         return None
         
-    items_prompt = ", ".join(ai_descriptions[:3])
-    full_prompt = (
-        f"A cinematic high quality photo showing a wealthy owner collection in one scene: {items_prompt}. "
-        f"4k resolution, ultra detailed, modern luxury style"
-    )
+   # Беремо тільки перші 3 предмети
+selected_items = ai_descriptions[:3]
+
+items_prompt = " and ".join(selected_items)
+
+full_prompt = (
+    f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
+    "All listed objects must be clearly visible in one scene. "
+    "Do not add other objects. "
+    "Photorealistic, 8k, ultra detailed."
+)
     
     try:
         encoded_prompt = requests.utils.quote(full_prompt)
