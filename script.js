@@ -1,8 +1,20 @@
+// ⚠️ Замініть на ваше актуальне посилання з Render (наприклад: https://drago-backend.onrender.com)
+const SERVER_URL = "https://your-render-app-name.onrender.com";
+
+// ==================== ДАНІ КОРИСТУВАЧА ТА АДМІНКИ ====================
+let userTelegramId = 5512316636;
+let userUsername = "Admin";
+let userFirstName = "Drago Boss";
+let isAdmin = false;
+
 // Ініціалізація Telegram WebApp
 if (window.Telegram && window.Telegram.WebApp) {
     Telegram.WebApp.expand();
     if (Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) {
-        document.getElementById("username").innerText = Telegram.WebApp.initDataUnsafe.user.first_name;
+        const tgUser = Telegram.WebApp.initDataUnsafe.user;
+        userTelegramId = tgUser.id;
+        userUsername = tgUser.username || "анонім";
+        userFirstName = tgUser.first_name || "Гравець";
     }
 }
 
@@ -56,10 +68,10 @@ const statArtifactsCount = document.getElementById("stat-artifacts-count");
 
 // ==================== ОНОВЛЕННЯ ІНТЕРФЕЙСУ ====================
 function updateUI() {
-    moneyEl.innerText = Math.floor(money).toLocaleString() + " ₴";
-    energyEl.innerText = energy;
-    energyBar.style.width = Math.max(0, (energy / maxEnergy * 100)) + "%";
-    passiveEl.innerText = Math.floor(passiveIncome).toLocaleString();
+    if (moneyEl) moneyEl.innerText = Math.floor(money).toLocaleString() + " ₴";
+    if (energyEl) energyEl.innerText = energy;
+    if (energyBar) energyBar.style.width = Math.max(0, (energy / maxEnergy * 100)) + "%";
+    if (passiveEl) passiveEl.innerText = Math.floor(passiveIncome).toLocaleString();
 
     // Статистика
     if (statTotalTaps) statTotalTaps.innerText = totalTaps.toLocaleString();
@@ -75,26 +87,28 @@ function updateUI() {
 }
 
 // ==================== ТАП МЕХАНІКА ====================
-tapBtn.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
+if (tapBtn) {
+    tapBtn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
 
-    // Перевіряємо чи вистачає енергії
-    if (energy < energyDrain) return;
+        // Перевіряємо чи вистачає енергії
+        if (energy < energyDrain) return;
 
-    money += tapPower;
-    energy -= energyDrain;
-    totalTaps++;
+        money += tapPower;
+        energy -= energyDrain;
+        totalTaps++;
 
-    // Анімація вилітаючих цифр
-    createFloatingNumber(e.clientX, e.clientY, `+${tapPower}`);
+        // Анімація вилітаючих цифр
+        createFloatingNumber(e.clientX, e.clientY, `+${tapPower}`);
 
-    // Вібрація (Telegram Haptic Feedback)
-    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.HapticFeedback) {
-        Telegram.WebApp.HapticFeedback.impactOccurred('light');
-    }
+        // Вібрація (Telegram Haptic Feedback)
+        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.HapticFeedback) {
+            Telegram.WebApp.HapticFeedback.impactOccurred('light');
+        }
 
-    updateUI();
-});
+        updateUI();
+    });
+}
 
 // Анімовані цифри при тапі
 function createFloatingNumber(x, y, text) {
@@ -168,7 +182,7 @@ function renderCollection() {
         itemEl.className = `item-card ${item.rarity}`;
 
         let badgeClass = `badge-${item.rarity}`;
-        let rarityText = item.rarity === 'common' ? 'Звичайний' :
+        let rarityText = item.rarity === 'common' ? 'Ззвичайний' :
                          item.rarity === 'rare' ? 'Рідкісний' :
                          item.rarity === 'epic' ? 'Епічний' : 'Легендарний';
 
@@ -211,58 +225,146 @@ window.switchTab = function(tabName, element) {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
 
-    document.getElementById(`tab-${tabName}`).classList.add('active');
-    element.classList.add('active');
+    const activeTab = document.getElementById(`tab-${tabName}`);
+    if (activeTab) activeTab.classList.add('active');
+    if (element) element.classList.add('active');
 };
 
-// ==================== ЗБЕРЕЖЕННЯ ТА ЗАВАНТАЖЕННЯ ====================
-function saveProgress() {
-    const data = {
-        money,
-        tapPower,
-        energy,
-        passiveIncome,
-        totalTaps,
-        cards,
-        collectionItems
-    };
-    localStorage.setItem("drago_tap_save_v2", JSON.stringify(data));
-}
+// ==================== СЕРВЕРНА СИНХРОНІЗАЦІЯ ====================
+async function syncWithServer() {
+    try {
+        const res = await fetch(`${SERVER_URL}/api/user/sync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                telegramId: userTelegramId,
+                username: userUsername,
+                firstName: userFirstName
+            })
+        });
 
-function loadProgress() {
-    const saved = localStorage.getItem("drago_tap_save_v2");
-    if (saved) {
-        try {
-            const data = JSON.parse(saved);
-            money = data.money || 0;
-            tapPower = data.tapPower || 1;
-            energy = data.energy !== undefined ? data.energy : 1000;
-            passiveIncome = data.passiveIncome || 0;
-            totalTaps = data.totalTaps || 0;
-
-            if (data.cards) {
-                data.cards.forEach((savedCard, i) => {
-                    if (cards[i]) {
-                        cards[i].lvl = savedCard.lvl;
-                        cards[i].cost = savedCard.cost;
-                    }
-                });
-            }
-
-            if (data.collectionItems) {
-                data.collectionItems.forEach((savedItem, i) => {
-                    if (collectionItems[i]) {
-                        collectionItems[i].owned = savedItem.owned;
-                    }
-                });
-            }
-        } catch (e) {
-            console.error("Помилка завантаження збережень:", e);
+        const data = await res.json();
+        
+        if (data.banned) {
+            document.body.innerHTML = `<div style="color: red; text-align: center; font-size: 24px; margin-top: 50px; font-weight: bold;">🚫 ВАС ЗАБЛОКОВАНО!</div>`;
+            return;
         }
+
+        money = data.money || 0;
+        tapPower = data.tapPower || 1;
+        energy = data.energy !== undefined ? data.energy : 1000;
+        passiveIncome = data.passiveIncome || 0;
+        totalTaps = data.totalTaps || 0;
+        isAdmin = data.isAdmin || false;
+
+        if (data.cards && data.cards.length > 0) {
+            data.cards.forEach((savedCard, i) => {
+                if (cards[i]) {
+                    cards[i].lvl = savedCard.lvl;
+                    cards[i].cost = savedCard.cost;
+                }
+            });
+        }
+
+        if (data.collectionItems && data.collectionItems.length > 0) {
+            data.collectionItems.forEach((savedItem, i) => {
+                if (collectionItems[i]) {
+                    collectionItems[i].owned = savedItem.owned;
+                }
+            });
+        }
+
+        const usernameEl = document.getElementById("username");
+        if (usernameEl) usernameEl.innerText = data.firstName;
+
+        const adminContainer = document.getElementById("admin-btn-container");
+        if (isAdmin && adminContainer) {
+            adminContainer.style.display = "block";
+        }
+
+        updateUI();
+    } catch (e) {
+        console.error("Помилка підключення до сервера:", e);
     }
 }
 
-// Старт гри
-loadProgress();
-setInterval(saveProgress, 5000); // Автозбереження кожні 5 секунд
-updateUI();
+async function saveProgressToServer() {
+    try {
+        await fetch(`${SERVER_URL}/api/user/save`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                telegramId: userTelegramId,
+                money,
+                tapPower,
+                energy,
+                passiveIncome,
+                totalTaps,
+                cards,
+                collectionItems
+            })
+        });
+    } catch (e) {
+        console.error("Помилка автозбереження на сервер:", e);
+    }
+}
+
+// ==================== АДМІН-ФУНКЦІЇ ====================
+window.openAdminModal = async function() {
+    const modal = document.getElementById("admin-modal");
+    if (modal) modal.style.display = "block";
+    const list = document.getElementById("admin-users-list");
+    if (list) list.innerHTML = "<p style='color: white;'>Завантаження гравців...</p>";
+
+    try {
+        const res = await fetch(`${SERVER_URL}/api/admin/users/${userTelegramId}`);
+        const users = await res.json();
+
+        if (list) {
+            list.innerHTML = "";
+            users.forEach(u => {
+                const item = document.createElement("div");
+                item.style.cssText = "background: #0f172a; padding: 12px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #334155;";
+                item.innerHTML = `
+                    <div style="font-weight: bold; color: #38bdf8;">${u.firstName} (@${u.username || 'немає'})</div>
+                    <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">ID: ${u.telegramId} | Баланс: ${Math.floor(u.money).toLocaleString()} ₴</div>
+                    <div style="font-size: 12px; color: #cbd5e1;">Тапів: ${u.totalTaps} | Статус: ${u.isBanned ? '<span style="color:#ef4444;">🔴 ЗАБАНЕНИЙ</span>' : '<span style="color:#22c55e;">🟢 АКТИВНИЙ</span>'}</div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px;">
+                        <button onclick="adminAddMoney(${u.telegramId})" style="background: #10b981; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;">+100,000 ₴</button>
+                        <button onclick="adminToggleBan(${u.telegramId})" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;">${u.isBanned ? 'Розбанити' : 'Забанити'}</button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+    } catch(e) {
+        if (list) list.innerHTML = "<p style='color: red;'>Помилка завантаження списку гравців.</p>";
+    }
+};
+
+window.closeAdminModal = function() {
+    const modal = document.getElementById("admin-modal");
+    if (modal) modal.style.display = "none";
+};
+
+window.adminAddMoney = async function(targetId) {
+    await fetch(`${SERVER_URL}/api/admin/add-money`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId, amount: 100000 })
+    });
+    openAdminModal();
+};
+
+window.adminToggleBan = async function(targetId) {
+    await fetch(`${SERVER_URL}/api/admin/toggle-ban`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId })
+    });
+    openAdminModal();
+};
+
+// ==================== СТАРТ ГРИ ====================
+syncWithServer();
+setInterval(saveProgressToServer, 5000); // Автозбереження кожні 5 секунд
