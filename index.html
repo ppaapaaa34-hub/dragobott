@@ -1,654 +1,129 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <title>Профіль Драго</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-color: var(--tg-theme-bg-color, #0f172a);
-            --text-color: var(--tg-theme-text-color, #f8fafc);
-            --button-color: var(--tg-theme-button-color, #3b82f6);
-            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-            --hint-color: var(--tg-theme-hint-color, #94a3b8);
-            --card-bg: var(--tg-theme-secondary-bg-color, rgba(30, 41, 59, 0.7));
-            --accent-glow: rgba(59, 130, 246, 0.25);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --success-color: #10b981;
-            --danger-color: #ef4444;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drago Tap</title>
 
-        * {
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-        }
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.12) 0px, transparent 50%);
-            background-attachment: fixed;
-            color: var(--text-color);
-            margin: 0;
-            padding: 16px;
-            display: flex;
-            justify-content: center;
-            min-height: 100vh;
-        }
+<style>
+body{
+    margin:0;
+    background:#0f172a;
+    color:white;
+    font-family:Arial;
+    text-align:center;
+}
 
-        .container {
-            width: 100%;
-            max-width: 420px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
+h1{
+    margin-top:20px;
+}
 
-        /* 👑 Картка профілю */
-        .profile-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 24px;
-            padding: 20px;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.37);
-        }
+#money{
+    font-size:34px;
+    margin:20px;
+    font-weight:bold;
+}
 
-        .header {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            position: relative;
-        }
+#tap{
+    width:220px;
+    height:220px;
+    border-radius:50%;
+    background:linear-gradient(45deg,#ff7300,#ff0000);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    margin:auto;
+    font-size:70px;
+    cursor:pointer;
+    user-select:none;
+    transition:.08s;
+}
 
-        .avatar-container {
-            position: relative;
-        }
+#tap:active{
+    transform:scale(.93);
+}
 
-        .avatar {
-            width: 68px;
-            height: 68px;
-            border-radius: 20px;
-            background: linear-gradient(135deg, var(--button-color), #8b5cf6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            font-weight: 700;
-            color: #fff;
-            overflow: hidden;
-            box-shadow: 0 4px 16px var(--accent-glow);
-            border: 2px solid rgba(255, 255, 255, 0.1);
-        }
+#lvl{
+    margin-top:20px;
+    font-size:24px;
+}
 
-        .avatar img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .user-info {
-            flex-grow: 1;
-            overflow: hidden;
-        }
-
-        .user-info h2 {
-            margin: 0;
-            font-size: 20px;
-            font-weight: 700;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .user-info p {
-            margin: 4px 0 0 0;
-            font-size: 13px;
-            color: var(--hint-color);
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        /* 📈 XP / Level Bar */
-        .xp-container {
-            margin-top: 16px;
-            background: rgba(0, 0, 0, 0.2);
-            padding: 10px 12px;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        .xp-header {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            margin-bottom: 6px;
-            color: var(--hint-color);
-            font-weight: 500;
-        }
-
-        .xp-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .xp-fill {
-            height: 100%;
-            width: 65%;
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-            border-radius: 10px;
-            transition: width 0.4s ease;
-        }
-
-        /* 📊 Сітка статистики */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-top: 16px;
-        }
-
-        .stat-box {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border-color);
-            padding: 12px;
-            border-radius: 16px;
-            transition: transform 0.2s;
-        }
-
-        .stat-box:active {
-            transform: scale(0.98);
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: var(--hint-color);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-            font-weight: 600;
-        }
-
-        .stat-value {
-            font-size: 16px;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .stat-value.highlight {
-            color: #38bdf8;
-        }
-
-        /* 📑 Перемикач Вкладок (Tabs) */
-        .tabs {
-            display: flex;
-            background: rgba(0, 0, 0, 0.25);
-            padding: 4px;
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            gap: 4px;
-        }
-
-        .tab-btn {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            background: transparent;
-            color: var(--hint-color);
-            font-size: 13px;
-            font-weight: 600;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .tab-btn.active {
-            background: var(--button-color);
-            color: var(--button-text-color);
-            box-shadow: 0 4px 12px var(--accent-glow);
-        }
-
-        /* 📦 Списки даних */
-        .tab-content {
-            display: none;
-            flex-direction: column;
-            gap: 10px;
-            animation: fadeIn 0.3s ease;
-        }
-
-        .tab-content.active {
-            display: flex;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .custom-list {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 8px;
-            min-height: 120px;
-        }
-
-        .list-item {
-            padding: 12px 14px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .list-item:last-child {
-            border-bottom: none;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 30px 10px;
-            color: var(--hint-color);
-            font-size: 13px;
-        }
-
-        /* ⚙️ Форма редагування */
-        .edit-form {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            padding: 20px;
-            border-radius: 20px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .form-group label {
-            font-size: 12px;
-            color: var(--hint-color);
-            font-weight: 600;
-        }
-
-        .form-group input, .form-group select {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            color: #fff;
-            padding: 12px 14px;
-            border-radius: 12px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .form-group input:focus, .form-group select:focus {
-            border-color: var(--button-color);
-        }
-
-        button.action-btn {
-            background: linear-gradient(135deg, var(--button-color), #2563eb);
-            color: var(--button-text-color);
-            border: none;
-            border-radius: 16px;
-            padding: 14px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            box-shadow: 0 4px 16px var(--accent-glow);
-            transition: all 0.2s;
-        }
-
-        button.action-btn:active {
-            transform: scale(0.98);
-        }
-
-        .btn-mini {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 8px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: background 0.2s;
-        }
-
-        .btn-mini:active {
-            background: var(--button-color);
-        }
-
-        .reorder-btns {
-            display: flex;
-            gap: 6px;
-        }
-
-        #status-msg {
-            text-align: center;
-            font-size: 13px;
-            font-weight: 500;
-            min-height: 18px;
-        }
-    </style>
+button{
+    margin-top:25px;
+    padding:14px 30px;
+    border:none;
+    border-radius:12px;
+    background:#16a34a;
+    color:white;
+    font-size:18px;
+}
+</style>
 </head>
+
 <body>
 
-    <div class="container">
-        <!-- 🔥 Головна Картка Профілю -->
-        <div class="profile-card">
-            <div class="header">
-                <div class="avatar-container">
-                    <div class="avatar" id="user-avatar">🐲</div>
-                </div>
-                <div class="user-info">
-                    <h2 id="user-name">Завантаження...</h2>
-                    <p id="user-username" onclick="copyToClipboard(this.innerText)">@username</p>
-                </div>
-            </div>
+<h1>💰 Drago Tap</h1>
 
-            <div class="xp-container">
-                <div class="xp-header">
-                    <span>Прогрес рівня</span>
-                    <span id="xp-text">LVL 1</span>
-                </div>
-                <div class="xp-bar">
-                    <div class="xp-fill" id="xp-fill" style="width: 0%;"></div>
-                </div>
-            </div>
+<div id="money">0 грн</div>
 
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="stat-label">💳 Баланс</div>
-                    <div class="stat-value highlight" id="user-balance">... грн</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">⭐ Рівень</div>
-                    <div class="stat-value" id="user-level">...</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">💬 Повідомлень</div>
-                    <div class="stat-value" id="user-msgs">...</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">👤 Стать</div>
-                    <div class="stat-value" id="user-gender">...</div>
-                </div>
-            </div>
-        </div>
+<div id="tap">
+💸
+</div>
 
-        <!-- 📑 Перемикач вкладок -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab(event, 'tab-biz')">🏢 Бізнеси</button>
-            <button class="tab-btn" onclick="switchTab(event, 'tab-inv')">📦 Майно</button>
-            <button class="tab-btn" onclick="switchTab(event, 'tab-settings')">⚙️ Опції</button>
-        </div>
+<div id="lvl">
+Рівень 1
+</div>
 
-        <!-- 🏢 Вкладка 1: Бізнеси -->
-        <div class="tab-content active" id="tab-biz">
-            <div class="custom-list" id="businesses-container">
-                <div class="empty-state">Завантаження...</div>
-            </div>
-        </div>
+<button onclick="upgrade()">
+⬆ Покращити (+1)
+</button>
 
-        <!-- 📦 Вкладка 2: Майно -->
-        <div class="tab-content" id="tab-inv">
-            <div class="custom-list" id="inventory-container">
-                <div class="empty-state">Завантаження...</div>
-            </div>
-        </div>
+<script>
 
-        <!-- ⚙️ Вкладка 3: Налаштування / Редагування -->
-        <div class="tab-content" id="tab-settings">
-            <div class="edit-form">
-                <div class="form-group">
-                    <label>Ігровий нікнейм</label>
-                    <input type="text" id="edit-name-input" placeholder="Введи свій нік">
-                </div>
+Telegram.WebApp.expand();
 
-                <div class="form-group">
-                    <label>Стать</label>
-                    <select id="edit-gender-select">
-                        <option value="Хлопець">Чоловіча ♂️</option>
-                        <option value="Дівчина">Жіноча ♀️</option>
-                        <option value="Невідомо">Приховати 👤</option>
-                    </select>
-                </div>
+let money=0;
+let level=1;
+let power=1;
 
-                <button class="action-btn" id="save-btn" onclick="saveProfileChanges()">💾 Зберегти зміни</button>
-            </div>
-        </div>
+const moneyText=document.getElementById("money");
+const lvl=document.getElementById("lvl");
 
-        <div id="status-msg"></div>
-    </div>
-
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-
-        const API_URL = 'https://dragobott.onrender.com';
-        const tgUser = tg.initDataUnsafe?.user || {};
-        const userId = tgUser.id || 0;
-
-        let currentData = {
-            name: '',
-            gender: '',
-            items: [],
-            businesses: []
-        };
-
-        function triggerHaptic(type = 'light') {
-            if (tg.HapticFeedback) {
-                if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
-                else if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
-                else tg.HapticFeedback.impactOccurred(type);
-            }
-        }
-
-        function switchTab(evt, tabId) {
-            triggerHaptic('light');
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-
-            if (evt && evt.currentTarget) {
-                evt.currentTarget.classList.add('active');
-            }
-            document.getElementById(tabId).classList.add('active');
-        }
-
-        async function loadProfile() {
-            document.getElementById('user-name').innerText = tgUser.first_name || 'Гравець';
-            document.getElementById('user-username').innerText = tgUser.username ? `@${tgUser.username}` : `ID: ${userId}`;
-            
-            if (tgUser.photo_url) {
-                document.getElementById('user-avatar').innerHTML = `<img src="${tgUser.photo_url}" alt="avatar">`;
-            } else if (tgUser.first_name) {
-                document.getElementById('user-avatar').innerText = tgUser.first_name[0].toUpperCase();
-            }
-
-            try {
-                const response = await fetch(`${API_URL}/api/get_stats`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    currentData.name = data.name || tgUser.first_name || 'Гравець';
-                    currentData.gender = data.gender || 'Невідомо';
-                    currentData.items = data.items || [];
-                    currentData.businesses = data.businesses || [];
-
-                    renderUI(data);
-                } else {
-                    showStatus('❌ Помилка завантаження даних', true);
-                }
-            } catch (err) {
-                console.error(err);
-                showStatus('❌ Помилка з\'єднання з сервером', true);
-            }
-        }
-
-        function renderUI(data) {
-            document.getElementById('user-name').innerText = currentData.name;
-            document.getElementById('user-level').innerText = data.level || 1;
-            document.getElementById('user-balance').innerText = `${(data.balance || 0).toLocaleString()} грн`;
-            document.getElementById('user-msgs').innerText = (data.msg_count || 0).toLocaleString();
-            document.getElementById('user-gender').innerText = currentData.gender;
-
-            // XP Bar Анімація
-            const currentMsgs = data.msg_count || 0;
-            const xpPercent = Math.min(100, (currentMsgs % 100)); // Кожні 100 повідомлень = Новий рівень
-            document.getElementById('xp-fill').style.width = `${xpPercent}%`;
-            document.getElementById('xp-text').innerText = `LVL ${data.level || 1}`;
-
-            document.getElementById('edit-name-input').value = currentData.name;
-            document.getElementById('edit-gender-select').value = currentData.gender;
-
-            renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
-            renderList('inventory-container', currentData.items, '💎', 'items');
-        }
-
-        // ПОКРАЩЕНА ФУНКЦІЯ ВИВОДУ СПИСКІВ (ОБРОБЛЯЄ І РЯДКИ, І ОБ'ЄКТИ)
-        function renderList(containerId, listData, icon, type) {
-            const container = document.getElementById(containerId);
-            if (!listData || listData.length === 0) {
-                container.innerHTML = '<div class="empty-state">У вас поки немає активів у цієї категорії.</div>';
-                return;
-            }
-
-            container.innerHTML = listData.map((item, index) => {
-                // Витягуємо назву незалежно від того, чи прийшов рядок, чи об'єкт
-                let title = item;
-                if (typeof item === 'object' && item !== null) {
-                    title = item.business_name || item.item_name || item.name || JSON.stringify(item);
-                }
-
-                return `
-                    <div class="list-item">
-                        <span>${icon} ${title}</span>
-                        <div class="reorder-btns">
-                            <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">▲</button>
-                            <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">▼</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function moveItem(type, index, direction) {
-            triggerHaptic('medium');
-            const list = currentData[type];
-            const newIndex = index + direction;
-            if (newIndex < 0 || newIndex >= list.length) return;
-
-            const temp = list[index];
-            list[index] = list[newIndex];
-            list[newIndex] = temp;
-
-            if (type === 'items') {
-                renderList('inventory-container', currentData.items, '💎', 'items');
-                saveOrder(`${API_URL}/api/update_inventory_order`, { items: currentData.items });
-            } else if (type === 'businesses') {
-                renderList('businesses-container', currentData.businesses, '🏢', 'businesses');
-                saveOrder(`${API_URL}/api/update_businesses_order`, { businesses: currentData.businesses });
-            }
-        }
-
-     async function saveOrder(url, payload) {
-    try {
-        await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                user_id: userId,
-                ...payload
-            })
-        });
-    } catch (e) {
-        console.error("Помилка збереження порядку:", e);
-    }
+function draw(){
+moneyText.innerHTML=money.toLocaleString()+" грн";
+lvl.innerHTML="Рівень "+level+"<br>Тап +" + power;
 }
-        async function saveProfileChanges() {
-            const btn = document.getElementById('save-btn');
-            const newName = document.getElementById('edit-name-input').value.trim();
-            const newGender = document.getElementById('edit-gender-select').value;
 
-            if (newName) currentData.name = newName;
-            currentData.gender = newGender;
+document.getElementById("tap").onclick=()=>{
 
-            btn.disabled = true;
-            showStatus('Збереження...');
+money+=power;
 
-            try {
-                const res = await fetch(`${API_URL}/api/update_profile`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        name: currentData.name,
-                        gender: currentData.gender
-                    })
-                });
+draw();
 
-                if (res.ok) {
-                    showStatus('✅ Профіль успішно оновлено!');
-                    triggerHaptic('success');
-                    document.getElementById('user-name').innerText = currentData.name;
-                    document.getElementById('user-gender').innerText = currentData.gender;
-                } else {
-                    showStatus('❌ Помилка при збереженні', true);
-                    triggerHaptic('error');
-                }
-            } catch (e) {
-                showStatus('❌ Помилка з\'єднання', true);
-                triggerHaptic('error');
-            } finally {
-                btn.disabled = false;
-            }
-        }
+};
 
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                triggerHaptic('light');
-                showStatus('📋 Скопійовано в буфер!');
-            });
-        }
+function upgrade(){
 
-        function showStatus(msg, isError = false) {
-            const el = document.getElementById('status-msg');
-            el.innerText = msg;
-            el.style.color = isError ? 'var(--danger-color)' : 'var(--success-color)';
-            setTimeout(() => { el.innerText = ''; }, 3000);
-        }
+let cost=level*100;
 
-        loadProfile();
-    </script>
+if(money<cost){
+Telegram.WebApp.showAlert("Не вистачає "+cost+" грн");
+return;
+}
+
+money-=cost;
+level++;
+power++;
+
+draw();
+
+}
+
+draw();
+
+</script>
+
 </body>
 </html>
