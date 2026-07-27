@@ -521,6 +521,8 @@ def show_user_profile(message):
                 # 2. Інвентар
                 cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (target_user.id,))
                 inventory_res = cursor.fetchall()
+                print("=== INVENTORY ===")
+                print(inventory_res)
 
                 # 3. Бізнеси
                 cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (target_user.id,))
@@ -555,6 +557,8 @@ def show_user_profile(message):
 
         biz_dict = globals().get('BUSINESSES', {})
         shop_dict = globals().get('SHOP_ITEMS', {})
+        print("SHOP_ITEMS COUNT:", len(shop_dict))
+        print("SHOP_ITEMS KEYS:", list(shop_dict.keys())[:20])
 
         # 🏢 Підрахунок БІЗНЕСІВ
         owned_biz_codes = [r[0] for r in biz_res]
@@ -588,6 +592,10 @@ def show_user_profile(message):
         item_names_map = {}
 
         for code, name in inventory_res:
+    print("----------------")
+    print("CODE =", repr(code))
+    print("NAME =", name)
+    print("IN SHOP =", code in shop_dict)
             item_counts[code] = item_counts.get(code, 0) + 1
             item_names_map[code] = name
             if code in shop_dict:
