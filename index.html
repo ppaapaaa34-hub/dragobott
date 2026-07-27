@@ -119,6 +119,26 @@
         </button>
     </nav>
 
+    <!-- ==================== КНОПКА ТА ВІКНО АДМІНКИ ==================== -->
+    <div id="admin-btn-container" style="display: none; padding: 10px 15px; text-align: center;">
+        <button onclick="openAdminModal()" style="width: 90%; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(220,38,38,0.4);">
+            ⚙️ ВІДКРИТИ АДМІН-ПАНЕЛЬ
+        </button>
+    </div>
+
+    <!-- МОДАЛЬНЕ ВІКНО АДМІНКИ -->
+    <div id="admin-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; overflow-y: auto; padding: 20px;">
+        <div style="background: #1e293b; padding: 20px; border-radius: 16px; border: 1px solid #475569;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0; color: #ef4444;">⚙️ Панель Управління</h2>
+                <button onclick="closeAdminModal()" style="background: #64748b; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer;">✕ Закрити</button>
+            </div>
+            <div id="admin-users-list">
+                <p>Завантаження гравців...</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Підключаємо логіку гри -->
     <script src="script.js"></script>
 </body>
