@@ -4458,17 +4458,27 @@ def api_get_stats():
                     except Exception as inv_err:
                         print(f"Попередження (інвентар): {inv_err}")
 
-                    # Зчитуємо бізнеси користувача (з сортуванням по id)
-                    try:
-                        cursor.execute(
-                            "SELECT business_name FROM businesses WHERE user_id = %s ORDER BY id ASC", 
-                            (user_id,)
-                        )
-                        biz_res = cursor.fetchall()
-                        if biz_res:
-                            businesses = [row[0] for row in biz_res]
-                    except Exception as biz_err:
-                        print(f"Попередження (бізнеси): {biz_err}")
+                   # Зчитуємо бізнеси користувача
+try:
+    cursor.execute("""
+        SELECT ub.biz_code
+        FROM user_businesses ub
+        WHERE ub.user_id = %s
+        ORDER BY ub.position
+    """, (user_id,))
+
+    biz_res = cursor.fetchall()
+
+    businesses = []
+
+    for (code,) in biz_res:
+        if code in BUSINESSES:
+            businesses.append(BUSINESSES[code]["name"])
+        else:
+            businesses.append(code)
+
+except Exception as biz_err:
+    print(f"Попередження (бізнеси): {biz_err}")
             finally:
                 conn.close()  # Закриваємо з'єднання в будь-якому випадку
 
