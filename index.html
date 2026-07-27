@@ -1,505 +1,125 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Drago Tap Empire</title>
-
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-<style>
-* {
-    box-sizing: border-box;
-    user-select: none;
-    -webkit-user-select: none;
-    -khtml-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    /* Прибирає синє виділення/квадрат при натисканні на мобільних пристроях */
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
-}
-
-body {
-    margin: 0;
-    padding: 0;
-    background: radial-gradient(circle at top, #1e1b4b, #0f172a, #020617);
-    color: #ffffff;
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-/* Header Section */
-.header {
-    padding: 15px 20px 5px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f97316, #ef4444);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-    box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
-}
-
-.profit-info {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    color: #38bdf8;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-}
-
-/* Stats Area */
-.stats {
-    text-align: center;
-    margin: 15px 0;
-}
-
-.balance-title {
-    font-size: 14px;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.balance {
-    font-size: 38px;
-    font-weight: 800;
-    margin: 5px 0;
-    background: linear-gradient(135deg, #ffffff, #fbbf24);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 20px rgba(251, 191, 36, 0.2);
-}
-
-/* Main Tap Screen */
-.tab-content {
-    display: none;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    padding-bottom: 90px;
-    overflow-y: auto;
-}
-
-.tab-content.active {
-    display: flex;
-}
-
-/* Tap Button Container */
-.tap-container {
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: auto 0;
-}
-
-.tap-btn {
-    width: 240px;
-    height: 240px;
-    border-radius: 50%;
-    background: radial-gradient(circle, #ff7300 0%, #d97706 40%, #7c2d12 100%);
-    border: 8px solid rgba(251, 191, 36, 0.3);
-    box-shadow: 0 0 50px rgba(249, 115, 22, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.3);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 100px;
-    cursor: pointer;
-    transition: transform 0.05s ease;
-    outline: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-
-.tap-btn:active {
-    transform: scale(0.94);
-}
-
-/* Energy Bar */
-.energy-container {
-    width: 85%;
-    max-width: 320px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 4px;
-    margin-bottom: 10px;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
-}
-
-.energy-bar {
-    height: 12px;
-    background: linear-gradient(90deg, #3b82f6, #06b6d4);
-    border-radius: 8px;
-    width: 100%;
-    transition: width 0.2s ease;
-}
-
-.energy-text {
-    font-size: 13px;
-    color: #94a3b8;
-    margin-top: 5px;
-}
-
-/* Cards & Upgrades List */
-.cards-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-    padding: 15px;
-}
-
-.card {
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.card-title {
-    font-size: 15px;
-    font-weight: bold;
-    margin-bottom: 4px;
-}
-
-.card-profit {
-    font-size: 12px;
-    color: #10b981;
-    margin-bottom: 10px;
-}
-
-.card-btn {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    border: none;
-    color: white;
-    padding: 8px 0;
-    border-radius: 10px;
-    font-weight: bold;
-    font-size: 13px;
-    cursor: pointer;
-    outline: none;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.card-btn:disabled {
-    background: #475569;
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-/* Bottom Navigation Menu */
-.navbar {
-    position: fixed;
-    bottom: 15px;
-    left: 5%;
-    width: 90%;
-    height: 65px;
-    background: rgba(15, 23, 42, 0.85);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 20px;
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    z-index: 100;
-}
-
-.nav-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    color: #64748b;
-    font-size: 11px;
-    cursor: pointer;
-    transition: color 0.2s;
-    outline: none;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.nav-item.active {
-    color: #f97316;
-}
-
-.nav-icon {
-    font-size: 20px;
-}
-
-/* Click Floating Animation Number */
-.float-num {
-    position: absolute;
-    font-size: 28px;
-    font-weight: bold;
-    color: #fbbf24;
-    pointer-events: none;
-    animation: floatUp 0.8s ease-out forwards;
-}
-
-@keyframes floatUp {
-    0% { opacity: 1; transform: translateY(0) scale(1); }
-    100% { opacity: 0; transform: translateY(-70px) scale(1.2); }
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Drago Tap Empire</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Підключаємо зовнішні стилі -->
+    <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
 
-<!-- Header -->
-<div class="header">
-    <div class="user-info">
-        <div class="avatar">🐉</div>
-        <div>
-            <div style="font-weight:bold; font-size: 14px;" id="username">Drago Boss</div>
-            <div style="font-size: 11px; color: #94a3b8;" id="level-name">Рівень 1: Новачок</div>
-        </div>
-    </div>
-    <div class="profit-info">
-        +<span id="passive-income">0</span>/год
-    </div>
-</div>
-
-<!-- Stats -->
-<div class="stats">
-    <div class="balance-title">Ваш Баланс</div>
-    <div class="balance" id="money">0 ₴</div>
-</div>
-
-<!-- TAB 1: TAPPER -->
-<div id="tab-tap" class="tab-content active">
-    <div class="tap-container">
-        <div class="tap-btn" id="tap">🐉</div>
-    </div>
-
-    <div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-        <div class="energy-container">
-            <div class="energy-bar" id="energy-bar"></div>
-        </div>
-        <div class="energy-text">⚡ <span id="energy">1000</span> / <span id="max-energy">1000</span></div>
-    </div>
-</div>
-
-<!-- TAB 2: UPGRADES / CARDS -->
-<div id="tab-cards" class="tab-content">
-    <h3 style="margin: 10px 0 0;">Колекції та Прокачки</h3>
-    <div class="cards-grid" id="cards-container">
-        <!-- Картки будуть згенеровані через JS -->
-    </div>
-</div>
-
-<!-- TAB 3: PROFILE -->
-<div id="tab-profile" class="tab-content">
-    <h3 style="margin-top: 20px;">Ваш Профіль</h3>
-    <p style="color: #94a3b8; padding: 0 20px;">Тут буде ваша статистика, досягнення та клани!</p>
-</div>
-
-<!-- Bottom Navigation Bar -->
-<div class="navbar">
-    <div class="nav-item active" onclick="switchTab('tap', this)">
-        <span class="nav-icon">🪙</span>
-        <span>Тап</span>
-    </div>
-    <div class="nav-item" onclick="switchTab('cards', this)">
-        <span class="nav-icon">📊</span>
-        <span>Прокачка</span>
-    </div>
-    <div class="nav-item" onclick="switchTab('profile', this)">
-        <span class="nav-icon">👑</span>
-        <span>Профіль</span>
-    </div>
-</div>
-
-<script>
-// Ініціалізація Telegram WebApp
-Telegram.WebApp.expand();
-if (Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) {
-    document.getElementById("username").innerText = Telegram.WebApp.initDataUnsafe.user.first_name;
-}
-
-// Ігрові Змінні
-let money = 0;
-let tapPower = 1;
-let energy = 1000;
-let maxEnergy = 1000;
-let passiveIncome = 0; // в годину
-
-// Список Карт-Прокачок
-const cards = [
-    { id: 1, name: "Крипто-Ферма", cost: 100, profit: 50, lvl: 0 },
-    { id: 2, name: "Тіньовий Бізнес", cost: 500, profit: 250, lvl: 0 },
-    { id: 3, name: "Казино Дракона", cost: 2000, profit: 1200, lvl: 0 },
-    { id: 4, name: "СБУ Контракт", cost: 10000, profit: 6000, lvl: 0 }
-];
-
-// Елементи DOM
-const moneyEl = document.getElementById("money");
-const energyEl = document.getElementById("energy");
-const energyBar = document.getElementById("energy-bar");
-const passiveEl = document.getElementById("passive-income");
-const tapBtn = document.getElementById("tap");
-const cardsContainer = document.getElementById("cards-container");
-
-// Оновлення інтерфейсу
-function updateUI() {
-    moneyEl.innerText = Math.floor(money).toLocaleString() + " ₴";
-    energyEl.innerText = energy;
-    energyBar.style.width = (energy / maxEnergy * 100) + "%";
-    passiveEl.innerText = passiveIncome.toLocaleString();
-    renderCards();
-}
-
-// Тап механіка
-tapBtn.addEventListener("pointerdown", (e) => {
-    e.preventDefault(); // Запобігає зуму та підсвічуванню елемента браузером
-    if (energy < tapPower) return;
-
-    money += tapPower;
-    energy -= tapPower;
-
-    // Анімація вилітаючих цифр
-    createFloatingNumber(e.clientX, e.clientY, `+${tapPower}`);
-
-    // Haptic Feedback від Telegram (вібрація)
-    if (Telegram.WebApp.HapticFeedback) {
-        Telegram.WebApp.HapticFeedback.impactOccurred('light');
-    }
-
-    updateUI();
-});
-
-// Створення анімованих цифр при тапі
-function createFloatingNumber(x, y, text) {
-    const el = document.createElement("div");
-    el.className = "float-num";
-    el.innerText = text;
-    el.style.left = `${x - 15}px`;
-    el.style.top = `${y - 30}px`;
-    document.body.appendChild(el);
-
-    setTimeout(() => {
-        el.remove();
-    }, 800);
-}
-
-// Відновлення енергії та Пасивний дохід (кожної секунди)
-setInterval(() => {
-    if (energy < maxEnergy) {
-        energy = Math.min(maxEnergy, energy + 3);
-    }
-    if (passiveIncome > 0) {
-        money += passiveIncome / 3600;
-    }
-    updateUI();
-}, 1000);
-
-// Відображення карток
-function renderCards() {
-    cardsContainer.innerHTML = "";
-    cards.forEach(card => {
-        const cardEl = document.createElement("div");
-        cardEl.className = "card";
-        cardEl.innerHTML = `
-            <div>
-                <div class="card-title">${card.name}</div>
-                <div class="card-profit">+${card.profit} ₴/год</div>
-                <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">Рівень: ${card.lvl}</div>
+    <!-- ВЕРХНЯ ПАНЕЛЬ (HEADER) -->
+    <header class="header">
+        <div class="user-info">
+            <div class="avatar">🐉</div>
+            <div class="user-details">
+                <div class="username" id="username">Drago Boss</div>
+                <div class="level-badge" id="level-name">Рівень 1: Новачок</div>
             </div>
-            <button class="card-btn" ${money < card.cost ? "disabled" : ""} onclick="buyCard(${card.id})">
-                ${card.cost.toLocaleString()} ₴
-            </button>
-        `;
-        cardsContainer.appendChild(cardEl);
-    });
-}
+        </div>
+        <div class="profit-container">
+            <span class="profit-label">Пасивний дохід</span>
+            <div class="profit-val">+<span id="passive-income">0</span> ₴/год</div>
+        </div>
+    </header>
 
-// Купівля картки
-window.buyCard = function(id) {
-    const card = cards.find(c => c.id === id);
-    if (card && money >= card.cost) {
-        money -= card.cost;
-        passiveIncome += card.profit;
-        card.lvl++;
-        card.cost = Math.floor(card.cost * 1.6);
-        updateUI();
-    }
-}
+    <!-- ОСНОВНИЙ БАЛАНС -->
+    <section class="stats-section">
+        <div class="balance-title">Ваш Баланс</div>
+        <div class="balance-display" id="money">0 ₴</div>
+    </section>
 
-// Перемикання вкладок меню
-window.switchTab = function(tabName, element) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+    <!-- ==================== ВКЛАДКА 1: ТАПЕР ==================== -->
+    <main id="tab-tap" class="tab-content active">
+        <div class="tap-container">
+            <div class="tap-glow"></div>
+            <button class="tap-btn" id="tap">🐉</button>
+        </div>
 
-    document.getElementById(`tab-${tabName}`).classList.add('active');
-    element.classList.add('active');
-}
+        <div class="energy-wrapper">
+            <div class="energy-header">
+                <span>⚡ Енергія</span>
+                <span><span id="energy">1000</span> / <span id="max-energy">1000</span></span>
+            </div>
+            <div class="energy-container">
+                <div class="energy-bar" id="energy-bar"></div>
+            </div>
+            <div class="energy-subtext">Витрата: <span id="energy-drain-text">5</span> ⚡ за тап</div>
+        </div>
+    </main>
 
-// Збереження даних у пам'ять браузера
-function saveProgress() {
-    const data = {
-        money,
-        tapPower,
-        energy,
-        passiveIncome,
-        cards
-    };
-    localStorage.setItem("drago_tap_save", JSON.stringify(data));
-}
+    <!-- ==================== ВКЛАДКА 2: БІЗНЕС ТА ПРОКАЧКА ==================== -->
+    <main id="tab-cards" class="tab-content">
+        <div class="section-title">
+            <h2>💼 Бізнес-Імперія</h2>
+            <p>Купуй та розвивай бізнес для пасивного прибутку</p>
+        </div>
+        <div class="cards-grid" id="cards-container">
+            <!-- Генерується через JS -->
+        </div>
+    </main>
 
-// Завантаження даних при відкритті
-function loadProgress() {
-    const saved = localStorage.getItem("drago_tap_save");
-    if (saved) {
-        const data = JSON.parse(saved);
-        money = data.money || 0;
-        tapPower = data.tapPower || 1;
-        energy = data.energy || 1000;
-        passiveIncome = data.passiveIncome || 0;
-        if (data.cards) {
-            data.cards.forEach((savedCard, i) => {
-                if (cards[i]) {
-                    cards[i].lvl = savedCard.lvl;
-                    cards[i].cost = savedCard.cost;
-                }
-            });
-        }
-    }
-}
+    <!-- ==================== ВКЛАДКА 3: КОЛЕКЦІЇ ==================== -->
+    <main id="tab-collection" class="tab-content">
+        <div class="section-title">
+            <h2>💎 Колекційні Артефакти</h2>
+            <p>Збирай рідкісні реліквії для отримання потужних бонусів</p>
+        </div>
+        <div class="collection-grid" id="collection-container">
+            <!-- Генерується через JS -->
+        </div>
+    </main>
 
-// Завантаження при старті та збереження кожні 5 секунд
-loadProgress();
-setInterval(saveProgress, 5000);
+    <!-- ==================== ВКЛАДКА 4: ПРОФІЛЬ ==================== -->
+    <main id="tab-profile" class="tab-content">
+        <div class="section-title">
+            <h2>👑 Кабінет Боса</h2>
+            <p>Ваші досягнення та показники</p>
+        </div>
+        <div class="profile-card">
+            <div class="profile-stat-row">
+                <span>Всього тапів зроблено:</span>
+                <strong id="stat-total-taps">0</strong>
+            </div>
+            <div class="profile-stat-row">
+                <span>Сила тапу:</span>
+                <strong id="stat-tap-power">1 ₴</strong>
+            </div>
+            <div class="profile-stat-row">
+                <span>Витрата енергії:</span>
+                <strong id="stat-energy-drain">5 ⚡</strong>
+            </div>
+            <div class="profile-stat-row">
+                <span>Зібрано артефактів:</span>
+                <strong id="stat-artifacts-count">0 / 8</strong>
+            </div>
+        </div>
+    </main>
 
-// Перший запуск
-updateUI();
-</script>
+    <!-- НИЖНЄ МЕНЮ НАВІГАЦІЇ -->
+    <nav class="navbar">
+        <button class="nav-item active" onclick="switchTab('tap', this)">
+            <span class="nav-icon">🪙</span>
+            <span class="nav-label">Тап</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('cards', this)">
+            <span class="nav-icon">📊</span>
+            <span class="nav-label">Бізнес</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('collection', this)">
+            <span class="nav-icon">💎</span>
+            <span class="nav-label">Колекції</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('profile', this)">
+            <span class="nav-icon">👑</span>
+            <span class="nav-label">Профіль</span>
+        </button>
+    </nav>
 
+    <!-- Підключаємо логіку гри -->
+    <script src="script.js"></script>
 </body>
 </html>
