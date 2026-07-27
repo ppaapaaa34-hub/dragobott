@@ -2078,7 +2078,7 @@ def generate_inventory_ai_image(bought_codes):
     if not ai_descriptions:
         return None
         
-    items_prompt = ", ".join(ai_descriptions[:5])
+    items_prompt = ", ".join(ai_descriptions[:3])
     full_prompt = (
         f"A cinematic high quality photo showing a wealthy owner collection in one scene: {items_prompt}. "
         f"4k resolution, ultra detailed, modern luxury style"
