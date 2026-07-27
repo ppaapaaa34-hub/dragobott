@@ -591,15 +591,17 @@ def show_user_profile(message):
         item_counts = {}
         item_names_map = {}
 
-        for code, name in inventory_res:
+for code, name in inventory_res:
     print("----------------")
     print("CODE =", repr(code))
     print("NAME =", name)
     print("IN SHOP =", code in shop_dict)
-            item_counts[code] = item_counts.get(code, 0) + 1
-            item_names_map[code] = name
-            if code in shop_dict:
-                total_property_value += shop_dict[code].get("price", 0)
+
+    item_counts[code] = item_counts.get(code, 0) + 1
+    item_names_map[code] = name
+
+    if code in shop_dict:
+        total_property_value += shop_dict[code].get("price", 0)
 
         if not item_counts:
             property_text = "<i>Тільки шкарпетки й мобільник 📱</i>"
