@@ -591,30 +591,31 @@ def show_user_profile(message):
         item_counts = {}
         item_names_map = {}
 
-for code, name in inventory_res:
-    print("----------------")
-    print("CODE =", repr(code))
-    print("NAME =", name)
-    print("IN SHOP =", code in shop_dict)
+        for code, name in inventory_res:
+            print("----------------")
+            print("CODE =", repr(code))
+            print("NAME =", name)
+            print("IN SHOP =", code in shop_dict)
 
-    item_counts[code] = item_counts.get(code, 0) + 1
-    item_names_map[code] = name
+            item_counts[code] = item_counts.get(code, 0) + 1
+            item_names_map[code] = name
 
-    if code in shop_dict:
-        total_property_value += shop_dict[code].get("price", 0)
+            if code in shop_dict:
+                total_property_value += shop_dict[code].get("price", 0)
 
         if not item_counts:
             property_text = "<i>Тільки шкарпетки й мобільник 📱</i>"
         else:
             property_list = []
+
             for code, i_count in item_counts.items():
                 i_name = item_names_map[code]
                 c_str = f" x{i_count}" if i_count > 1 else ""
                 property_list.append(f"{i_name}{c_str}")
-            
+
             if show_full_inv:
                 property_text = ", ".join(property_list)
-                if len(property_text) > 120: 
+                if len(property_text) > 120:
                     property_text = property_text[:115] + "..."
             else:
                 property_text = f"<b>{len(inventory_res)} предметів</b> <i>(приховано)</i>"
