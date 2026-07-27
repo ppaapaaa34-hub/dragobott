@@ -1,0 +1,445 @@
+/* ==================== ОСНОВНІ НАЛАШТУВАННЯ ==================== */
+* {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    /* Повністю прибираємо синє підсвічування та виділення на мобільних */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(circle at top, #1e1b4b, #0f172a, #020617);
+    color: #ffffff;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ==================== ВЕРХНЯ ПАНЕЛЬ (HEADER) ==================== */
+.header {
+    padding: 15px 20px 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f97316, #ef4444);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 20px;
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.5);
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.username {
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.level-badge {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.profit-container {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: 16px;
+    text-align: right;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.profit-label {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    display: block;
+}
+
+.profit-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+/* ==================== СТАТИСТИКА (БАЛАНС) ==================== */
+.stats-section {
+    text-align: center;
+    margin: 10px 0;
+}
+
+.balance-title {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.balance-display {
+    font-size: 36px;
+    font-weight: 800;
+    margin: 4px 0;
+    background: linear-gradient(135deg, #ffffff, #fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 20px rgba(251, 191, 36, 0.25);
+}
+
+/* ==================== ВКЛАДКИ І КОНТЕНТ ==================== */
+.tab-content {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 85px;
+    overflow-y: auto;
+    width: 100%;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+.section-title {
+    text-align: center;
+    margin: 10px 0 15px;
+    padding: 0 15px;
+}
+
+.section-title h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #f1f5f9;
+}
+
+.section-title p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* ==================== ТАПЕР (ВКЛАДКА 1) ==================== */
+.tap-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: auto 0;
+}
+
+.tap-glow {
+    position: absolute;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(249, 115, 22, 0.3) 0%, rgba(0,0,0,0) 70%);
+    pointer-events: none;
+}
+
+.tap-btn {
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ff7300 0%, #d97706 40%, #7c2d12 100%);
+    border: 8px solid rgba(251, 191, 36, 0.3);
+    box-shadow: 0 0 40px rgba(249, 115, 22, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 90px;
+    cursor: pointer;
+    transition: transform 0.05s ease;
+    outline: none;
+    touch-action: manipulation;
+}
+
+.tap-btn:active {
+    transform: scale(0.93);
+}
+
+/* Енергія */
+.energy-wrapper {
+    width: 85%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.energy-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.energy-container {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 3px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.energy-bar {
+    height: 12px;
+    background: linear-gradient(90deg, #3b82f6, #06b6d4);
+    border-radius: 8px;
+    width: 100%;
+    transition: width 0.15s ease;
+}
+
+.energy-subtext {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 6px;
+}
+
+/* ==================== БІЗНЕС ТА ПРОКАЧКА (ВКЛАДКА 2) ==================== */
+.cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    padding: 0 15px;
+}
+
+.card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.card-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+}
+
+.card-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+.card-profit {
+    font-size: 11px;
+    color: #10b981;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.card-level {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.card-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border: none;
+    color: white;
+    padding: 8px 0;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+    transition: opacity 0.2s;
+}
+
+.card-btn:disabled {
+    background: #475569;
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ==================== КОЛЕКЦІЇ (ВКЛАДКА 3) ==================== */
+.collection-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    padding: 0 15px;
+}
+
+.item-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 2px solid #334155;
+    border-radius: 16px;
+    padding: 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Рідкісність */
+.item-card.common { border-color: #64748b; }
+.item-card.rare { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+.item-card.epic { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.3); }
+.item-card.legendary { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.35); }
+
+.item-badge {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.badge-common { background: #64748b; }
+.badge-rare { background: #0284c7; }
+.badge-epic { background: #7e22ce; }
+.badge-legendary { background: #b45309; }
+
+.item-icon {
+    font-size: 42px;
+    margin: 6px 0;
+}
+
+.item-name {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.item-bonus {
+    font-size: 11px;
+    color: #10b981;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+/* ==================== ПРОФІЛЬ (ВКЛАДКА 4) ==================== */
+.profile-card {
+    width: 90%;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    padding: 16px;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.profile-stat-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #cbd5e1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 8px;
+}
+
+.profile-stat-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.profile-stat-row strong {
+    color: #fbbf24;
+}
+
+/* ==================== НИЖНЄ МЕНЮ ==================== */
+.navbar {
+    position: fixed;
+    bottom: 15px;
+    left: 5%;
+    width: 90%;
+    height: 65px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    z-index: 100;
+}
+
+.nav-item {
+    background: none;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: #64748b;
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 0.2s, transform 0.1s;
+    outline: none;
+}
+
+.nav-item.active {
+    color: #f97316;
+}
+
+.nav-item:active {
+    transform: scale(0.9);
+}
+
+.nav-icon {
+    font-size: 20px;
+}
+
+.nav-label {
+    font-weight: 600;
+}
+
+/* ==================== АНІМАЦІЯ ВИЛІТАЮЧИХ ЦИФР ==================== */
+.float-num {
+    position: absolute;
+    font-size: 28px;
+    font-weight: 800;
+    color: #fbbf24;
+    pointer-events: none;
+    animation: floatUp 0.8s ease-out forwards;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+
+@keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-70px) scale(1.2); }
+}
