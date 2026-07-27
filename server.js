@@ -6,15 +6,19 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Твоє підключення до MongoDB
-const MONGO_URI = "mongodb+srv://ovoronovska843_db_user:S1rmjl1R9ppBybc4@cluster0.c8d708x.mongodb.net/drago_game?retryWrites=true&w=majority";
+// Зчитуємо MONGO_URI зі змінних оточення (Environment Variables) на Render
+const MONGO_URI = process.env.MONGO_URI;
 
-// Твій Telegram ID (ти єдиний Адмін)
-const ADMIN_TELEGRAM_ID = 5512316636; 
+// Ваш Telegram ID (Адмін)
+const ADMIN_TELEGRAM_ID = 5512316636;
 
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ База даних підключена!'))
-    .catch(err => console.error('❌ Помилка БД:', err));
+if (!MONGO_URI) {
+    console.error('❌ Помилка: Змінну оточення MONGO_URI не задано!');
+} else {
+    mongoose.connect(MONGO_URI)
+        .then(() => console.log('✅ База даних підключена!'))
+        .catch(err => console.error('❌ Помилка підключення до БД:', err));
+}
 
 // Модель Користувача
 const UserSchema = new mongoose.Schema({
@@ -99,8 +103,12 @@ app.get('/api/admin/users/:adminId', async (req, res) => {
     const adminId = parseInt(req.params.adminId);
     if (adminId !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: "Ви не адмін!" });
 
-    const users = await User.find().sort({ money: -1 });
-    res.json(users);
+    try {
+        const users = await User.find().sort({ money: -1 });
+        res.json(users);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // Нарахування грошей
@@ -108,13 +116,17 @@ app.post('/api/admin/add-money', async (req, res) => {
     const { adminId, targetTelegramId, amount } = req.body;
     if (parseInt(adminId) !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: "Ви не адмін!" });
 
-    const user = await User.findOne({ telegramId: targetTelegramId });
-    if (user) {
-        user.money += amount;
-        await user.save();
-        res.json({ success: true, newBalance: user.money });
-    } else {
-        res.status(404).json({ error: "Користувача не знайдено" });
+    try {
+        const user = await User.findOne({ telegramId: targetTelegramId });
+        if (user) {
+            user.money += (amount || 100000);
+            await user.save();
+            res.json({ success: true, newBalance: user.money });
+        } else {
+            res.status(404).json({ error: "Користувача не знайдено" });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -123,13 +135,17 @@ app.post('/api/admin/toggle-ban', async (req, res) => {
     const { adminId, targetTelegramId } = req.body;
     if (parseInt(adminId) !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: "Ви не адмін!" });
 
-    const user = await User.findOne({ telegramId: targetTelegramId });
-    if (user) {
-        user.isBanned = !user.isBanned;
-        await user.save();
-        res.json({ success: true, isBanned: user.isBanned });
-    } else {
-        res.status(404).json({ error: "Користувача не знайдено" });
+    try {
+        const user = await User.findOne({ telegramId: targetTelegramId });
+        if (user) {
+            user.isBanned = !user.isBanned;
+            await user.save();
+            res.json({ success: true, isBanned: user.isBanned });
+        } else {
+            res.status(404).json({ error: "Користувача не знайдено" });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
