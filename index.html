@@ -11,6 +11,13 @@
 * {
     box-sizing: border-box;
     user-select: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    /* Прибирає синє виділення/квадрат при натисканні на мобільних пристроях */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
 }
 
 body {
@@ -122,6 +129,9 @@ body {
     font-size: 100px;
     cursor: pointer;
     transition: transform 0.05s ease;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 .tap-btn:active {
@@ -195,6 +205,8 @@ body {
     font-weight: bold;
     font-size: 13px;
     cursor: pointer;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .card-btn:disabled {
@@ -230,6 +242,8 @@ body {
     font-size: 11px;
     cursor: pointer;
     transition: color 0.2s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .nav-item.active {
@@ -363,7 +377,8 @@ function updateUI() {
 }
 
 // Тап механіка
-tapBtn.addEventListener("click", (e) => {
+tapBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); // Запобігає зуму та підсвічуванню елемента браузером
     if (energy < tapPower) return;
 
     money += tapPower;
@@ -396,11 +411,9 @@ function createFloatingNumber(x, y, text) {
 
 // Відновлення енергії та Пасивний дохід (кожної секунди)
 setInterval(() => {
-    // Відновлення енергії
     if (energy < maxEnergy) {
         energy = Math.min(maxEnergy, energy + 3);
     }
-    // Пасивний прибуток (розподілений на 1 секунду)
     if (passiveIncome > 0) {
         money += passiveIncome / 3600;
     }
@@ -434,7 +447,7 @@ window.buyCard = function(id) {
         money -= card.cost;
         passiveIncome += card.profit;
         card.lvl++;
-        card.cost = Math.floor(card.cost * 1.6); // збільшення ціни наступного рівня
+        card.cost = Math.floor(card.cost * 1.6);
         updateUI();
     }
 }
@@ -447,6 +460,7 @@ window.switchTab = function(tabName, element) {
     document.getElementById(`tab-${tabName}`).classList.add('active');
     element.classList.add('active');
 }
+
 // Збереження даних у пам'ять браузера
 function saveProgress() {
     const data = {
@@ -479,11 +493,10 @@ function loadProgress() {
     }
 }
 
-// Виклич завантаження на самому початку, а збереження — кожні 5 секунд
+// Завантаження при старті та збереження кожні 5 секунд
 loadProgress();
 setInterval(saveProgress, 5000);
 
-    
 // Перший запуск
 updateUI();
 </script>
