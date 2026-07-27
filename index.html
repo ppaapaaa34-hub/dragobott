@@ -401,9 +401,9 @@
 
         <!-- 📑 Перемикач вкладок -->
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('tab-biz')">🏢 Бізнеси</button>
-            <button class="tab-btn" onclick="switchTab('tab-inv')">📦 Майно</button>
-            <button class="tab-btn" onclick="switchTab('tab-settings')">⚙️ Опції</button>
+            <button class="tab-btn active" onclick="switchTab(event, 'tab-biz')">🏢 Бізнеси</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tab-inv')">📦 Майно</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tab-settings')">⚙️ Опції</button>
         </div>
 
         <!-- 🏢 Вкладка 1: Бізнеси -->
@@ -468,12 +468,14 @@
             }
         }
 
-        function switchTab(tabId) {
+        function switchTab(evt, tabId) {
             triggerHaptic('light');
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-            event.currentTarget.classList.add('active');
+            if (evt && evt.currentTarget) {
+                evt.currentTarget.classList.add('active');
+            }
             document.getElementById(tabId).classList.add('active');
         }
 
@@ -496,14 +498,17 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    currentData.name = data.name || tgUser.first_name;
+                    currentData.name = data.name || tgUser.first_name || 'Гравець';
                     currentData.gender = data.gender || 'Невідомо';
                     currentData.items = data.items || [];
                     currentData.businesses = data.businesses || [];
 
                     renderUI(data);
+                } else {
+                    showStatus('❌ Помилка завантаження даних', true);
                 }
             } catch (err) {
+                console.error(err);
                 showStatus('❌ Помилка з\'єднання з сервером', true);
             }
         }
@@ -528,6 +533,7 @@
             renderList('inventory-container', currentData.items, '💎', 'items');
         }
 
+        // ПОКРАЩЕНА ФУНКЦІЯ ВИВОДУ СПИСКІВ (ОБРОБЛЯЄ І РЯДКИ, І ОБ'ЄКТИ)
         function renderList(containerId, listData, icon, type) {
             const container = document.getElementById(containerId);
             if (!listData || listData.length === 0) {
@@ -535,15 +541,23 @@
                 return;
             }
 
-            container.innerHTML = listData.map((item, index) => `
-                <div class="list-item">
-                    <span>${icon} ${item}</span>
-                    <div class="reorder-btns">
-                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">▲</button>
-                        <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">▼</button>
+            container.innerHTML = listData.map((item, index) => {
+                // Витягуємо назву незалежно від того, чи прийшов рядок, чи об'єкт
+                let title = item;
+                if (typeof item === 'object' && item !== null) {
+                    title = item.business_name || item.item_name || item.name || JSON.stringify(item);
+                }
+
+                return `
+                    <div class="list-item">
+                        <span>${icon} ${title}</span>
+                        <div class="reorder-btns">
+                            <button class="btn-mini" onclick="moveItem('${type}', ${index}, -1)">▲</button>
+                            <button class="btn-mini" onclick="moveItem('${type}', ${index}, 1)">▼</button>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function moveItem(type, index, direction) {
@@ -609,7 +623,7 @@
                     triggerHaptic('error');
                 }
             } catch (e) {
-                showStatus('❌ Помилка зєднання', true);
+                showStatus('❌ Помилка з\'єднання', true);
                 triggerHaptic('error');
             } finally {
                 btn.disabled = false;
