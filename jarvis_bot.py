@@ -2,6 +2,7 @@ import os
 import base64
 import requests
 import time
+import json
 import random
 import io
 import threading
@@ -9,7 +10,6 @@ import asyncio
 import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
-import json
 from telebot import types
 import google.generativeai as genai
 from PIL import Image
