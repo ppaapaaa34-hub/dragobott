@@ -4464,13 +4464,12 @@ if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    # Запускаємо Flask API сервер паралельно в окремому потоці
-    server_thread = threading.Thread(target=run_flask_app, daemon=True)
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
     server_thread.start()
-    print("🚀 Flask API сервер успішно запущено.")
+    print("🚀 Dummy-сервер успішно запущено.")
 
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
     
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
-    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query', 'web_app_data'])
+    bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
