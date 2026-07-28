@@ -4571,8 +4571,19 @@ def handle_broadcast(message):
     )
 
     keyboard = types.InlineKeyboardMarkup()
-    btn_game = types.InlineKeyboardButton(text="🎮 Грати в Drago Clicker", url="https://t.me/Draagoon_bot/app")
-    btn_channel = types.InlineKeyboardButton(text="📢 Наш канал", url="https://t.me/YOUR_CHANNEL_LINK")
+    
+    # Посилання веде прямо в ПП до бота
+    btn_game = types.InlineKeyboardButton(
+        text="🎮 Зайти в бота", 
+        url="https://t.me/Draagoon_bot?start=from_broadcast"
+    )
+    
+    # Заміни https://t.me/telegram на посилання свого каналу (якщо є)
+    btn_channel = types.InlineKeyboardButton(
+        text="📢 Наш канал", 
+        url="https://t.me/telegram"
+    )
+    
     keyboard.add(btn_game)
     keyboard.add(btn_channel)
 
@@ -4581,7 +4592,7 @@ def handle_broadcast(message):
         bot.send_message(message.chat.id, "✅ Розсилку успішно відправлено!")
     except Exception as e:
         print(f"Помилка розсилки: {e}")
-        bot.send_message(message.chat.id, "❌ Помилка під час відправки розсилки.")
+        bot.send_message(message.chat.id, f"❌ Помилка під час відправки розсилки: {e}")
 
 
 # ===================================================================
