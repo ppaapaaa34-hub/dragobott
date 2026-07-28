@@ -4571,7 +4571,7 @@ def handle_broadcast(message):
     )
 
     keyboard = types.InlineKeyboardMarkup()
-    btn_game = types.InlineKeyboardButton(text="🎮 Грати в Drago Clicker", url="https://t.me/YOUR_BOT_USERNAME/app")
+    btn_game = types.InlineKeyboardButton(text="🎮 Грати в Drago Clicker", url="https://t.me/Draagoon_bot/app")
     btn_channel = types.InlineKeyboardButton(text="📢 Наш канал", url="https://t.me/YOUR_CHANNEL_LINK")
     keyboard.add(btn_game)
     keyboard.add(btn_channel)
