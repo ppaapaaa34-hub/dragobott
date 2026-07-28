@@ -1,4 +1,8 @@
-const SERVER_URL = "https://dragobott.onrender.com";
+// Served by the same Express service; a separate host can set window.DRAGO_API_URL.
+const SERVER_URL = window.DRAGO_API_URL || window.location.origin;
+
+// The original bundle has a closing brace at EOF; keep the game scope balanced.
+{
 
 // ==================== TELEGRAM ====================
 let userTelegramId = 5512316636;
@@ -178,6 +182,7 @@ function loadLocalProgress() {
         maxEnergy = d.maxEnergy || 1000;
         energyDrain = d.energyDrain || 5;
         energyRegen = d.energyRegen || 3;
+
         passiveIncome = d.passiveIncome || 0;
         totalTaps = d.totalTaps || 0;
         playerLevel = d.playerLevel || 1;
@@ -359,6 +364,7 @@ function createFloatingNumber(x, y, text, isCombo) {
     setTimeout(() => el.remove(), 900);
 }
 
+
 function createTapParticles(x, y) {
     const colors = ["#fbbf24", "#a855f7", "#22d3ee", "#f472b6", "#fb923c"];
     for (let i = 0; i < 8; i++) {
@@ -537,6 +543,7 @@ function activateBoost(type, seconds) {
     activeBoosts[type] = Date.now() + seconds * 1000;
     showToast(`⚡ Буст активовано на ${seconds / 60} хв!`);
 }
+
 
 // ==================== MISSIONS ====================
 function updateMissionProgress(track, amount) {
@@ -719,6 +726,7 @@ function applySpinPrize(prize) {
     }
 }
 
+
 // ==================== LEADERBOARD ====================
 async function loadLeaderboard() {
     const container = document.getElementById("leaderboard-container");
@@ -898,6 +906,7 @@ window.openAdminModal = async function() {
                 showError("Помилка завантаження. Сервер недоступний — спробуйте пізніше.");
             }
         }
+
     }
 };
 
@@ -981,4 +990,5 @@ setInterval(renderMissions, 1000);
 
 if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
+}
 }
