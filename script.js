@@ -1,4 +1,4 @@
-// ⚠️ Замініть на ваше актуальне посилання з Render (наприклад: https://drago-backend.onrender.com)
+// ⚠️ Замініть на ваше актуальне посилання з Render
 const SERVER_URL = "https://dragobott.onrender.com";
 
 // ==================== ДАНІ КОРИСТУВАЧА ТА АДМІНКИ ====================
@@ -15,6 +15,12 @@ if (window.Telegram && window.Telegram.WebApp) {
         userTelegramId = tgUser.id;
         userUsername = tgUser.username || "анонім";
         userFirstName = tgUser.first_name || "Гравець";
+
+        // Встановлюємо аватарку користувача, якщо вона є
+        const avatarEl = document.getElementById("user-avatar");
+        if (avatarEl && tgUser.photo_url) {
+            avatarEl.src = tgUser.photo_url;
+        }
     }
 }
 
