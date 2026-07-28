@@ -4553,7 +4553,7 @@ def handle_text(message):
 
 ADMIN_ID = 5512316636
 
-@bot.message_handler(commands=['broadcast'])
+@bot.message_handler(commands=['bro'])
 def handle_broadcast(message):
     if message.from_user.id != ADMIN_ID:
         bot.send_message(message.chat.id, "❌ У вас немає прав для запуску розсилки.")
