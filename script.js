@@ -1,39 +1,53 @@
-// ⚠️ Замініть на ваше актуальне посилання з Render
 const SERVER_URL = "https://dragobott.onrender.com";
 
-// ==================== ДАНІ КОРИСТУВАЧА ТА АДМІНКИ ====================
+// ==================== TELEGRAM ====================
 let userTelegramId = 5512316636;
 let userUsername = "Admin";
 let userFirstName = "Drago Boss";
 let isAdmin = false;
 
-// Ініціалізація Telegram WebApp
-if (window.Telegram && window.Telegram.WebApp) {
+if (window.Telegram?.WebApp) {
     Telegram.WebApp.expand();
-    if (Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) {
-        const tgUser = Telegram.WebApp.initDataUnsafe.user;
+    Telegram.WebApp.setHeaderColor("#0a0618");
+    Telegram.WebApp.setBackgroundColor("#0a0618");
+    const tgUser = Telegram.WebApp.initDataUnsafe?.user;
+    if (tgUser) {
         userTelegramId = tgUser.id;
         userUsername = tgUser.username || "анонім";
         userFirstName = tgUser.first_name || "Гравець";
-
-        // Встановлюємо аватарку користувача, якщо вона є
         const avatarEl = document.getElementById("user-avatar");
-        if (avatarEl && tgUser.photo_url) {
-            avatarEl.src = tgUser.photo_url;
-        }
+        if (avatarEl && tgUser.photo_url) avatarEl.src = tgUser.photo_url;
     }
 }
 
-// ==================== ІГРОВІ ЗМІННІ ====================
+// ==================== GAME STATE ====================
 let money = 0;
 let tapPower = 1;
 let energy = 1000;
 let maxEnergy = 1000;
-let energyDrain = 5; // Скільки енергії витрачається за 1 тап
-let passiveIncome = 0; // Нарахування за годину
+let energyDrain = 5;
+let energyRegen = 3;
+let passiveIncome = 0;
 let totalTaps = 0;
+let playerLevel = 1;
+let playerXP = 0;
+let combo = 1;
+let maxCombo = 1;
+let lastTapTime = 0;
+let loginStreak = 0;
+let lastDailyClaim = "";
+let lastSpinDate = "";
+let spinsUsedToday = 0;
 
-// ==================== 8 БІЗНЕСІВ (ПРОКАЧКА) ====================
+const activeBoosts = { tap2x: 0, passive2x: 0, energyFull: 0 };
+
+const upgrades = {
+    tapPower: { lvl: 0, baseCost: 500, name: "Сила Тапу", icon: "👊", desc: "+1 ₴ за тап", effect: () => { tapPower += 1; } },
+    maxEnergy: { lvl: 0, baseCost: 800, name: "Макс. Енергія", icon: "🔋", desc: "+200 ⚡ максимум", effect: () => { maxEnergy += 200; energy = Math.min(energy + 200, maxEnergy); } },
+    energyRegen: { lvl: 0, baseCost: 1200, name: "Регенерація", icon: "⚡", desc: "+1 ⚡/с відновлення", effect: () => { energyRegen += 1; } },
+    energyEff: { lvl: 0, baseCost: 1500, name: "Економія", icon: "💨", desc: "-1 ⚡ за тап (мін. 1)", effect: () => { if (energyDrain > 1) energyDrain -= 1; } }
+};
+
 const cards = [
     { id: 1, name: "Точка з Шаурмою", icon: "🥙", cost: 100, profit: 40, lvl: 0 },
     { id: 2, name: "Кав'ярня", icon: "☕", cost: 500, profit: 220, lvl: 0 },
@@ -42,10 +56,13 @@ const cards = [
     { id: 5, name: "IT-Холдинг", icon: "💻", cost: 30000, profit: 17000, lvl: 0 },
     { id: 6, name: "Казино Дракона", icon: "🎰", cost: 120000, profit: 75000, lvl: 0 },
     { id: 7, name: "Торговий Центр", icon: "🏢", cost: 500000, profit: 320000, lvl: 0 },
-    { id: 8, name: "Нафтова Вишка", icon: "🛢️", cost: 2000000, profit: 1400000, lvl: 0 }
+    { id: 8, name: "Нафтова Вишка", icon: "🛢️", cost: 2000000, profit: 1400000, lvl: 0 },
+    { id: 9, name: "Авіакомпанія", icon: "✈️", cost: 8000000, profit: 5500000, lvl: 0 },
+    { id: 10, name: "Космопорт", icon: "🚀", cost: 30000000, profit: 22000000, lvl: 0 },
+    { id: 11, name: "Медіа-Імперія", icon: "📺", cost: 100000000, profit: 80000000, lvl: 0 },
+    { id: 12, name: "Банк Дракона", icon: "🏦", cost: 500000000, profit: 450000000, lvl: 0 }
 ];
 
-// ==================== 8 КОЛЕКЦІЙНИХ АРТЕФАКТІВ ====================
 const collectionItems = [
     { id: "item_1", name: "Зуб Дракона", rarity: "common", icon: "🦷", cost: 2500, bonus: "+2 ₴ до тапу", owned: false },
     { id: "item_2", name: "Стародавний Амулет", rarity: "common", icon: "📿", cost: 10000, bonus: "+5 ₴ до тапу", owned: false },
@@ -54,306 +71,700 @@ const collectionItems = [
     { id: "item_5", name: "Око Драго", rarity: "epic", icon: "👁️", cost: 300000, bonus: "+10% до пасиву", owned: false },
     { id: "item_6", name: "Вогняний Меч", rarity: "epic", icon: "⚔️", cost: 800000, bonus: "+50 ₴ до тапу", owned: false },
     { id: "item_7", name: "Корона Імператора", rarity: "legendary", icon: "👑", cost: 2500000, bonus: "+20% до пасиву", owned: false },
-    { id: "item_8", name: "Серце Дракона", rarity: "legendary", icon: "💖", cost: 10000000, bonus: "+150 ₴ до тапу", owned: false }
+    { id: "item_8", name: "Серце Дракона", rarity: "legendary", icon: "💖", cost: 10000000, bonus: "+150 ₴ до тапу", owned: false },
+    { id: "item_9", name: "Криstall Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
+    { id: "item_10", name: "Крила Фенікса", rarity: "epic", icon: "🪽", cost: 1500000, bonus: "+15% до пасиву", owned: false },
+    { id: "item_11", name: "Скіпетр Влади", rarity: "legendary", icon: "🔱", cost: 5000000, bonus: "+100 ₴ до тапу", owned: false },
+    { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false }
 ];
 
-// Елементи DOM
+const LEVEL_NAMES = ["Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат", "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог"];
+const DAILY_REWARDS = [500, 1000, 2500, 5000, 10000, 25000, 100000];
+const SPIN_PRIZES = [
+    { label: "500 ₴", type: "money", value: 500 },
+    { label: "2K ₴", type: "money", value: 2000 },
+    { label: "10K ₴", type: "money", value: 10000 },
+    { label: "x2 Тап 5хв", type: "boost", boost: "tap2x", duration: 300 },
+    { label: "100 ⚡", type: "energy", value: 100 },
+    { label: "500 ⚡", type: "energy", value: 500 },
+    { label: "x2 Пасив 5хв", type: "boost", boost: "passive2x", duration: 300 },
+    { label: "50K ₴", type: "money", value: 50000 }
+];
+
+let missions = [];
+let achievements = [];
+
+function initMissions() {
+    const today = todayKey();
+    missions = [
+        { id: "m1", icon: "👆", name: "Зроби 100 тапів", target: 100, progress: 0, reward: 2000, claimed: false, track: "taps" },
+        { id: "m2", icon: "💰", name: "Зароби 10,000 ₴", target: 10000, progress: 0, reward: 5000, claimed: false, track: "earned" },
+        { id: "m3", icon: "🏢", name: "Купи 1 бізнес", target: 1, progress: 0, reward: 3000, claimed: false, track: "business" },
+        { id: "m4", icon: "🔥", name: "Досягни комбо x3", target: 3, progress: 0, reward: 4000, claimed: false, track: "combo" },
+        { id: "m5", icon: "⚡", name: "Витрати 500 енергії", target: 500, progress: 0, reward: 2500, claimed: false, track: "energy" }
+    ];
+    const saved = localStorage.getItem(`drago_missions_${today}`);
+    if (saved) {
+        try { missions = JSON.parse(saved); } catch (_) {}
+    }
+}
+
+function initAchievements() {
+    achievements = [
+        { id: "a1", icon: "👆", name: "Перший тап", desc: "100 тапів", unlocked: false, check: () => totalTaps >= 100 },
+        { id: "a2", icon: "💰", name: "Багатій", desc: "100K ₴", unlocked: false, check: () => money >= 100000 },
+        { id: "a3", icon: "🏢", name: "Підприємець", desc: "5 бізнесів", unlocked: false, check: () => cards.reduce((s, c) => s + c.lvl, 0) >= 5 },
+        { id: "a4", icon: "💎", name: "Колекціонер", desc: "3 артефакти", unlocked: false, check: () => collectionItems.filter(i => i.owned).length >= 3 },
+        { id: "a5", icon: "🔥", name: "Комбо-Майстер", desc: "Комбо x5", unlocked: false, check: () => maxCombo >= 5 },
+        { id: "a6", icon: "⚡", name: "Енерджайзер", desc: "Рівень 5", unlocked: false, check: () => playerLevel >= 5 },
+        { id: "a7", icon: "🎁", name: "Вірний", desc: "7 днів серії", unlocked: false, check: () => loginStreak >= 7 },
+        { id: "a8", icon: "👑", name: "Імператор", desc: "1M ₴", unlocked: false, check: () => money >= 1000000 },
+        { id: "a9", icon: "🚀", name: "Космонавт", desc: "Космопорт", unlocked: false, check: () => cards.find(c => c.id === 10)?.lvl > 0 },
+        { id: "a10", icon: "🐉", name: "Драко-Бог", desc: "Рівень 10", unlocked: false, check: () => playerLevel >= 10 }
+    ];
+}
+
+function todayKey() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function xpForLevel(lvl) {
+    return Math.floor(1000 * Math.pow(1.35, lvl - 1));
+}
+
+function addXP(amount) {
+    playerXP += amount;
+    while (playerXP >= xpForLevel(playerLevel) && playerLevel < 10) {
+        playerXP -= xpForLevel(playerLevel);
+        playerLevel++;
+        showToast(`🎉 Рівень ${playerLevel}: ${LEVEL_NAMES[playerLevel - 1] || "Бог"}!`);
+        if (Telegram?.WebApp?.HapticFeedback) Telegram.WebApp.HapticFeedback.notificationOccurred("success");
+    }
+}
+
+// ==================== DOM REFS ====================
 const moneyEl = document.getElementById("money");
 const energyEl = document.getElementById("energy");
+const maxEnergyEl = document.getElementById("max-energy");
 const energyBar = document.getElementById("energy-bar");
 const passiveEl = document.getElementById("passive-income");
 const tapBtn = document.getElementById("tap");
-const cardsContainer = document.getElementById("cards-container");
-const collectionContainer = document.getElementById("collection-container");
+const comboDisplay = document.getElementById("combo-display");
 
-// Статистика у профілі
-const statTotalTaps = document.getElementById("stat-total-taps");
-const statTapPower = document.getElementById("stat-tap-power");
-const statEnergyDrain = document.getElementById("stat-energy-drain");
-const statArtifactsCount = document.getElementById("stat-artifacts-count");
-
-// ==================== ЛОКАЛЬНЕ ЗБЕРЕЖЕННЯ (РЕЗЕРВ) ====================
-function saveLocalProgress() {
-    const saveData = {
-        money,
-        tapPower,
-        energy,
-        passiveIncome,
-        totalTaps,
-        cards,
-        collectionItems
+// ==================== SAVE / LOAD ====================
+function getSaveData() {
+    return {
+        money, tapPower, energy, maxEnergy, energyDrain, energyRegen, passiveIncome, totalTaps,
+        playerLevel, playerXP, maxCombo, loginStreak, lastDailyClaim, lastSpinDate, spinsUsedToday,
+        cards, collectionItems, upgrades, activeBoosts, achievements: achievements.map(a => ({ id: a.id, unlocked: a.unlocked }))
     };
-    localStorage.setItem("drago_local_save", JSON.stringify(saveData));
+}
+
+function saveLocalProgress() {
+    localStorage.setItem("drago_local_save", JSON.stringify(getSaveData()));
+    localStorage.setItem(`drago_missions_${todayKey()}`, JSON.stringify(missions));
 }
 
 function loadLocalProgress() {
     const saved = localStorage.getItem("drago_local_save");
-    if (saved) {
-        try {
-            const data = JSON.parse(saved);
-            money = data.money || 0;
-            tapPower = data.tapPower || 1;
-            energy = data.energy !== undefined ? data.energy : 1000;
-            passiveIncome = data.passiveIncome || 0;
-            totalTaps = data.totalTaps || 0;
+    if (!saved) return;
+    try {
+        const d = JSON.parse(saved);
+        money = d.money || 0;
+        tapPower = d.tapPower || 1;
+        energy = d.energy ?? 1000;
+        maxEnergy = d.maxEnergy || 1000;
+        energyDrain = d.energyDrain || 5;
+        energyRegen = d.energyRegen || 3;
+        passiveIncome = d.passiveIncome || 0;
+        totalTaps = d.totalTaps || 0;
+        playerLevel = d.playerLevel || 1;
+        playerXP = d.playerXP || 0;
+        maxCombo = d.maxCombo || 1;
+        loginStreak = d.loginStreak || 0;
+        lastDailyClaim = d.lastDailyClaim || "";
+        lastSpinDate = d.lastSpinDate || "";
+        spinsUsedToday = d.spinsUsedToday || 0;
 
-            if (data.cards) {
-                data.cards.forEach((c, i) => { 
-                    if(cards[i]) { 
-                        cards[i].lvl = c.lvl; 
-                        cards[i].cost = c.cost; 
-                    } 
-                });
-            }
-            if (data.collectionItems) {
-                data.collectionItems.forEach((c, i) => { 
-                    if(collectionItems[i]) collectionItems[i].owned = c.owned; 
-                });
-            }
-        } catch(e) {
-            console.error("Помилка зчитування локального збереження", e);
-        }
+        if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
+        if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
+        if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
+        if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
+        if (d.achievements) d.achievements.forEach(sa => {
+            const a = achievements.find(x => x.id === sa.id);
+            if (a) a.unlocked = sa.unlocked;
+        });
+    } catch (e) {
+        console.error("Load error:", e);
     }
 }
 
-// ==================== ОНОВЛЕННЯ ІНТЕРФЕЙСУ ====================
+// ==================== UI ====================
+function formatNum(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e4) return (n / 1e3).toFixed(1) + "K";
+    return Math.floor(n).toLocaleString();
+}
+
 function updateUI() {
-    if (moneyEl) moneyEl.innerText = Math.floor(money).toLocaleString() + " ₴";
-    if (energyEl) energyEl.innerText = energy;
-    if (energyBar) energyBar.style.width = Math.max(0, (energy / maxEnergy * 100)) + "%";
-    if (passiveEl) passiveEl.innerText = Math.floor(passiveIncome).toLocaleString();
+    if (moneyEl) moneyEl.innerText = formatNum(money) + " ₴";
+    if (energyEl) energyEl.innerText = Math.floor(energy);
+    if (maxEnergyEl) maxEnergyEl.innerText = maxEnergy;
+    if (energyBar) energyBar.style.width = Math.max(0, energy / maxEnergy * 100) + "%";
+    if (passiveEl) passiveEl.innerText = formatNum(getEffectivePassive());
 
-    // Статистика
-    if (statTotalTaps) statTotalTaps.innerText = totalTaps.toLocaleString();
-    if (statTapPower) statTapPower.innerText = tapPower + " ₴";
-    if (statEnergyDrain) statEnergyDrain.innerText = energyDrain + " ⚡";
-    if (statArtifactsCount) {
-        const ownedCount = collectionItems.filter(i => i.owned).length;
-        statArtifactsCount.innerText = `${ownedCount} / ${collectionItems.length}`;
-    }
+    const xpNeeded = xpForLevel(playerLevel);
+    const levelBar = document.getElementById("level-bar");
+    const xpCurrent = document.getElementById("xp-current");
+    const xpNeededEl = document.getElementById("xp-needed");
+    const levelName = document.getElementById("level-name");
+    if (levelBar) levelBar.style.width = (playerXP / xpNeeded * 100) + "%";
+    if (xpCurrent) xpCurrent.innerText = formatNum(playerXP);
+    if (xpNeededEl) xpNeededEl.innerText = formatNum(xpNeeded);
+    if (levelName) levelName.innerText = `Рівень ${playerLevel} · ${LEVEL_NAMES[playerLevel - 1] || "Бог"}`;
 
-    // Показ кнопки адміна
+    document.getElementById("energy-drain-text").innerText = energyDrain;
+    document.getElementById("energy-regen-text").innerText = energyRegen;
+    document.getElementById("stat-total-taps").innerText = totalTaps.toLocaleString();
+    document.getElementById("stat-tap-power").innerText = getEffectiveTapPower() + " ₴";
+    document.getElementById("stat-max-combo").innerText = "x" + maxCombo;
+    document.getElementById("stat-artifacts-count").innerText = `${collectionItems.filter(i => i.owned).length} / ${collectionItems.length}`;
+    document.getElementById("stat-achievements").innerText = `${achievements.filter(a => a.unlocked).length} / ${achievements.length}`;
+    document.getElementById("stat-streak").innerText = loginStreak + " днів";
+
     const adminContainer = document.getElementById("admin-btn-container");
-    if (adminContainer) {
-        if (isAdmin || userTelegramId === 5512316636) {
-            adminContainer.style.display = "block";
-        } else {
-            adminContainer.style.display = "none";
-        }
-    }
+    if (adminContainer) adminContainer.style.display = (isAdmin || userTelegramId === 5512316636) ? "block" : "none";
 
+    renderActiveBoosts();
     renderCards();
     renderCollection();
+    renderBoosts();
+    renderMissions();
+    renderAchievements();
+    checkAchievements();
 }
 
-// ==================== ТАП МЕХАНІКА ====================
+function getEffectiveTapPower() {
+    let p = tapPower;
+    if (activeBoosts.tap2x > Date.now()) p *= 2;
+    return Math.floor(p * combo);
+}
+
+function getEffectivePassive() {
+    let p = passiveIncome;
+    if (activeBoosts.passive2x > Date.now()) p *= 2;
+    return p;
+}
+
+function renderActiveBoosts() {
+    const el = document.getElementById("active-boosts");
+    if (!el) return;
+    el.innerHTML = "";
+    const now = Date.now();
+    if (activeBoosts.tap2x > now) el.innerHTML += `<span class="boost-badge">👊 x2 Тап ${Math.ceil((activeBoosts.tap2x - now) / 1000)}с</span>`;
+    if (activeBoosts.passive2x > now) el.innerHTML += `<span class="boost-badge">💰 x2 Пасив ${Math.ceil((activeBoosts.passive2x - now) / 1000)}с</span>`;
+}
+
+// ==================== TAP ====================
 if (tapBtn) {
     tapBtn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
+        if (energy < energyDrain) {
+            showToast("⚡ Недостатньо енергії!");
+            return;
+        }
 
-        // Перевіряємо чи вистачає енергії
-        if (energy < energyDrain) return;
+        const now = Date.now();
+        if (now - lastTapTime < 1500) {
+            combo = Math.min(5, combo + 0.2);
+        } else {
+            combo = 1;
+        }
+        lastTapTime = now;
+        maxCombo = Math.max(maxCombo, Math.floor(combo));
 
-        money += tapPower;
+        const earned = getEffectiveTapPower();
+        money += earned;
         energy -= energyDrain;
         totalTaps++;
+        addXP(Math.floor(earned / 2) + 1);
 
-        // Анімація вилітаючих цифр
-        createFloatingNumber(e.clientX, e.clientY, `+${tapPower}`);
+        updateMissionProgress("taps", 1);
+        updateMissionProgress("earned", earned);
+        updateMissionProgress("energy", energyDrain);
+        updateMissionProgress("combo", Math.floor(combo));
 
-        // Вібрація (Telegram Haptic Feedback)
-        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.HapticFeedback) {
-            Telegram.WebApp.HapticFeedback.impactOccurred('light');
+        if (comboDisplay) {
+            comboDisplay.innerText = `COMBO x${combo.toFixed(1)}`;
+            comboDisplay.classList.toggle("active", combo > 1.2);
         }
+
+        createFloatingNumber(e.clientX, e.clientY, `+${formatNum(earned)}`, combo > 1.2);
+        createTapParticles(e.clientX, e.clientY);
+
+        if (Telegram?.WebApp?.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred(combo > 2 ? "medium" : "light");
 
         saveLocalProgress();
         updateUI();
     });
 }
 
-// Анімовані цифри при тапі
-function createFloatingNumber(x, y, text) {
+function createFloatingNumber(x, y, text, isCombo) {
     const el = document.createElement("div");
-    el.className = "float-num";
+    el.className = "float-num" + (isCombo ? " combo" : "");
     el.innerText = text;
     el.style.left = `${x - 20}px`;
     el.style.top = `${y - 30}px`;
     document.body.appendChild(el);
-
-    setTimeout(() => { el.remove(); }, 800);
+    setTimeout(() => el.remove(), 900);
 }
 
-// ==================== ВІДНОВЛЕННЯ ЕНЕРГІЇ ТА ПАСИВ ====================
+function createTapParticles(x, y) {
+    const colors = ["#fbbf24", "#a855f7", "#22d3ee", "#f472b6", "#fb923c"];
+    for (let i = 0; i < 8; i++) {
+        const p = document.createElement("div");
+        p.className = "tap-particle";
+        p.style.left = x + "px";
+        p.style.top = y + "px";
+        p.style.background = colors[i % colors.length];
+        const angle = (Math.PI * 2 * i) / 8;
+        const dist = 40 + Math.random() * 40;
+        p.style.setProperty("--tx", Math.cos(angle) * dist + "px");
+        p.style.setProperty("--ty", Math.sin(angle) * dist + "px");
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 600);
+    }
+}
+
+// ==================== GAME LOOP ====================
 setInterval(() => {
-    // Відновлюємо по 3⚡ за секунду
-    if (energy < maxEnergy) {
-        energy = Math.min(maxEnergy, energy + 3);
+    if (energy < maxEnergy) energy = Math.min(maxEnergy, energy + energyRegen);
+    const passive = getEffectivePassive();
+    if (passive > 0) money += passive / 3600;
+    if (Date.now() - lastTapTime > 2000 && combo > 1) {
+        combo = 1;
+        if (comboDisplay) {
+            comboDisplay.innerText = "COMBO x1";
+            comboDisplay.classList.remove("active");
+        }
     }
-
-    // Нарахування пасивного доходу
-    if (passiveIncome > 0) {
-        money += passiveIncome / 3600;
-    }
-
     saveLocalProgress();
     updateUI();
 }, 1000);
 
-// ==================== ГЕНЕРАЦІЯ КАРТОЧОК БІЗНЕСУ ====================
+// ==================== CARDS ====================
 function renderCards() {
-    if (!cardsContainer) return;
-    cardsContainer.innerHTML = "";
-
+    const container = document.getElementById("cards-container");
+    if (!container) return;
+    container.innerHTML = "";
     cards.forEach(card => {
-        const cardEl = document.createElement("div");
-        cardEl.className = "card";
-        cardEl.innerHTML = `
-            <div>
-                <div class="card-icon">${card.icon}</div>
-                <div class="card-title">${card.name}</div>
-                <div class="card-profit">+${card.profit.toLocaleString()} ₴/год</div>
-                <div class="card-level">Рівень: ${card.lvl}</div>
-            </div>
-            <button class="card-btn" ${money < card.cost ? "disabled" : ""} onclick="buyCard(${card.id})">
-                ${card.cost.toLocaleString()} ₴
-            </button>
-        `;
-        cardsContainer.appendChild(cardEl);
+        const el = document.createElement("div");
+        el.className = "card";
+        el.innerHTML = `
+            <div class="card-icon">${card.icon}</div>
+            <div class="card-title">${card.name}</div>
+            <div class="card-profit">+${formatNum(card.profit)} ₴/год</div>
+            <div class="card-level">Рівень ${card.lvl}</div>
+            <button class="card-btn" ${money < card.cost ? "disabled" : ""} onclick="buyCard(${card.id})">${formatNum(card.cost)} ₴</button>`;
+        container.appendChild(el);
     });
 }
 
-// Купівля бізнесу
 window.buyCard = function(id) {
     const card = cards.find(c => c.id === id);
-    if (card && money >= card.cost) {
-        money -= card.cost;
-        passiveIncome += card.profit;
-        card.lvl++;
-        card.cost = Math.floor(card.cost * 1.55); // Зростання ціни
-        saveLocalProgress();
-        updateUI();
-    }
+    if (!card || money < card.cost) return;
+    money -= card.cost;
+    passiveIncome += card.profit;
+    card.lvl++;
+    card.cost = Math.floor(card.cost * 1.55);
+    updateMissionProgress("business", 1);
+    addXP(Math.floor(card.profit / 10));
+    showToast(`🏢 ${card.name} — рівень ${card.lvl}!`);
+    saveLocalProgress();
+    updateUI();
 };
 
-// ==================== ГЕНЕРАЦІЯ АРТЕФАКТІВ ====================
+// ==================== COLLECTION ====================
+const ITEM_BONUSES = {
+    item_1: () => { tapPower += 2; },
+    item_2: () => { tapPower += 5; },
+    item_3: () => { passiveIncome = Math.floor(passiveIncome * 1.05); },
+    item_4: () => { tapPower += 15; },
+    item_5: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
+    item_6: () => { tapPower += 50; },
+    item_7: () => { passiveIncome = Math.floor(passiveIncome * 1.20); },
+    item_8: () => { tapPower += 150; },
+    item_9: () => { tapPower += 25; },
+    item_10: () => { passiveIncome = Math.floor(passiveIncome * 1.15); },
+    item_11: () => { tapPower += 100; },
+    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); }
+};
+
 function renderCollection() {
-    if (!collectionContainer) return;
-    collectionContainer.innerHTML = "";
-
+    const container = document.getElementById("collection-container");
+    if (!container) return;
+    container.innerHTML = "";
+    const rarityNames = { common: "Звичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний" };
     collectionItems.forEach(item => {
-        const itemEl = document.createElement("div");
-        itemEl.className = `item-card ${item.rarity}`;
-
-        let badgeClass = `badge-${item.rarity}`;
-        let rarityText = item.rarity === 'common' ? 'Ззвичайний' :
-                         item.rarity === 'rare' ? 'Рідкісний' :
-                         item.rarity === 'epic' ? 'Епічний' : 'Легендарний';
-
-        itemEl.innerHTML = `
-            <span class="item-badge ${badgeClass}">${rarityText}</span>
+        const el = document.createElement("div");
+        el.className = `item-card ${item.rarity}${item.owned ? " owned" : ""}`;
+        el.innerHTML = `
+            <span class="item-badge badge-${item.rarity}">${rarityNames[item.rarity]}</span>
             <div class="item-icon">${item.icon}</div>
             <div class="item-name">${item.name}</div>
             <div class="item-bonus">${item.bonus}</div>
             <button class="card-btn" ${item.owned || money < item.cost ? "disabled" : ""} onclick="buyCollectionItem('${item.id}')">
-                ${item.owned ? "В колекції ✨" : item.cost.toLocaleString() + " ₴"}
-            </button>
-        `;
-        collectionContainer.appendChild(itemEl);
+                ${item.owned ? "✨ В колекції" : formatNum(item.cost) + " ₴"}
+            </button>`;
+        container.appendChild(el);
     });
 }
 
-// Купівля колекційного артефакту
 window.buyCollectionItem = function(id) {
     const item = collectionItems.find(i => i.id === id);
-    if (item && !item.owned && money >= item.cost) {
-        money -= item.cost;
-        item.owned = true;
+    if (!item || item.owned || money < item.cost) return;
+    money -= item.cost;
+    item.owned = true;
+    ITEM_BONUSES[id]?.();
+    showToast(`💎 ${item.name} отримано!`);
+    saveLocalProgress();
+    updateUI();
+};
 
-        // Нарахування конкретних бонусів
-        if (id === "item_1") tapPower += 2;
-        if (id === "item_2") tapPower += 5;
-        if (id === "item_3") passiveIncome = Math.floor(passiveIncome * 1.05);
-        if (id === "item_4") tapPower += 15;
-        if (id === "item_5") passiveIncome = Math.floor(passiveIncome * 1.10);
-        if (id === "item_6") tapPower += 50;
-        if (id === "item_7") passiveIncome = Math.floor(passiveIncome * 1.20);
-        if (id === "item_8") tapPower += 150;
+// ==================== BOOSTS ====================
+function getUpgradeCost(key) {
+    const u = upgrades[key];
+    return Math.floor(u.baseCost * Math.pow(1.6, u.lvl));
+}
 
+function renderBoosts() {
+    const container = document.getElementById("boost-container");
+    const shop = document.getElementById("boost-shop");
+    if (!container || !shop) return;
+
+    container.innerHTML = "";
+    Object.entries(upgrades).forEach(([key, u]) => {
+        const cost = getUpgradeCost(key);
+        const el = document.createElement("div");
+        el.className = "boost-card";
+        el.innerHTML = `
+            <div class="boost-icon">${u.icon}</div>
+            <div class="boost-info"><h3>${u.name} (Lv.${u.lvl})</h3><p>${u.desc}</p></div>
+            <button class="boost-buy-btn" ${money < cost ? "disabled" : ""} onclick="buyUpgrade('${key}')">${formatNum(cost)} ₴</button>`;
+        container.appendChild(el);
+    });
+
+    shop.innerHTML = "";
+    const shopItems = [
+        { name: "x2 Тап (5 хв)", icon: "👊", cost: 5000, action: () => activateBoost("tap2x", 300) },
+        { name: "x2 Пасив (5 хв)", icon: "💰", cost: 8000, action: () => activateBoost("passive2x", 300) },
+        { name: "Повна енергія", icon: "🔋", cost: 3000, action: () => { energy = maxEnergy; showToast("⚡ Енергія відновлена!"); } }
+    ];
+    shopItems.forEach((item, i) => {
+        const el = document.createElement("div");
+        el.className = "boost-card";
+        el.innerHTML = `
+            <div class="boost-icon">${item.icon}</div>
+            <div class="boost-info"><h3>${item.name}</h3><p>Тимчасовий буст</p></div>
+            <button class="boost-buy-btn" ${money < item.cost ? "disabled" : ""} onclick="buyActiveBoost(${i})">${formatNum(item.cost)} ₴</button>`;
+        shop.appendChild(el);
+    });
+    window._shopItems = shopItems;
+}
+
+window.buyUpgrade = function(key) {
+    const u = upgrades[key];
+    const cost = getUpgradeCost(key);
+    if (money < cost) return;
+    money -= cost;
+    u.lvl++;
+    u.effect();
+    showToast(`🚀 ${u.name} — рівень ${u.lvl}!`);
+    saveLocalProgress();
+    updateUI();
+};
+
+window.buyActiveBoost = function(index) {
+    const item = window._shopItems[index];
+    if (!item || money < item.cost) return;
+    money -= item.cost;
+    item.action();
+    saveLocalProgress();
+    updateUI();
+};
+
+function activateBoost(type, seconds) {
+    activeBoosts[type] = Date.now() + seconds * 1000;
+    showToast(`⚡ Буст активовано на ${seconds / 60} хв!`);
+}
+
+// ==================== MISSIONS ====================
+function updateMissionProgress(track, amount) {
+    missions.forEach(m => {
+        if (m.track === track && !m.claimed) {
+            m.progress = Math.min(m.target, m.progress + amount);
+        }
+    });
+}
+
+function renderMissions() {
+    const container = document.getElementById("missions-container");
+    if (!container) return;
+    container.innerHTML = "";
+    missions.forEach(m => {
+        const pct = Math.min(100, m.progress / m.target * 100);
+        const el = document.createElement("div");
+        el.className = "mission-card";
+        el.innerHTML = `
+            <div class="mission-icon">${m.icon}</div>
+            <div class="mission-info">
+                <h3>${m.name}</h3>
+                <div class="mission-progress-wrap"><div class="mission-progress" style="width:${pct}%"></div></div>
+                <div class="mission-reward">🎁 ${formatNum(m.reward)} ₴ · ${Math.floor(m.progress)}/${m.target}</div>
+            </div>
+            <button class="mission-claim-btn ${m.claimed ? "claimed" : ""}" ${m.claimed || m.progress < m.target ? "disabled" : ""} onclick="claimMission('${m.id}')">
+                ${m.claimed ? "✓" : "Забрати"}
+            </button>`;
+        container.appendChild(el);
+    });
+
+    const resetEl = document.getElementById("missions-reset");
+    if (resetEl) {
+        const now = new Date();
+        const midnight = new Date(now);
+        midnight.setHours(24, 0, 0, 0);
+        const diff = midnight - now;
+        const h = Math.floor(diff / 3600000);
+        const min = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        resetEl.innerText = `Оновлення через: ${h}:${String(min).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+}
+
+window.claimMission = function(id) {
+    const m = missions.find(x => x.id === id);
+    if (!m || m.claimed || m.progress < m.target) return;
+    m.claimed = true;
+    money += m.reward;
+    showToast(`🎯 +${formatNum(m.reward)} ₴ за місію!`);
+    saveLocalProgress();
+    updateUI();
+};
+
+// ==================== ACHIEVEMENTS ====================
+function checkAchievements() {
+    achievements.forEach(a => {
+        if (!a.unlocked && a.check()) {
+            a.unlocked = true;
+            showToast(`🏆 Досягнення: ${a.name}!`);
+        }
+    });
+}
+
+function renderAchievements() {
+    const container = document.getElementById("achievements-container");
+    if (!container) return;
+    container.innerHTML = "";
+    achievements.forEach(a => {
+        const el = document.createElement("div");
+        el.className = "achievement-card" + (a.unlocked ? " unlocked" : "");
+        el.innerHTML = `<div class="ach-icon">${a.icon}</div><div class="ach-name">${a.name}</div><div class="ach-desc">${a.desc}</div>`;
+        container.appendChild(el);
+    });
+}
+
+// ==================== DAILY REWARDS ====================
+window.openDailyModal = function() {
+    document.getElementById("daily-modal").style.display = "flex";
+    renderDailyGrid();
+};
+
+window.closeDailyModal = function() {
+    document.getElementById("daily-modal").style.display = "none";
+};
+
+function renderDailyGrid() {
+    const grid = document.getElementById("daily-grid");
+    const btn = document.getElementById("claim-daily-btn");
+    if (!grid) return;
+    grid.innerHTML = "";
+    const streakDay = loginStreak % 7;
+    const canClaim = lastDailyClaim !== todayKey();
+
+    DAILY_REWARDS.forEach((reward, i) => {
+        const el = document.createElement("div");
+        el.className = "daily-day";
+        if (i < streakDay) el.classList.add("claimed");
+        if (i === streakDay && canClaim) el.classList.add("today");
+        el.innerHTML = `<div class="day-num">День ${i + 1}</div><div class="day-reward">💰</div><div>${formatNum(reward)} ₴</div>`;
+        grid.appendChild(el);
+    });
+
+    if (btn) {
+        btn.disabled = !canClaim;
+        btn.innerText = canClaim ? "Забрати нагороду" : "Вже забрано сьогодні ✓";
+    }
+}
+
+window.claimDailyReward = function() {
+    if (lastDailyClaim === todayKey()) return;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = yesterday.toISOString().slice(0, 10);
+
+    if (lastDailyClaim === yesterdayKey) loginStreak++;
+    else if (lastDailyClaim !== todayKey()) loginStreak = 1;
+
+    const dayIndex = (loginStreak - 1) % 7;
+    const reward = DAILY_REWARDS[dayIndex];
+    money += reward;
+    lastDailyClaim = todayKey();
+    showToast(`🎁 Щоденна нагорода: +${formatNum(reward)} ₴!`);
+    closeDailyModal();
+    saveLocalProgress();
+    updateUI();
+};
+
+// ==================== SPIN WHEEL ====================
+let wheelSpinning = false;
+
+window.openSpinModal = function() {
+    document.getElementById("spin-modal").style.display = "flex";
+    const status = document.getElementById("spin-status");
+    if (lastSpinDate !== todayKey()) spinsUsedToday = 0;
+    if (status) status.innerText = spinsUsedToday === 0 ? "1 безкоштовне обертання на день!" : "Наступне обертання: 10,000 ₴";
+};
+
+window.closeSpinModal = function() {
+    document.getElementById("spin-modal").style.display = "none";
+};
+
+window.spinWheel = function() {
+    if (wheelSpinning) return;
+    const isFree = spinsUsedToday === 0 && lastSpinDate !== todayKey();
+    if (!isFree && money < 10000) {
+        showToast("💰 Потрібно 10,000 ₴ для обертання!");
+        return;
+    }
+    if (!isFree) money -= 10000;
+
+    wheelSpinning = true;
+    const prizeIndex = Math.floor(Math.random() * SPIN_PRIZES.length);
+    const wheel = document.getElementById("wheel");
+    const segmentAngle = 360 / SPIN_PRIZES.length;
+    const spins = 5 + Math.random() * 3;
+    const targetAngle = spins * 360 + (360 - prizeIndex * segmentAngle - segmentAngle / 2);
+
+    wheel.style.transform = `rotate(${targetAngle}deg)`;
+
+    setTimeout(() => {
+        applySpinPrize(SPIN_PRIZES[prizeIndex]);
+        spinsUsedToday++;
+        lastSpinDate = todayKey();
+        wheelSpinning = false;
         saveLocalProgress();
         updateUI();
+    }, 4200);
+};
+
+function applySpinPrize(prize) {
+    if (prize.type === "money") {
+        money += prize.value;
+        showToast(`🎡 Виграш: +${formatNum(prize.value)} ₴!`);
+    } else if (prize.type === "energy") {
+        energy = Math.min(maxEnergy, energy + prize.value);
+        showToast(`🎡 +${prize.value} ⚡ енергії!`);
+    } else if (prize.type === "boost") {
+        activateBoost(prize.boost, prize.duration);
     }
-};
+}
 
-// ==================== ПЕРЕМИКАННЯ ВКЛАДОК ====================
+// ==================== LEADERBOARD ====================
+async function loadLeaderboard() {
+    const container = document.getElementById("leaderboard-container");
+    if (!container) return;
+    try {
+        const res = await fetch(`${SERVER_URL}/api/leaderboard`);
+        const users = await res.json();
+        container.innerHTML = "";
+        users.slice(0, 20).forEach((u, i) => {
+            const row = document.createElement("div");
+            row.className = "leader-row" + (u.telegramId === userTelegramId ? " me" : "");
+            row.innerHTML = `
+                <span class="leader-rank">${i + 1}</span>
+                <span class="leader-name">${u.firstName || "Гравець"}</span>
+                <span class="leader-score">${formatNum(u.money)} ₴</span>`;
+            container.appendChild(row);
+        });
+    } catch (_) {
+        container.innerHTML = "<p class='loading-text'>Рейтинг недоступний (офлайн режим)</p>";
+    }
+}
+
+// ==================== TABS ====================
 window.switchTab = function(tabName, element) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-
-    const activeTab = document.getElementById(`tab-${tabName}`);
-    if (activeTab) activeTab.classList.add('active');
-    if (element) element.classList.add('active');
+    document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    document.getElementById(`tab-${tabName}`)?.classList.add("active");
+    element?.classList.add("active");
+    if (tabName === "profile") loadLeaderboard();
 };
 
-// ==================== СЕРВЕРНА СИНХРОНІЗАЦІЯ ====================
+// ==================== TOAST ====================
+function showToast(msg) {
+    const container = document.getElementById("toast-container");
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.innerText = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+// ==================== SERVER SYNC ====================
 async function syncWithServer() {
     try {
         const res = await fetch(`${SERVER_URL}/api/user/sync`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                telegramId: userTelegramId,
-                username: userUsername,
-                firstName: userFirstName
-            })
+            body: JSON.stringify({ telegramId: userTelegramId, username: userUsername, firstName: userFirstName })
         });
-
         const data = await res.json();
-        
         if (data.banned) {
-            document.body.innerHTML = `<div style="color: red; text-align: center; font-size: 24px; margin-top: 50px; font-weight: bold;">🚫 ВАС ЗАБЛОКОВАНО!</div>`;
+            document.body.innerHTML = `<div style="color:#f87171;text-align:center;font-size:24px;margin-top:50px;font-weight:900;">🚫 ВАС ЗАБЛОКОВАНО</div>`;
             return;
         }
-
-        // Беремо дані з сервера, якщо вони більші за локальні
-        money = Math.max(money, data.money || 0);
-        tapPower = Math.max(tapPower, data.tapPower || 1);
-        energy = data.energy !== undefined ? data.energy : energy;
-        passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
-        totalTaps = Math.max(totalTaps, data.totalTaps || 0);
-        
-        isAdmin = data.isAdmin || (userTelegramId === 5512316636);
-
-        if (data.cards && data.cards.length > 0) {
-            data.cards.forEach((savedCard, i) => {
-                if (cards[i] && savedCard.lvl > cards[i].lvl) {
-                    cards[i].lvl = savedCard.lvl;
-                    cards[i].cost = savedCard.cost;
-                }
-            });
-        }
-
-        if (data.collectionItems && data.collectionItems.length > 0) {
-            data.collectionItems.forEach((savedItem, i) => {
-                if (collectionItems[i] && savedItem.owned) {
-                    collectionItems[i].owned = savedItem.owned;
-                }
-            });
-        }
-
-        const usernameEl = document.getElementById("username");
-        if (usernameEl) usernameEl.innerText = data.firstName;
-
+        mergeServerData(data);
+        document.getElementById("username").innerText = data.firstName || userFirstName;
         saveLocalProgress();
         updateUI();
     } catch (e) {
-        console.error("Помилка підключення до сервера (працює локальний режим):", e);
-        
-        // Показ кнопки навіть без зв'язку з сервером для адміна
-        if (userTelegramId === 5512316636) {
-            isAdmin = true;
-        }
+        console.error("Offline mode:", e);
+        if (userTelegramId === 5512316636) isAdmin = true;
+        document.getElementById("username").innerText = userFirstName;
         updateUI();
     }
+}
+
+function mergeServerData(data) {
+    money = Math.max(money, data.money || 0);
+    tapPower = Math.max(tapPower, data.tapPower || 1);
+    energy = data.energy ?? energy;
+    maxEnergy = Math.max(maxEnergy, data.maxEnergy || 1000);
+    passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
+    totalTaps = Math.max(totalTaps, data.totalTaps || 0);
+    playerLevel = Math.max(playerLevel, data.playerLevel || 1);
+    playerXP = Math.max(playerXP, data.playerXP || 0);
+    maxCombo = Math.max(maxCombo, data.maxCombo || 1);
+    loginStreak = Math.max(loginStreak, data.loginStreak || 0);
+    isAdmin = data.isAdmin || userTelegramId === 5512316636;
+
+    if (data.cards?.length) data.cards.forEach((sc, i) => {
+        if (cards[i] && sc.lvl > cards[i].lvl) { cards[i].lvl = sc.lvl; cards[i].cost = sc.cost; }
+    });
+    if (data.collectionItems?.length) data.collectionItems.forEach((si, i) => {
+        if (collectionItems[i]) collectionItems[i].owned = si.owned || collectionItems[i].owned;
+    });
 }
 
 async function saveProgressToServer() {
@@ -361,64 +772,47 @@ async function saveProgressToServer() {
         await fetch(`${SERVER_URL}/api/user/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                telegramId: userTelegramId,
-                money,
-                tapPower,
-                energy,
-                passiveIncome,
-                totalTaps,
-                cards,
-                collectionItems
-            })
+            body: JSON.stringify({ telegramId: userTelegramId, ...getSaveData() })
         });
     } catch (e) {
-        console.error("Помилка автозбереження на сервер:", e);
+        console.error("Save error:", e);
     }
 }
 
-// ==================== АДМІН-ФУНКЦІЇ ====================
+// ==================== ADMIN ====================
 window.openAdminModal = async function() {
-    const modal = document.getElementById("admin-modal");
-    if (modal) modal.style.display = "block";
+    document.getElementById("admin-modal").style.display = "flex";
     const list = document.getElementById("admin-users-list");
-    if (list) list.innerHTML = "<p style='color: white;'>Завантаження гравців...</p>";
-
+    list.innerHTML = "<p class='loading-text'>Завантаження...</p>";
     try {
         const res = await fetch(`${SERVER_URL}/api/admin/users/${userTelegramId}`);
         const users = await res.json();
-
-        if (list) {
-            list.innerHTML = "";
-            users.forEach(u => {
-                const item = document.createElement("div");
-                item.style.cssText = "background: #0f172a; padding: 12px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #334155;";
-                item.innerHTML = `
-                    <div style="font-weight: bold; color: #38bdf8;">${u.firstName} (@${u.username || 'немає'})</div>
-                    <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">ID: ${u.telegramId} | Баланс: ${Math.floor(u.money).toLocaleString()} ₴</div>
-                    <div style="font-size: 12px; color: #cbd5e1;">Тапів: ${u.totalTaps} | Статус: ${u.isBanned ? '<span style="color:#ef4444;">🔴 ЗАБАНЕНИЙ</span>' : '<span style="color:#22c55e;">🟢 АКТИВНИЙ</span>'}</div>
-                    <div style="margin-top: 10px; display: flex; gap: 8px;">
-                        <button onclick="adminAddMoney(${u.telegramId})" style="background: #10b981; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;">+100,000 ₴</button>
-                        <button onclick="adminToggleBan(${u.telegramId})" style="background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;">${u.isBanned ? 'Розбанити' : 'Забанити'}</button>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
-        }
-    } catch(e) {
-        if (list) list.innerHTML = "<p style='color: red;'>Помилка завантаження списку гравців.</p>";
+        list.innerHTML = "";
+        users.forEach(u => {
+            const item = document.createElement("div");
+            item.className = "admin-user-item";
+            item.innerHTML = `
+                <div class="admin-name">${u.firstName} (@${u.username || "немає"})</div>
+                <div class="admin-meta">ID: ${u.telegramId} · ${formatNum(u.money)} ₴ · Lv.${u.playerLevel || 1}</div>
+                <div class="admin-meta">Тапів: ${u.totalTaps} · ${u.isBanned ? "🔴 ЗАБАНЕНИЙ" : "🟢 АКТИВНИЙ"}</div>
+                <div class="admin-actions">
+                    <button class="btn-add" onclick="adminAddMoney(${u.telegramId})">+100K ₴</button>
+                    <button class="btn-ban" onclick="adminToggleBan(${u.telegramId})">${u.isBanned ? "Розбанити" : "Забанити"}</button>
+                </div>`;
+            list.appendChild(item);
+        });
+    } catch (_) {
+        list.innerHTML = "<p class='loading-text' style='color:#f87171'>Помилка завантаження</p>";
     }
 };
 
 window.closeAdminModal = function() {
-    const modal = document.getElementById("admin-modal");
-    if (modal) modal.style.display = "none";
+    document.getElementById("admin-modal").style.display = "none";
 };
 
 window.adminAddMoney = async function(targetId) {
     await fetch(`${SERVER_URL}/api/admin/add-money`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId, amount: 100000 })
     });
     openAdminModal();
@@ -426,16 +820,65 @@ window.adminAddMoney = async function(targetId) {
 
 window.adminToggleBan = async function(targetId) {
     await fetch(`${SERVER_URL}/api/admin/toggle-ban`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId })
     });
     openAdminModal();
 };
 
-// ==================== СТАРТ ГРИ ====================
-loadLocalProgress();     // Спочатку швидке завантаження з браузера
-updateUI();              // Відображаємо збережений прогрес
-syncWithServer();        // Підключаємося та синхронізуємося з сервером Render
+// ==================== PARTICLE BACKGROUND ====================
+(function initParticles() {
+    const canvas = document.getElementById("particles-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let particles = [];
 
-setInterval(saveProgressToServer, 5000); // Автозбереження на сервер кожні 5 секунд
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < 50; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            r: Math.random() * 2 + 0.5,
+            dx: (Math.random() - 0.5) * 0.4,
+            dy: (Math.random() - 0.5) * 0.4,
+            color: ["#a855f7", "#fbbf24", "#22d3ee", "#f472b6"][Math.floor(Math.random() * 4)]
+        });
+    }
+
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+            p.x += p.dx;
+            p.y += p.dy;
+            if (p.x < 0 || p.x > canvas.width) p.dx *= -1;
+            if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = 0.35;
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(animate);
+    }
+    animate();
+})();
+
+// ==================== START ====================
+initAchievements();
+initMissions();
+loadLocalProgress();
+updateUI();
+syncWithServer();
+setInterval(saveProgressToServer, 5000);
+setInterval(renderMissions, 1000);
+
+if (lastDailyClaim !== todayKey()) {
+    setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
+}
