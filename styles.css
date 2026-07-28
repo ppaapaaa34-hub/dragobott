@@ -1,12 +1,24 @@
-/* ==================== ОСНОВНІ НАЛАШТУВАННЯ ==================== */
+/* ==================== DRAGO TAP EMPIRE v2 — Hamster Kombat Style ==================== */
+:root {
+    --bg-deep: #0a0618;
+    --bg-mid: #1a0f3c;
+    --purple: #a855f7;
+    --purple-glow: rgba(168, 85, 247, 0.5);
+    --gold: #fbbf24;
+    --gold-glow: rgba(251, 191, 36, 0.45);
+    --cyan: #22d3ee;
+    --pink: #f472b6;
+    --orange: #fb923c;
+    --green: #34d399;
+    --red: #f87171;
+    --glass: rgba(255, 255, 255, 0.06);
+    --glass-border: rgba(255, 255, 255, 0.12);
+}
+
 * {
     box-sizing: border-box;
     user-select: none;
     -webkit-user-select: none;
-    -khtml-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    /* Повністю прибираємо синє підсвічування та виділення на мобільних */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
 }
@@ -14,18 +26,30 @@
 body {
     margin: 0;
     padding: 0;
-    background: radial-gradient(circle at top, #1e1b4b, #0f172a, #020617);
-    color: #ffffff;
-    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #2d1b69 0%, var(--bg-mid) 35%, var(--bg-deep) 100%);
+    color: #fff;
+    font-family: 'Nunito', 'Segoe UI', sans-serif;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow-y: auto; /* Дозволяємо скрол для всього екрана */
+    overflow-x: hidden;
 }
 
-/* ==================== ВЕРХНЯ ПАНЕЛЬ (HEADER) ==================== */
+#particles-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.header, .level-section, .stats-section, .app-content, .navbar {
+    position: relative;
+    z-index: 1;
+}
+
+/* ==================== HEADER ==================== */
 .header {
-    padding: 15px 20px 5px;
+    padding: 12px 16px 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -34,325 +58,406 @@ body {
 .user-info {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 }
 
-.avatar {
-    width: 42px;
-    height: 42px;
+.avatar-ring {
+    padding: 2px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #f97316, #ef4444);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 20px;
-    box-shadow: 0 0 12px rgba(249, 115, 22, 0.5);
+    background: linear-gradient(135deg, var(--gold), var(--purple), var(--cyan));
+    animation: ringPulse 3s ease-in-out infinite;
 }
 
-/* Динамічна аватарка з Telegram */
+@keyframes ringPulse {
+    0%, 100% { box-shadow: 0 0 12px var(--purple-glow); }
+    50% { box-shadow: 0 0 22px var(--gold-glow); }
+}
+
 .avatar-img {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    border: 2px solid #38bdf8;
+    display: block;
     object-fit: cover;
-}
-
-/* Кнопка адмінки у шапці */
-.admin-header-btn {
-    background: #dc2626;
-    color: white;
-    border: none;
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    font-size: 18px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4);
-}
-
-.user-details {
-    display: flex;
-    flex-direction: column;
+    background: #1e1b4b;
 }
 
 .username {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
 }
 
 .level-badge {
+    font-size: 10px;
+    color: var(--cyan);
+    font-weight: 700;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.header-icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    font-size: 18px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: transform 0.15s;
+}
+
+.header-icon-btn:active { transform: scale(0.9); }
+
+.spin-btn {
+    background: linear-gradient(135deg, #7c3aed, #db2777);
+    border: none;
+}
+
+.admin-header-btn {
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    color: white;
+    border: none;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+/* ==================== LEVEL BAR ==================== */
+.level-section {
+    padding: 0 20px 6px;
+}
+
+.level-bar-wrap {
+    height: 8px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.level-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--purple), var(--pink), var(--gold));
+    border-radius: 8px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 12px var(--purple-glow);
+}
+
+.level-text {
+    font-size: 10px;
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 4px;
+    font-weight: 700;
+}
+
+/* ==================== BALANCE ==================== */
+.stats-section {
+    text-align: center;
+    margin: 6px 0 10px;
+}
+
+.balance-title {
     font-size: 11px;
     color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+}
+
+.balance-display {
+    font-size: 38px;
+    font-weight: 900;
+    margin: 2px 0;
+    background: linear-gradient(135deg, #fff 0%, var(--gold) 50%, var(--orange) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 20px var(--gold-glow));
+}
+
+.inline-profit {
+    display: inline-block;
+    margin-top: 4px;
 }
 
 .profit-container {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    padding: 5px 14px;
+    border-radius: 14px;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 6px 12px;
-    border-radius: 16px;
-    text-align: right;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .profit-label {
-    font-size: 10px;
+    font-size: 9px;
     color: #94a3b8;
     text-transform: uppercase;
     display: block;
 }
 
 .profit-val {
-    font-size: 12px;
-    font-weight: 700;
-    color: #38bdf8;
-}
-
-/* ==================== СТАТИСТИКА (БАЛАНС) ==================== */
-.stats-section {
-    text-align: center;
-    margin: 10px 0;
-}
-
-.balance-title {
-    font-size: 12px;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-}
-
-.balance-display {
-    font-size: 36px;
+    font-size: 13px;
     font-weight: 800;
-    margin: 4px 0;
-    background: linear-gradient(135deg, #ffffff, #fbbf24);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 20px rgba(251, 191, 36, 0.25);
+    color: var(--cyan);
 }
 
-/* ==================== ОБГОРТКА КОНТЕНТУ ==================== */
+.active-boosts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 0 12px;
+}
+
+.boost-badge {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #7c3aed, #2563eb);
+    border: 1px solid rgba(255,255,255,0.2);
+    animation: boostPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes boostPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+}
+
+/* ==================== CONTENT ==================== */
 .app-content {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 110px !important;
-    -webkit-overflow-scrolling: touch;
+    padding-bottom: 100px !important;
 }
 
-/* ==================== ВКЛАДКИ І КОНТЕНТ ==================== */
 .tab-content {
     display: none;
     flex-direction: column;
     align-items: center;
-    padding-bottom: 90px !important; /* Відступ, щоб нижнє меню не перекривало останні картки */
+    padding-bottom: 90px !important;
     overflow-y: auto;
-    max-height: calc(100vh - 180px); /* Залишає місце для шапки та нижнього меню */
+    max-height: calc(100vh - 220px);
     width: 100%;
-    -webkit-overflow-scrolling: touch; /* Гладкий скрол на айфонах */
 }
 
-.tab-content.active {
-    display: flex;
-}
+.tab-content.active { display: flex; }
 
 .section-title {
     text-align: center;
-    margin: 10px 0 15px;
+    margin: 8px 0 12px;
     padding: 0 15px;
 }
 
 .section-title h2 {
     margin: 0;
-    font-size: 18px;
-    color: #f1f5f9;
+    font-size: 17px;
+    background: linear-gradient(90deg, var(--gold), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .section-title p {
     margin: 4px 0 0;
-    font-size: 12px;
+    font-size: 11px;
     color: #94a3b8;
 }
 
-/* ==================== ТАПЕР (ВКЛАДКА 1) ==================== */
+/* ==================== TAP ==================== */
+.combo-display {
+    font-size: 14px;
+    font-weight: 900;
+    color: var(--orange);
+    text-shadow: 0 0 16px rgba(251, 146, 60, 0.6);
+    margin-bottom: 8px;
+    opacity: 0.6;
+    transition: all 0.2s;
+}
+
+.combo-display.active {
+    opacity: 1;
+    transform: scale(1.1);
+    color: var(--gold);
+}
+
 .tap-container {
     position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: auto 0;
+    margin: 10px 0 20px;
 }
 
 .tap-glow {
     position: absolute;
-    width: 250px;
-    height: 250px;
+    width: 280px;
+    height: 280px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(249, 115, 22, 0.3) 0%, rgba(0,0,0,0) 70%);
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(251, 146, 60, 0.15) 40%, transparent 70%);
+    animation: glowBreath 2.5s ease-in-out infinite;
+}
+
+@keyframes glowBreath {
+    0%, 100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.08); opacity: 1; }
+}
+
+.tap-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid transparent;
     pointer-events: none;
 }
 
+.tap-ring-1 {
+    width: 240px;
+    height: 240px;
+    border-color: rgba(168, 85, 247, 0.3);
+    animation: spinRing 8s linear infinite;
+}
+
+.tap-ring-2 {
+    width: 260px;
+    height: 260px;
+    border-color: rgba(251, 191, 36, 0.2);
+    animation: spinRing 12s linear infinite reverse;
+}
+
+@keyframes spinRing {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .tap-btn {
-    width: 220px;
-    height: 220px;
+    width: 210px;
+    height: 210px;
     border-radius: 50%;
-    background: radial-gradient(circle, #ff7300 0%, #d97706 40%, #7c2d12 100%);
-    border: 8px solid rgba(251, 191, 36, 0.3);
-    box-shadow: 0 0 40px rgba(249, 115, 22, 0.4), inset 0 0 20px rgba(255, 255, 255, 0.3);
+    background: radial-gradient(circle at 35% 30%, #ffd54f 0%, #ff7300 35%, #c2410c 70%, #7c2d12 100%);
+    border: 6px solid rgba(251, 191, 36, 0.45);
+    box-shadow: 0 0 50px rgba(249, 115, 22, 0.5), 0 0 80px rgba(168, 85, 247, 0.25), inset 0 0 30px rgba(255,255,255,0.25);
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 90px;
+    font-size: 88px;
     cursor: pointer;
-    transition: transform 0.05s ease;
+    transition: transform 0.05s;
     outline: none;
     touch-action: manipulation;
+    position: relative;
+    z-index: 2;
 }
 
-.tap-btn:active {
-    transform: scale(0.93);
-}
+.tap-btn:active { transform: scale(0.92); }
 
-/* Енергія */
 .energy-wrapper {
-    width: 85%;
-    max-width: 320px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 10px;
+    width: 88%;
+    max-width: 340px;
 }
 
 .energy-header {
-    width: 100%;
     display: flex;
     justify-content: space-between;
     font-size: 12px;
     color: #cbd5e1;
     margin-bottom: 6px;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 .energy-container {
-    width: 100%;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 14px;
     padding: 3px;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
 }
 
 .energy-bar {
-    height: 12px;
-    background: linear-gradient(90deg, #3b82f6, #06b6d4);
-    border-radius: 8px;
+    height: 14px;
+    background: linear-gradient(90deg, #6366f1, var(--cyan), var(--green));
+    border-radius: 10px;
     width: 100%;
-    transition: width 0.15s ease;
+    transition: width 0.15s;
+    box-shadow: 0 0 10px rgba(34, 211, 238, 0.4);
 }
 
 .energy-subtext {
-    font-size: 11px;
+    font-size: 10px;
     color: #64748b;
     margin-top: 6px;
+    text-align: center;
 }
 
-/* ==================== БІЗНЕС ТА ПРОКАЧКА (ВКЛАДКА 2) ==================== */
-.cards-grid {
+/* ==================== CARDS GRID ==================== */
+.cards-grid, .collection-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 10px;
     width: 100%;
-    padding: 0 15px;
+    padding: 0 14px;
 }
 
-.card {
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.card, .item-card {
+    background: linear-gradient(145deg, rgba(30, 27, 75, 0.9), rgba(15, 23, 42, 0.85));
+    border: 1px solid var(--glass-border);
     border-radius: 16px;
     padding: 12px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    transition: transform 0.15s;
 }
 
-.card-icon {
-    font-size: 28px;
-    margin-bottom: 6px;
-}
+.card:active:not(:has(.card-btn:disabled)) { transform: scale(0.98); }
 
-.card-title {
-    font-size: 14px;
-    font-weight: 700;
-    margin-bottom: 2px;
-}
-
-.card-profit {
-    font-size: 11px;
-    color: #10b981;
-    margin-bottom: 8px;
-    font-weight: 600;
-}
-
-.card-level {
-    font-size: 10px;
-    color: #94a3b8;
-    margin-bottom: 8px;
-}
+.card-icon { font-size: 30px; margin-bottom: 4px; }
+.card-title { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
+.card-profit { font-size: 11px; color: var(--green); font-weight: 700; margin-bottom: 4px; }
+.card-level { font-size: 10px; color: #94a3b8; margin-bottom: 8px; }
 
 .card-btn {
     width: 100%;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
     border: none;
     color: white;
-    padding: 8px 0;
+    padding: 9px 0;
     border-radius: 10px;
-    font-weight: 700;
-    font-size: 12px;
+    font-weight: 800;
+    font-size: 11px;
     cursor: pointer;
-    outline: none;
-    transition: opacity 0.2s;
+    font-family: inherit;
 }
 
 .card-btn:disabled {
-    background: #475569;
+    background: #334155;
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-/* ==================== КОЛЕКЦІЇ (ВКЛАДКА 3) ==================== */
-.collection-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-    padding: 0 15px;
-}
-
-.item-card {
-    background: rgba(15, 23, 42, 0.85);
-    border: 2px solid #334155;
-    border-radius: 16px;
-    padding: 12px;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-}
-
-/* Рідкісність */
+/* ==================== COLLECTION RARITY ==================== */
+.item-card { text-align: center; display: flex; flex-direction: column; align-items: center; }
 .item-card.common { border-color: #64748b; }
-.item-card.rare { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
-.item-card.epic { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.3); }
-.item-card.legendary { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.35); }
+.item-card.rare { border-color: var(--cyan); box-shadow: 0 0 14px rgba(34, 211, 238, 0.25); }
+.item-card.epic { border-color: var(--purple); box-shadow: 0 0 18px var(--purple-glow); }
+.item-card.legendary {
+    border-color: var(--gold);
+    box-shadow: 0 0 24px var(--gold-glow);
+    animation: legendaryShimmer 3s ease-in-out infinite;
+}
+
+@keyframes legendaryShimmer {
+    0%, 100% { border-color: var(--gold); }
+    50% { border-color: var(--pink); }
+}
 
 .item-badge {
-    font-size: 9px;
-    font-weight: 800;
+    font-size: 8px;
+    font-weight: 900;
     text-transform: uppercase;
     padding: 2px 8px;
     border-radius: 10px;
@@ -361,39 +466,103 @@ body {
 }
 
 .badge-common { background: #64748b; }
-.badge-rare { background: #0284c7; }
+.badge-rare { background: #0891b2; }
 .badge-epic { background: #7e22ce; }
-.badge-legendary { background: #b45309; }
+.badge-legendary { background: linear-gradient(90deg, #b45309, #f59e0b); }
 
-.item-icon {
-    font-size: 42px;
-    margin: 6px 0;
+.item-icon { font-size: 40px; margin: 4px 0; }
+.item-name { font-size: 12px; font-weight: 800; margin-bottom: 4px; }
+.item-bonus { font-size: 10px; color: var(--green); font-weight: 700; margin-bottom: 8px; }
+
+.item-card.owned {
+    border-color: var(--green) !important;
+    opacity: 0.85;
 }
 
-.item-name {
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 4px;
-}
-
-.item-bonus {
-    font-size: 11px;
-    color: #10b981;
-    margin-bottom: 10px;
-    font-weight: 600;
-}
-
-/* ==================== ПРОФІЛЬ (ВКЛАДКА 4) ==================== */
-.profile-card {
-    width: 90%;
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 18px;
-    padding: 16px;
-    backdrop-filter: blur(10px);
+/* ==================== BOOST ==================== */
+.boost-list, .boost-shop, .missions-list {
+    width: 100%;
+    padding: 0 14px;
     display: flex;
     flex-direction: column;
+    gap: 10px;
+}
+
+.boost-card, .mission-card {
+    background: linear-gradient(135deg, rgba(49, 46, 129, 0.6), rgba(30, 41, 59, 0.8));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    align-items: center;
     gap: 12px;
+}
+
+.boost-icon, .mission-icon { font-size: 32px; flex-shrink: 0; }
+.boost-info, .mission-info { flex: 1; }
+.boost-info h3, .mission-info h3 { margin: 0 0 2px; font-size: 14px; }
+.boost-info p, .mission-info p { margin: 0; font-size: 11px; color: #94a3b8; }
+
+.mission-progress-wrap {
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 6px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+.mission-progress {
+    height: 100%;
+    background: linear-gradient(90deg, var(--purple), var(--cyan));
+    border-radius: 6px;
+    transition: width 0.3s;
+}
+
+.mission-reward {
+    font-size: 11px;
+    color: var(--gold);
+    font-weight: 800;
+    margin-top: 4px;
+}
+
+.missions-timer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--pink);
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.boost-buy-btn, .mission-claim-btn {
+    background: linear-gradient(135deg, var(--orange), #ea580c);
+    border: none;
+    color: white;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.mission-claim-btn.claimed, .mission-claim-btn:disabled {
+    background: #334155;
+    opacity: 0.6;
+}
+
+/* ==================== PROFILE ==================== */
+.profile-card {
+    width: 92%;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
+    padding: 16px;
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
 }
 
 .profile-stat-row {
@@ -401,34 +570,94 @@ body {
     justify-content: space-between;
     font-size: 13px;
     color: #cbd5e1;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     padding-bottom: 8px;
 }
 
-.profile-stat-row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+.profile-stat-row:last-child { border-bottom: none; padding-bottom: 0; }
+.profile-stat-row strong { color: var(--gold); }
+
+.achievements-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    padding: 0 14px 12px;
 }
 
-.profile-stat-row strong {
-    color: #fbbf24;
+.achievement-card {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 10px;
+    text-align: center;
+    opacity: 0.45;
+    transition: all 0.3s;
 }
 
-/* ==================== НИЖНЄ МЕНЮ ==================== */
+.achievement-card.unlocked {
+    opacity: 1;
+    border-color: var(--gold);
+    box-shadow: 0 0 16px var(--gold-glow);
+}
+
+.achievement-card .ach-icon { font-size: 28px; }
+.achievement-card .ach-name { font-size: 11px; font-weight: 800; margin-top: 4px; }
+.achievement-card .ach-desc { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+
+.leaderboard {
+    width: 92%;
+    margin-bottom: 20px;
+}
+
+.leader-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.leader-row.me {
+    border-color: var(--gold);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.leader-rank {
+    font-weight: 900;
+    width: 28px;
+    text-align: center;
+    color: var(--gold);
+}
+
+.leader-name { flex: 1; font-weight: 700; }
+.leader-score { color: var(--cyan); font-weight: 800; }
+
+.loading-text {
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+}
+
+/* ==================== NAVBAR ==================== */
 .navbar {
     position: fixed;
-    bottom: 15px;
-    left: 5%;
-    width: 90%;
-    height: 65px;
-    background: rgba(15, 23, 42, 0.85);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 20px;
+    bottom: 10px;
+    left: 2%;
+    width: 96%;
+    height: 62px;
+    background: rgba(10, 6, 24, 0.92);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
     z-index: 100;
 }
 
@@ -438,42 +667,289 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     color: #64748b;
-    font-size: 11px;
+    font-size: 9px;
     cursor: pointer;
     transition: color 0.2s, transform 0.1s;
-    outline: none;
+    font-family: inherit;
+    padding: 4px 2px;
+    min-width: 48px;
 }
 
 .nav-item.active {
-    color: #f97316;
+    color: var(--gold);
 }
 
-.nav-item:active {
-    transform: scale(0.9);
+.nav-item.active .nav-icon {
+    filter: drop-shadow(0 0 8px var(--gold-glow));
 }
 
-.nav-icon {
-    font-size: 20px;
+.nav-item:active { transform: scale(0.9); }
+.nav-icon { font-size: 18px; }
+.nav-label { font-weight: 800; }
+
+/* ==================== MODALS ==================== */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
 }
 
-.nav-label {
-    font-weight: 600;
+.modal-card {
+    background: linear-gradient(160deg, #1e1b4b, #0f172a);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 20px;
+    max-width: 400px;
+    width: 100%;
+    position: relative;
+    box-shadow: 0 0 40px var(--purple-glow);
 }
 
-/* ==================== АНІМАЦІЯ ВИЛІТАЮЧИХ ЦИФР ==================== */
-.float-num {
+.modal-card h2 {
+    margin: 0 0 4px;
+    text-align: center;
+    background: linear-gradient(90deg, var(--gold), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.modal-sub {
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0 0 16px;
+}
+
+.modal-close {
     position: absolute;
-    font-size: 28px;
-    font-weight: 800;
-    color: #fbbf24;
+    top: 12px;
+    right: 12px;
+    background: #334155;
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.modal-close-inline {
+    background: #334155;
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.modal-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.modal-header-row h2 { text-align: left; }
+
+.modal-action-btn {
+    width: 100%;
+    margin-top: 16px;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--purple), #6366f1);
+    color: white;
+    font-weight: 900;
+    font-size: 15px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.modal-action-btn:disabled {
+    background: #334155;
+    opacity: 0.5;
+}
+
+/* Daily rewards */
+.daily-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.daily-day {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 10px;
+}
+
+.daily-day.claimed {
+    border-color: var(--green);
+    background: rgba(52, 211, 153, 0.1);
+}
+
+.daily-day.today {
+    border-color: var(--gold);
+    box-shadow: 0 0 12px var(--gold-glow);
+}
+
+.daily-day .day-num { font-weight: 900; color: var(--gold); font-size: 12px; }
+.daily-day .day-reward { font-size: 18px; margin: 4px 0; }
+
+/* Spin wheel */
+.wheel-wrap {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    margin: 0 auto;
+}
+
+.wheel-pointer {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 24px;
+    z-index: 5;
+    color: var(--gold);
+    filter: drop-shadow(0 0 6px var(--gold-glow));
+}
+
+.wheel {
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    border: 4px solid var(--gold);
+    background: conic-gradient(
+        #6366f1 0deg 45deg,
+        #a855f7 45deg 90deg,
+        #ec4899 90deg 135deg,
+        #f59e0b 135deg 180deg,
+        #22d3ee 180deg 225deg,
+        #34d399 225deg 270deg,
+        #f87171 270deg 315deg,
+        #fb923c 315deg 360deg
+    );
+    transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+    box-shadow: 0 0 30px var(--purple-glow);
+}
+
+.spin-action {
+    background: linear-gradient(135deg, #db2777, #7c3aed) !important;
+}
+
+/* Admin */
+.admin-modal { max-width: 520px; max-height: 80vh; overflow-y: auto; }
+
+.admin-user-item {
+    background: #0f172a;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #334155;
+}
+
+.admin-user-item .admin-name { font-weight: 800; color: var(--cyan); }
+.admin-user-item .admin-meta { font-size: 12px; color: #cbd5e1; margin-top: 4px; }
+.admin-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.admin-actions button {
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 700;
+    color: white;
+}
+
+.btn-add { background: var(--green); }
+.btn-ban { background: var(--red); }
+
+/* ==================== FLOATING NUMBERS & TOAST ==================== */
+.float-num {
+    position: fixed;
+    font-size: 26px;
+    font-weight: 900;
+    color: var(--gold);
     pointer-events: none;
-    animation: floatUp 0.8s ease-out forwards;
-    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+    animation: floatUp 0.9s ease-out forwards;
+    text-shadow: 0 0 12px rgba(0,0,0,0.9);
+    z-index: 500;
+}
+
+.float-num.combo {
+    color: var(--pink);
+    font-size: 32px;
 }
 
 @keyframes floatUp {
     0% { opacity: 1; transform: translateY(0) scale(1); }
-    100% { opacity: 0; transform: translateY(-70px) scale(1.2); }
+    100% { opacity: 0; transform: translateY(-80px) scale(1.3); }
+}
+
+#toast-container {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    background: linear-gradient(135deg, #312e81, #1e1b4b);
+    border: 1px solid var(--gold);
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 800;
+    animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    white-space: nowrap;
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastOut {
+    to { opacity: 0; transform: translateY(-10px); }
+}
+
+.tap-particle {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 400;
+    animation: particleBurst 0.6s ease-out forwards;
+}
+
+@keyframes particleBurst {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0); }
+}
+
+@media (max-width: 360px) {
+    .nav-label { display: none; }
+    .nav-icon { font-size: 22px; }
+    .balance-display { font-size: 32px; }
 }
