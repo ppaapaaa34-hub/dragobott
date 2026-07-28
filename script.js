@@ -5,6 +5,7 @@ let userTelegramId = 5512316636;
 let userUsername = "Admin";
 let userFirstName = "Drago Boss";
 let isAdmin = false;
+let serverOnline = false;
 
 if (window.Telegram?.WebApp) {
     Telegram.WebApp.expand();
@@ -65,7 +66,7 @@ const cards = [
 
 const collectionItems = [
     { id: "item_1", name: "Зуб Дракона", rarity: "common", icon: "🦷", cost: 2500, bonus: "+2 ₴ до тапу", owned: false },
-    { id: "item_2", name: "Стародавний Амулет", rarity: "common", icon: "📿", cost: 10000, bonus: "+5 ₴ до тапу", owned: false },
+    { id: "item_2", name: "Стародавній Амулет", rarity: "common", icon: "📿", cost: 10000, bonus: "+5 ₴ до тапу", owned: false },
     { id: "item_3", name: "Неоновий Шолом", rarity: "rare", icon: "🪖", cost: 35000, bonus: "+5% до пасиву", owned: false },
     { id: "item_4", name: "Смарагдове Яйце", rarity: "rare", icon: "🥚", cost: 100000, bonus: "+15 ₴ до тапу", owned: false },
     { id: "item_5", name: "Око Драго", rarity: "epic", icon: "👁️", cost: 300000, bonus: "+10% до пасиву", owned: false },
@@ -162,6 +163,7 @@ function getSaveData() {
 
 function saveLocalProgress() {
     localStorage.setItem("drago_local_save", JSON.stringify(getSaveData()));
+    localStorage.setItem("drago_last_seen", Date.now().toString());
     localStorage.setItem(`drago_missions_${todayKey()}`, JSON.stringify(missions));
 }
 
@@ -197,6 +199,43 @@ function loadLocalProgress() {
     } catch (e) {
         console.error("Load error:", e);
     }
+}
+
+// ==================== OFFLINE REGEN ====================
+// Calculates energy + passive income earned while the app was closed
+function applyOfflineRegen() {
+    const lastSeenRaw = localStorage.getItem("drago_last_seen");
+    if (!lastSeenRaw) return;
+    const lastSeen = parseInt(lastSeenRaw);
+    if (isNaN(lastSeen)) return;
+
+    const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
+    if (elapsedSec <= 0) return;
+
+    // Cap offline regen to 8 hours so it doesn't get absurd
+    const cappedSec = Math.min(elapsedSec, 8 * 3600);
+
+    // Offline energy regeneration
+    if (energy < maxEnergy) {
+        const regenAmount = energyRegen * cappedSec;
+        const before = energy;
+        energy = Math.min(maxEnergy, energy + regenAmount);
+        if (energy > before && energy >= maxEnergy) {
+            showToast(`⚡ Енергія відновлена під час відсутності (+${Math.floor(energy - before)})`);
+        }
+    }
+
+    // Offline passive income
+    const passive = getEffectivePassive();
+    if (passive > 0) {
+        const earned = (passive / 3600) * cappedSec;
+        if (earned >= 1) {
+            money += earned;
+            showToast(`💰 Пасивний дохід за час відсутності: +${formatNum(earned)} ₴`);
+        }
+    }
+
+    saveLocalProgress();
 }
 
 // ==================== UI ====================
@@ -686,8 +725,14 @@ async function loadLeaderboard() {
     if (!container) return;
     try {
         const res = await fetch(`${SERVER_URL}/api/leaderboard`);
+        if (!res.ok) throw new Error();
         const users = await res.json();
+        if (!Array.isArray(users)) throw new Error();
         container.innerHTML = "";
+        if (users.length === 0) {
+            container.innerHTML = "<p class='loading-text'>Поки немає гравців</p>";
+            return;
+        }
         users.slice(0, 20).forEach((u, i) => {
             const row = document.createElement("div");
             row.className = "leader-row" + (u.telegramId === userTelegramId ? " me" : "");
@@ -714,6 +759,7 @@ window.switchTab = function(tabName, element) {
 // ==================== TOAST ====================
 function showToast(msg) {
     const container = document.getElementById("toast-container");
+    if (!container) return;
     const el = document.createElement("div");
     el.className = "toast";
     el.innerText = msg;
@@ -729,7 +775,9 @@ async function syncWithServer() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ telegramId: userTelegramId, username: userUsername, firstName: userFirstName })
         });
+        if (!res.ok) throw new Error("Server error");
         const data = await res.json();
+        serverOnline = true;
         if (data.banned) {
             document.body.innerHTML = `<div style="color:#f87171;text-align:center;font-size:24px;margin-top:50px;font-weight:900;">🚫 ВАС ЗАБЛОКОВАНО</div>`;
             return;
@@ -740,6 +788,7 @@ async function syncWithServer() {
         updateUI();
     } catch (e) {
         console.error("Offline mode:", e);
+        serverOnline = false;
         if (userTelegramId === 5512316636) isAdmin = true;
         document.getElementById("username").innerText = userFirstName;
         updateUI();
@@ -749,6 +798,7 @@ async function syncWithServer() {
 function mergeServerData(data) {
     money = Math.max(money, data.money || 0);
     tapPower = Math.max(tapPower, data.tapPower || 1);
+    // Server already applied offline regen, so use server energy directly
     energy = data.energy ?? energy;
     maxEnergy = Math.max(maxEnergy, data.maxEnergy || 1000);
     passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
@@ -768,6 +818,7 @@ function mergeServerData(data) {
 }
 
 async function saveProgressToServer() {
+    if (!serverOnline) return;
     try {
         await fetch(`${SERVER_URL}/api/user/save`, {
             method: "POST",
@@ -776,33 +827,77 @@ async function saveProgressToServer() {
         });
     } catch (e) {
         console.error("Save error:", e);
+        serverOnline = false;
     }
 }
 
 // ==================== ADMIN ====================
+async function fetchWithTimeout(url, options = {}, timeout = 15000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return res;
+    } catch (e) {
+        clearTimeout(id);
+        throw e;
+    }
+}
+
 window.openAdminModal = async function() {
     document.getElementById("admin-modal").style.display = "flex";
     const list = document.getElementById("admin-users-list");
     list.innerHTML = "<p class='loading-text'>Завантаження...</p>";
-    try {
-        const res = await fetch(`${SERVER_URL}/api/admin/users/${userTelegramId}`);
-        const users = await res.json();
+
+    const renderUsers = (users) => {
         list.innerHTML = "";
+        if (users.length === 0) {
+            list.innerHTML = "<p class='loading-text'>Немає гравців у базі</p>";
+            return;
+        }
         users.forEach(u => {
             const item = document.createElement("div");
             item.className = "admin-user-item";
             item.innerHTML = `
                 <div class="admin-name">${u.firstName} (@${u.username || "немає"})</div>
                 <div class="admin-meta">ID: ${u.telegramId} · ${formatNum(u.money)} ₴ · Lv.${u.playerLevel || 1}</div>
-                <div class="admin-meta">Тапів: ${u.totalTaps} · ${u.isBanned ? "🔴 ЗАБАНЕНИЙ" : "🟢 АКТИВНИЙ"}</div>
+                <div class="admin-meta">Тапів: ${u.totalTaps || 0} · ${u.isBanned ? "🔴 ЗАБАНЕНИЙ" : "🟢 АКТИВНИЙ"}</div>
                 <div class="admin-actions">
                     <button class="btn-add" onclick="adminAddMoney(${u.telegramId})">+100K ₴</button>
                     <button class="btn-ban" onclick="adminToggleBan(${u.telegramId})">${u.isBanned ? "Розбанити" : "Забанити"}</button>
                 </div>`;
             list.appendChild(item);
         });
-    } catch (_) {
-        list.innerHTML = "<p class='loading-text' style='color:#f87171'>Помилка завантаження</p>";
+    };
+
+    const showError = (msg) => {
+        list.innerHTML = `<p class='loading-text' style='color:#f87171'>${msg}</p>`;
+    };
+
+    // Try up to 2 times (Render free tier may need to wake up)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            const res = await fetchWithTimeout(`${SERVER_URL}/api/admin/users/${userTelegramId}`, {}, 15000);
+            if (!res.ok) {
+                if (res.status === 403) {
+                    showError("Немає прав адміністратора");
+                    return;
+                }
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const users = await res.json();
+            if (!Array.isArray(users)) throw new Error("Невірний формат відповіді");
+            renderUsers(users);
+            return;
+        } catch (e) {
+            if (attempt < 2) {
+                list.innerHTML = "<p class='loading-text'>Пробудження сервера... спроба 2/2</p>";
+                await new Promise(r => setTimeout(r, 3000));
+            } else {
+                showError("Помилка завантаження. Сервер недоступний — спробуйте пізніше.");
+            }
+        }
     }
 };
 
@@ -811,18 +906,22 @@ window.closeAdminModal = function() {
 };
 
 window.adminAddMoney = async function(targetId) {
-    await fetch(`${SERVER_URL}/api/admin/add-money`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId, amount: 100000 })
-    });
+    try {
+        await fetch(`${SERVER_URL}/api/admin/add-money`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId, amount: 100000 })
+        });
+    } catch (_) {}
     openAdminModal();
 };
 
 window.adminToggleBan = async function(targetId) {
-    await fetch(`${SERVER_URL}/api/admin/toggle-ban`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId })
-    });
+    try {
+        await fetch(`${SERVER_URL}/api/admin/toggle-ban`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ adminId: userTelegramId, targetTelegramId: targetId })
+        });
+    } catch (_) {}
     openAdminModal();
 };
 
@@ -874,6 +973,7 @@ window.adminToggleBan = async function(targetId) {
 initAchievements();
 initMissions();
 loadLocalProgress();
+applyOfflineRegen();  // <-- Apply background energy + income earned while app was closed
 updateUI();
 syncWithServer();
 setInterval(saveProgressToServer, 5000);
