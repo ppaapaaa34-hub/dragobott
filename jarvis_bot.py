@@ -18,6 +18,7 @@ import discord
 from discord.ext import commands
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -101,7 +102,8 @@ API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
-
+WEB_APP_URL = "https://dragobott.onrender.com"
+    
 # 🌐 Посилання на твій Mini App
 WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 # ======================================================
@@ -4313,6 +4315,177 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
             save_user_fact(user_id, user_name, new_fact)
     except Exception as e:
         print(f"Помилка аналізу фактів: {e}")
+
+# ==================== HTTP ВЕБ-СЕРВЕРДЛЯ MINI APP ====================
+class WebAppHandler(SimpleHTTPRequestHandler):
+    def _set_headers(self, status=200):
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def do_OPTIONS(self):
+        self._set_headers(200)
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            data = json.loads(post_data.decode('utf-8')) if post_data else {}
+        except Exception:
+            data = {}
+
+        # 1. Синхронізація гравця при запуску
+        if self.path == '/api/user/sync':
+            tg_id = data.get('telegramId', 0)
+            username = data.get('username', 'анонім')
+            first_name = data.get('firstName', 'Гравець')
+
+            # Якщо користувач новий — створюємо його в БД
+            if tg_id not in users_db:
+                users_db[tg_id] = {
+                    "telegramId": tg_id,
+                    "username": username,
+                    "firstName": first_name,
+                    "money": 0,
+                    "tapPower": 1,
+                    "energy": 1000,
+                    "passiveIncome": 0,
+                    "totalTaps": 0,
+                    "isBanned": False,
+                    "cards": [],
+                    "collectionItems": []
+                }
+
+            user = users_db[tg_id]
+            is_admin = (int(tg_id) == ADMIN_ID)
+
+            response = {
+                "money": user["money"],
+                "tapPower": user["tapPower"],
+                "energy": user["energy"],
+                "passiveIncome": user["passiveIncome"],
+                "totalTaps": user["totalTaps"],
+                "banned": user["isBanned"],
+                "isAdmin": is_admin,
+                "firstName": user["firstName"],
+                "cards": user["cards"],
+                "collectionItems": user["collectionItems"]
+            }
+
+            self._set_headers(200)
+            self.wfile.write(json.dumps(response).encode('utf-8'))
+            return
+
+        # 2. Збереження прогресу з Mini App
+        elif self.path == '/api/user/save':
+            tg_id = data.get('telegramId', 0)
+            if tg_id in users_db:
+                users_db[tg_id]["money"] = data.get("money", users_db[tg_id]["money"])
+                users_db[tg_id]["tapPower"] = data.get("tapPower", users_db[tg_id]["tapPower"])
+                users_db[tg_id]["energy"] = data.get("energy", users_db[tg_id]["energy"])
+                users_db[tg_id]["passiveIncome"] = data.get("passiveIncome", users_db[tg_id]["passiveIncome"])
+                users_db[tg_id]["totalTaps"] = data.get("totalTaps", users_db[tg_id]["totalTaps"])
+                users_db[tg_id]["cards"] = data.get("cards", [])
+                users_db[tg_id]["collectionItems"] = data.get("collectionItems", [])
+
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            return
+
+        # 3. Адмін-панель: список всіх гравців
+        elif self.path.startswith('/api/admin/users'):
+            users_list = list(users_db.values())
+            self._set_headers(200)
+            self.wfile.write(json.dumps(users_list).encode('utf-8'))
+            return
+
+        # 4. Адмін-панель: додати гроші
+        elif self.path == '/api/admin/add-money':
+            target_id = data.get('targetTelegramId')
+            amount = data.get('amount', 100000)
+            if target_id in users_db:
+                users_db[target_id]["money"] += amount
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            return
+
+        # 5. Адмін-панель: бан/розбан
+        elif self.path == '/api/admin/toggle-ban':
+            target_id = data.get('targetTelegramId')
+            if target_id in users_db:
+                users_db[target_id]["isBanned"] = not users_db[target_id]["isBanned"]
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            return
+
+        else:
+            # Для статики (GET-запити HTML/CSS/JS)
+            super().do_POST()
+
+# ==================== TELEGRAM БОТ ====================
+
+# Команда /start + обробка рефералів
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    args = message.text.split()
+    referrer_id = args[1] if len(args) > 1 else None
+
+    # Вітальний текст
+    welcome_text = (
+        f"Привіт, **{message.from_user.first_name}**! 🐉\n\n"
+        f"Ласкаво просимо до **Drago Tap Empire**!\n"
+        f"Будуй бізнеси, збирай рідкісні артефакти та ставай найбагатшим драконом!\n\n"
+        f"Тисни кнопку нижче, щоб розпочати ⬇️"
+    )
+
+    # Якщо прийшов за реферальним посиланням
+    if referrer_id and referrer_id.isdigit():
+        ref_id = int(referrer_id)
+        if ref_id in users_db and ref_id != message.from_user.id:
+            users_db[ref_id]["money"] += 5000  # Бонус запрошуючому
+            try:
+                bot.send_message(ref_id, f"🎉 За вашим посиланням приєднався {message.from_user.first_name}! Вам нараховано **+5,000 ₴**!")
+            except Exception:
+                pass
+
+    # Кнопка для відкриття Mini App
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🐉 Грати в Drago Tap Empire", web_app=WebAppInfo(url=WEB_APP_URL)))
+
+    bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+
+# Обробка даних, які надсилаються з Mini App через Telegram.WebApp.sendData()
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_data(message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        bot.send_message(message.chat.id, f"Отримано сповіщення з гри: `{data}`", parse_mode="Markdown")
+    except Exception:
+        bot.send_message(message.chat.id, "Отримано дані з вашої гри!")
+
+# ==================== ЗАПУСК СЕРВЕРА ТА БОТА ====================
+def run_server():
+    # Render передає порт через змінну PORT, за замовчуванням 10000
+    port = int(os.environ.get("PORT", 10000))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, WebAppHandler)
+    print(f"🌐 Сервер запущено на порту {port}...")
+    httpd.serve_forever()
+
+if __name__ == '__main__':
+    # 1. Запуск HTTP-сервера в окремому фоновому потоці
+    server_thread = threading.Thread(target=run_server)
+    server_thread.daemon = True
+    server_thread.start()
+
+    # 2. Запуск Telegram-бота
+    print("🤖 Telegram бот запущений...")
+    bot.polling(none_stop=True)
+        
 
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
