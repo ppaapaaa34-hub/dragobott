@@ -109,7 +109,9 @@ API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
 # 🌐 Посилання на твій Mini App
-WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
+# Public URL of the Express Mini App.  Set WEB_APP_URL in Render after the web
+# service has been deployed; the old GitHub URL remains only as a fallback.
+WEB_APP_URL = os.environ.get('WEB_APP_URL', 'https://ppaapaaa34-hub.github.io/dragobott/')
 # ======================================================
 
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОКЕН')
@@ -158,9 +160,12 @@ def get_gemini_chat(chat_id):
     return bot_chats[chat_id]
 
 def run_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
-    httpd = HTTPServer(("", port), SimpleHTTPRequestHandler)
-    httpd.serve_forever()
+    """Deprecated compatibility hook.
+
+    Express owns Render's PORT and serves the Mini App/API.  The Telegram bot
+    runs as a worker and must not bind a second HTTP server.
+    """
+    return
 
 def is_user_banned(user_id):
     try:
@@ -4554,9 +4559,7 @@ if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
-    server_thread.start()
-    print("🚀 Dummy-сервер успішно запущено.")
+    print("🌐 Mini App/API обслуговує окремий Express web service.")
 
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
