@@ -4548,6 +4548,52 @@ def handle_text(message):
 
 
 # ===================================================================
+
+ADMIN_ID = 5512316636  # Твій Telegram ID
+TARGET_GROUP_ID = -1003428241218  # ID твоєї групи
+
+@bot.message_handler(commands=['broadcast'])
+def handle_broadcast(message):
+    # Перевірка на адміна
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "❌ У вас немає прав для запуску розсилки.")
+        return
+
+    # Текст повідомлення
+    broadcast_text = (
+        "🔥 *DRAGO CLICKER — ЧАС ЗДОБУВАТИ БАГАТСТВО!* 🔥\n\n"
+        "Готовий побудувати власну імперію та випередити всіх суперників? 🐉💰\n\n"
+        "⚡ *Що на тебе чекає в грі:*\n"
+        "• 💎 Збирай рідкісні артефакти та прокачуй силу тапу\n"
+        "• 🏢 Купуй бізнеси та отримуй пасивний дохід 24/7\n"
+        "• 🎁 Забирай щоденні бонуси та крути Колесо Фортуни\n"
+        "• 🏆 Змагайся з іншими у світовому рейтингу!\n\n"
+        "🚀 *Твоя енергія вже повністю відновилася! Заходь та забирай свої статки:*"
+    )
+
+    # Кнопка з посиланням у ПП бота
+    keyboard = types.InlineKeyboardMarkup()
+    btn_game = types.InlineKeyboardButton(
+        text="🎮 Грати в Drago Clicker", 
+        url="https://t.me/Draagoon_bot"
+    )
+    keyboard.add(btn_game)
+
+    try:
+        # Відправляємо повідомлення безпосередньо в групу
+        bot.send_message(
+            TARGET_GROUP_ID, 
+            broadcast_text, 
+            reply_markup=keyboard, 
+            parse_mode="Markdown"
+        )
+        bot.send_message(message.chat.id, "✅ Повідомлення успішно відправлено в групу!")
+    except Exception as e:
+        print(f"Помилка відправки в групу: {e}")
+        bot.send_message(message.chat.id, f"❌ Помилка під час відправки: {e}")
+
+
+# ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
 if __name__ == "__main__":
