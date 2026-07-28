@@ -11,6 +11,7 @@
 </head>
 <body>
     <canvas id="particles-canvas"></canvas>
+
     <header class="header">
         <div class="user-info">
             <div class="avatar-ring">
@@ -21,6 +22,7 @@
                 <div class="level-badge" id="level-name">Рівень 1 · Новачок</div>
             </div>
         </div>
+
         <div class="header-actions">
             <button class="header-icon-btn" id="daily-btn" onclick="openDailyModal()" title="Щоденна нагорода">🎁</button>
             <button class="header-icon-btn spin-btn" id="spin-btn" onclick="openSpinModal()" title="Колесо удачі">🎡</button>
@@ -29,12 +31,14 @@
             </div>
         </div>
     </header>
+
     <section class="level-section">
         <div class="level-bar-wrap">
             <div class="level-bar" id="level-bar"></div>
         </div>
         <div class="level-text"><span id="xp-current">0</span> / <span id="xp-needed">1000</span> XP</div>
     </section>
+
     <section class="stats-section">
         <div class="balance-title">Ваш Баланс</div>
         <div class="balance-display" id="money">0 ₴</div>
@@ -44,6 +48,7 @@
         </div>
         <div id="active-boosts" class="active-boosts"></div>
     </section>
+
     <div class="app-content">
         <!-- TAP -->
         <main id="tab-tap" class="tab-content active">
@@ -65,6 +70,7 @@
                 <div class="energy-subtext">Витрата: <span id="energy-drain-text">5</span> ⚡ · Відновлення: <span id="energy-regen-text">3</span>/с</div>
             </div>
         </main>
+
         <!-- BOOST -->
         <main id="tab-boost" class="tab-content">
             <div class="section-title">
@@ -77,6 +83,7 @@
             </div>
             <div class="boost-shop" id="boost-shop"></div>
         </main>
+
         <!-- BUSINESS -->
         <main id="tab-cards" class="tab-content">
             <div class="section-title">
@@ -85,6 +92,7 @@
             </div>
             <div class="cards-grid" id="cards-container"></div>
         </main>
+
         <!-- MISSIONS -->
         <main id="tab-missions" class="tab-content">
             <div class="section-title">
@@ -94,6 +102,7 @@
             <div class="missions-timer" id="missions-reset">Оновлення через: --:--:--</div>
             <div class="missions-list" id="missions-container"></div>
         </main>
+
         <!-- COLLECTION -->
         <main id="tab-collection" class="tab-content">
             <div class="section-title">
@@ -102,6 +111,7 @@
             </div>
             <div class="collection-grid" id="collection-container"></div>
         </main>
+
         <!-- PROFILE -->
         <main id="tab-profile" class="tab-content">
             <div class="section-title">
@@ -124,6 +134,7 @@
             </div>
         </main>
     </div>
+
     <nav class="navbar">
         <button class="nav-item active" onclick="switchTab('tap', this)"><span class="nav-icon">🪙</span><span class="nav-label">Тап</span></button>
         <button class="nav-item" onclick="switchTab('boost', this)"><span class="nav-icon">🚀</span><span class="nav-label">Буст</span></button>
@@ -132,6 +143,7 @@
         <button class="nav-item" onclick="switchTab('collection', this)"><span class="nav-icon">💎</span><span class="nav-label">Колекція</span></button>
         <button class="nav-item" onclick="switchTab('profile', this)"><span class="nav-icon">👑</span><span class="nav-label">Профіль</span></button>
     </nav>
+
     <!-- Daily Reward Modal -->
     <div id="daily-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card daily-modal">
@@ -142,6 +154,7 @@
             <button class="modal-action-btn" id="claim-daily-btn" onclick="claimDailyReward()">Забрати нагороду</button>
         </div>
     </div>
+
     <!-- Spin Wheel Modal -->
     <div id="spin-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card spin-modal">
@@ -155,8 +168,19 @@
             <button class="modal-action-btn spin-action" id="spin-action-btn" onclick="spinWheel()">Крутити!</button>
         </div>
     </div>
+
     <!-- Admin Modal -->
     <div id="admin-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card admin-modal">
             <div class="modal-header-row">
                 <h2>⚙️ Панель Управління</h2>
+                <button onclick="closeAdminModal()" class="modal-close-inline">✕</button>
+            </div>
+            <div id="admin-users-list"><p class="loading-text">Завантаження гравців...</p></div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+    <script src="script.js"></script>
+</body>
+</html>
