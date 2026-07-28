@@ -155,7 +155,7 @@ const passiveEl = document.getElementById("passive-income");
 const tapBtn = document.getElementById("tap");
 const comboDisplay = document.getElementById("combo-display");
 
-// ==================== SAVE / LOAD ====================
+// ==================== SAVE / LOAD & OFFLINE REGEN ====================
 function getSaveData() {
     return {
         money, tapPower, energy, maxEnergy, energyDrain, energyRegen, passiveIncome, totalTaps,
@@ -170,83 +170,85 @@ function saveLocalProgress() {
     localStorage.setItem(`drago_missions_${todayKey()}`, JSON.stringify(missions));
 }
 
-function loadLocalProgress() {
+function loadAndApplyOfflineProgress() {
+    // 1. Спочатку завантажуємо дані стану гри
     const saved = localStorage.getItem("drago_local_save");
-    if (!saved) return;
-    try {
-        const d = JSON.parse(saved);
-        money = d.money || 0;
-        tapPower = d.tapPower || 1;
-        energy = d.energy ?? 1000;
-        maxEnergy = d.maxEnergy || 1000;
-        energyDrain = d.energyDrain || 5;
-        energyRegen = d.energyRegen || 3;
-        passiveIncome = d.passiveIncome || 0;
-        totalTaps = d.totalTaps || 0;
-        playerLevel = d.playerLevel || 1;
-        playerXP = d.playerXP || 0;
-        maxCombo = d.maxCombo || 1;
-        loginStreak = d.loginStreak || 0;
-        lastDailyClaim = d.lastDailyClaim || "";
-        lastSpinDate = d.lastSpinDate || "";
-        spinsUsedToday = d.spinsUsedToday || 0;
+    if (saved) {
+        try {
+            const d = JSON.parse(saved);
+            money = d.money || 0;
+            tapPower = d.tapPower || 1;
+            energy = d.energy ?? 1000;
+            maxEnergy = d.maxEnergy || 1000;
+            energyDrain = d.energyDrain || 5;
+            energyRegen = d.energyRegen || 3;
+            passiveIncome = d.passiveIncome || 0;
+            totalTaps = d.totalTaps || 0;
+            playerLevel = d.playerLevel || 1;
+            playerXP = d.playerXP || 0;
+            maxCombo = d.maxCombo || 1;
+            loginStreak = d.loginStreak || 0;
+            lastDailyClaim = d.lastDailyClaim || "";
+            lastSpinDate = d.lastSpinDate || "";
+            spinsUsedToday = d.spinsUsedToday || 0;
 
-        if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
-        if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
-        if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
-        if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
-        if (d.achievements) d.achievements.forEach(sa => {
-            const a = achievements.find(x => x.id === sa.id);
-            if (a) a.unlocked = sa.unlocked;
-        });
-    } catch (e) {
-        console.error("Load error:", e);
+            if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
+            if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
+            if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
+            if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
+            if (d.achievements) d.achievements.forEach(sa => {
+                const a = achievements.find(x => x.id === sa.id);
+                if (a) a.unlocked = sa.unlocked;
+            });
+        } catch (e) {
+            console.error("Load error:", e);
+        }
     }
-}
 
-// ==================== OFFLINE REGEN ====================
-function applyOfflineRegen() {
+    // 2. Тепер вираховуємо офлайн прогрес
     const lastSeenRaw = localStorage.getItem("drago_last_seen");
-    if (!lastSeenRaw) return;
-    const lastSeen = parseInt(lastSeenRaw, 10);
-    if (isNaN(lastSeen)) return;
+    if (lastSeenRaw) {
+        const lastSeen = parseInt(lastSeenRaw, 10);
+        if (!isNaN(lastSeen)) {
+            const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
+            if (elapsedSec > 0) {
+                // Обмеження до 12 годин
+                const cappedSec = Math.min(elapsedSec, 12 * 3600);
 
-    const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
-    if (elapsedSec <= 0) return;
+                // Нарахування енергії
+                if (energy < maxEnergy) {
+                    const regenAmount = energyRegen * cappedSec;
+                    const before = energy;
+                    energy = Math.min(maxEnergy, energy + regenAmount);
+                    const diff = Math.floor(energy - before);
+                    if (diff > 0) {
+                        setTimeout(() => showToast(`⚡ Офлайн відновлено: +${diff} енергії!`), 1000);
+                    }
+                }
 
-    // Обмеження офлайн-відновлення до 12 годин
-    const cappedSec = Math.min(elapsedSec, 12 * 3600);
-
-    // Відновлення енергії
-    if (energy < maxEnergy) {
-        const regenAmount = energyRegen * cappedSec;
-        const before = energy;
-        energy = Math.min(maxEnergy, energy + regenAmount);
-        const diff = Math.floor(energy - before);
-        if (diff > 0) {
-            showToast(`⚡ Офлайн відновлено: +${diff} енергії!`);
+                // Нарахування пасивного доходу
+                const passive = getEffectivePassive();
+                if (passive > 0) {
+                    const earned = (passive / 3600) * cappedSec;
+                    if (earned >= 1) {
+                        money += earned;
+                        setTimeout(() => showToast(`💰 Офлайн дохід: +${formatNum(earned)} ₴`), 1200);
+                    }
+                }
+            }
         }
     }
 
-    // Нарахування пасивного доходу
-    const passive = getEffectivePassive();
-    if (passive > 0) {
-        const earned = (passive / 3600) * cappedSec;
-        if (earned >= 1) {
-            money += earned;
-            showToast(`💰 Офлайн дохід: +${formatNum(earned)} ₴`);
-        }
-    }
-
+    // 3. Зберігаємо оновлений час
     saveLocalProgress();
 }
 
-// Події закриття/згортання додатку для гарантованого збереження часу
+// Події закриття та зміни вкладки
 window.addEventListener("visibilitychange", () => {
     if (document.hidden) {
         saveLocalProgress();
     } else {
-        applyOfflineRegen();
+        loadAndApplyOfflineProgress();
         updateUI();
     }
 });
@@ -413,7 +415,8 @@ setInterval(() => {
             comboDisplay.classList.remove("active");
         }
     }
-    saveLocalProgress();
+    // Легке збереження стану без перезапису drago_last_seen
+    localStorage.setItem("drago_local_save", JSON.stringify(getSaveData()));
     updateUI();
 }, 1000);
 
@@ -469,7 +472,7 @@ function renderCollection() {
     const container = document.getElementById("collection-container");
     if (!container) return;
     container.innerHTML = "";
-    const rarityNames = { common: "Ззвичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний" };
+    const rarityNames = { common: "Звичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний" };
     collectionItems.forEach(item => {
         const el = document.createElement("div");
         el.className = `item-card ${item.rarity}${item.owned ? " owned" : ""}`;
@@ -995,8 +998,8 @@ window.adminToggleBan = async function(targetId) {
 // ==================== START ====================
 initAchievements();
 initMissions();
-loadLocalProgress();
-applyOfflineRegen();
+// Послідовність важлива: завантажуємо та нараховуємо ОФЛАЙН ЕНЕРГІЮ
+loadAndApplyOfflineProgress();
 updateUI();
 syncWithServer();
 setInterval(saveProgressToServer, 5000);
@@ -1005,4 +1008,5 @@ setInterval(renderMissions, 1000);
 if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
 }
+
 }
