@@ -83,6 +83,12 @@ try:
                 user_id BIGINT PRIMARY KEY
             )""")
 
+            # 6. Спільні гаманці для пар (сімейний банк)
+            cursor.execute("""CREATE TABLE IF NOT EXISTS shared_wallets (
+                pair_id VARCHAR(100) PRIMARY KEY,
+                balance BIGINT DEFAULT 0
+            )""")
+
             # 🧠 6. ТАБЛИЦЯ ПЕРСОНАЛЬНОЇ ПАМ'ЯТІ ЮЗЕРІВ
             cursor.execute("""CREATE TABLE IF NOT EXISTS user_memory (
                 user_id BIGINT PRIMARY KEY,
@@ -102,8 +108,6 @@ API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
-WEB_APP_URL = "https://dragobott.onrender.com"
-    
 # 🌐 Посилання на твій Mini App
 WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 # ======================================================
@@ -171,200 +175,6 @@ def is_user_banned(user_id):
         return False
 
 # ===================================================================
-# 🪪 ВІДОБРАЖЕННЯ ПРОФІЛЮ ТА ВІДКРИТТЯ MINI APP
-# ===================================================================
-
-@bot.message_handler(regexp=r'^[/#!]?(?:профіль|profile)(?:\s+|$)')
-def show_user_profile(message):
-    if is_user_banned(message.from_user.id): 
-        return
-
-    chat_id = message.chat.id
-    target_user = message.from_user
-    is_self = True
-    
-    if message.reply_to_message:
-        target_user = message.reply_to_message.from_user
-        if target_user.id != message.from_user.id:
-            is_self = False
-
-    bot.send_chat_action(chat_id, 'upload_photo')
-    
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT 
-                        COALESCE(count, 0), 
-                        COALESCE(balance, 0), 
-                        COALESCE(gender, 'Невідомо'), 
-                        custom_photo, 
-                        custom_nick, 
-                        COALESCE(show_full_inventory, TRUE) 
-                    FROM stats WHERE user_id = %s
-                """, (target_user.id,))
-                stats_res = cursor.fetchone()
-                
-                cursor.execute("SELECT item_code, item_name FROM inventory WHERE user_id = %s", (target_user.id,))
-                inventory_res = cursor.fetchall()
-
-                cursor.execute("SELECT biz_code FROM user_businesses WHERE user_id = %s", (target_user.id,))
-                biz_res = cursor.fetchall()
-                
-                cursor.execute("""
-                    SELECT s1.name, s2.name, m.user1_id, m.user2_id 
-                    FROM marriages m
-                    JOIN stats s1 ON m.user1_id = s1.user_id
-                    JOIN stats s2 ON m.user2_id = s2.user_id
-                    WHERE m.user1_id = %s OR m.user2_id = %s
-                """, (target_user.id, target_user.id))
-                marriage_res = cursor.fetchone()
-                
-            conn.close()
-
-        msg_count = stats_res[0] if stats_res else 0
-        balance = stats_res[1] if stats_res else 0
-        gender = stats_res[2] if stats_res else "Невідомо"
-        custom_photo = stats_res[3] if stats_res else None
-        custom_nick = stats_res[4] if stats_res else None
-        show_full_inv = stats_res[5] if stats_res else True
-
-        display_name = custom_nick if custom_nick else target_user.first_name
-        clean_name = display_name.replace("<", "&lt;").replace(">", "&gt;")
-        
-        rank = "Учасник" # Замініть за потреби на функцію get_rank(msg_count)
-        gender_icon = "🕺" if gender == "Хлопець" else "💃" if gender == "Дівчина" else "👤"
-
-        biz_dict = globals().get('BUSINESSES', {})
-        shop_dict = globals().get('SHOP_ITEMS', {})
-
-        owned_biz_codes = [r[0] for r in biz_res]
-        biz_counts = {}
-        total_biz_value = 0
-        total_passive_income = 0
-
-        for b_code in owned_biz_codes:
-            biz_counts[b_code] = biz_counts.get(b_code, 0) + 1
-            if b_code in biz_dict:
-                total_biz_value += biz_dict[b_code].get("price", 0)
-                total_passive_income += biz_dict[b_code].get("income", 0)
-
-        if not biz_counts:
-            biz_text = "<i>Безробітний 😴</i>"
-        else:
-            biz_list = []
-            for b_code, b_count in biz_counts.items():
-                b_name = biz_dict[b_code]["name"] if b_code in biz_dict else b_code.upper()
-                c_str = f" x{b_count}" if b_count > 1 else ""
-                biz_list.append(f"{b_name}{c_str}")
-            
-            if show_full_inv:
-                biz_text = ", ".join(biz_list)
-            else:
-                biz_text = f"<b>{len(owned_biz_codes)} об'єктів</b> <i>(приховано)</i>"
-
-        total_property_value = 0
-        item_counts = {}
-        item_names_map = {}
-
-        for code, name in inventory_res:
-            item_counts[code] = item_counts.get(code, 0) + 1
-            item_names_map[code] = name
-            if code in shop_dict:
-                total_property_value += shop_dict[code].get("price", 0)
-
-        if not item_counts:
-            property_text = "<i>Тільки шкарпетки й мобільник 📱</i>"
-        else:
-            property_list = []
-            for code, i_count in item_counts.items():
-                i_name = item_names_map[code]
-                c_str = f" x{i_count}" if i_count > 1 else ""
-                property_list.append(f"{i_name}{c_str}")
-            
-            if show_full_inv:
-                property_text = ", ".join(property_list)
-                if len(property_text) > 120: 
-                    property_text = property_text[:115] + "..."
-            else:
-                property_text = f"<b>{len(inventory_res)} предметів</b> <i>(приховано)</i>"
-
-        if marriage_res:
-            name1, name2, u1_id, u2_id = marriage_res
-            spouse_name = name2 if target_user.id == u1_id else name1
-            marriage_status = f"💍 У шлюбі з <b>{spouse_name.replace('<', '&lt;').replace('>', '&gt;')}</b>"
-        else:
-            marriage_status = "🐺 Статус: <i>Самотній вовк</i>"
-
-        total_net_worth = balance + total_property_value + total_biz_value
-
-        profile_card = (
-            f"🪪 <b>ПАСПОРТ АВТОРИТЕТА: {clean_name.upper()}</b>\n"
-            f"───────────────────────\n"
-            f"{gender_icon} <b>Ранг:</b> <code>{rank}</code>\n"
-            f"💬 <b>Активність:</b> <code>{msg_count} пов.</code>\n"
-            f"───────────────────────\n"
-            f"💳 <b>Готівка:</b> <code>{balance:,} грн</code>\n"
-            f"📈 <b>Пасивний дохід:</b> <code>+{total_passive_income:,} грн/год</code>\n"
-            f"💰 <b>Загальний капітал:</b> <code>{total_net_worth:,} грн</code>\n"
-            f"───────────────────────\n"
-            f"💼 <b>Бізнеси:</b> {biz_text}\n"
-            f"📦 <b>Речі:</b> {property_text}\n"
-            f"───────────────────────\n"
-            f"{marriage_status}\n"
-            f"───────────────────────\n"
-            f"🚬 <i>База даних СБУ оновлена. Перевірку пройдено.</i>"
-        )
-
-        final_photo = custom_photo
-        if not final_photo:
-            try:
-                photos = bot.get_user_profile_photos(target_user.id, limit=1)
-                if photos and photos.total_count > 0:
-                    final_photo = photos.photos[0][-1].file_id
-            except Exception:
-                pass
-        
-        if not final_photo:
-            final_photo = "https://i.ibb.co/5G1v5f2/no-avatar.jpg"
-
-        # 🔘 КНОПКИ ПІД ПРОФІЛЕМ
-        markup = types.InlineKeyboardMarkup(row_width=1)
-
-        # Перевірка: ЛС чи група
-        if message.chat.type == 'private':
-            web_app_btn = types.InlineKeyboardButton(
-                text="📱 Відкрити Профіль (Mini App)", 
-                web_app=types.WebAppInfo(url=WEB_APP_URL)
-            )
-            markup.add(web_app_btn)
-        else:
-            bot_username = bot.get_me().username
-            pm_btn = types.InlineKeyboardButton(
-                text="📱 Відкрити Mini App в ЛС", 
-                url=f"https://t.me/{bot_username}?start=profile"
-            )
-            markup.add(pm_btn)
-
-        if is_self:
-            markup.add(types.InlineKeyboardButton("⚙️ Налаштувати профіль", callback_data=f"edit_profile_{target_user.id}"))
-
-        bot.send_photo(
-            chat_id, 
-            photo=final_photo, 
-            caption=profile_card, 
-            parse_mode="HTML", 
-            reply_markup=markup,
-            reply_to_message_id=message.message_id
-        )
-
-    except Exception as e:
-        print(f"Помилка створення профілю: {e}")
-        bot.reply_to(message, f"❌ Помилка завантаження профілю: <code>{e}</code>", parse_mode="HTML")
-
-
-# ===================================================================
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
@@ -408,34 +218,36 @@ def handle_voice(message):
         bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
 
 
-# -------------------------------------------------------------------
-# 🛠 1. ДОПОМІЖНІ ФУНКЦІЇ БАЗИ ДАНИХ ТА ПЕРЕВІРОК
-# -------------------------------------------------------------------
 
-def ensure_user_in_db(user):
-    """Гарантує, що користувач є в базі stats"""
-    try:
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO stats (user_id, name, count)
-                    VALUES (%s, %s, 0)
-                    ON CONFLICT (user_id) DO UPDATE 
-                    SET name = EXCLUDED.name;
-                """, (user.id, user.first_name))
-                conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка ensure_user_in_db: {e}")
+# ===================================================================
+# 🎖️ ФУНКЦІЯ ВИЗНАЧЕННЯ РАНГУ ЗА АКТИВНІСТЮ
+# ===================================================================
+def safe_get_rank(msg_count):
+    """Визначає ранг користувача за кількістю повідомлень"""
+    if msg_count < 10:
+        return "Новачок"
+    elif msg_count < 50:
+        return "Шкет"
+    elif msg_count < 150:
+        return "Базіка"
+    elif msg_count < 400:
+        return "Пацан"
+    elif msg_count < 800:
+        return "Братан"
+    elif msg_count < 1500:
+        return "Авторитет"
+    elif msg_count < 3000:
+        return "Бригадир"
+    elif msg_count < 5000:
+        return "Хрещений батько"
+    else:
+        return "Легенда району"
 
 
 # ===================================================================
 # 🪪 2. ВІДОБРАЖЕННЯ ТА НАЛАШТУВАННЯ ПРОФІЛЮ
 # ===================================================================
 
-# 🌐 URL твоєї Web App сторінки
-WEB_APP_URL = "https://ppaapaaa34-hub.github.io/dragobott/"
 
 # Автоматична міграція БД, щоб уникнути помилки (Missing Column)
 def ensure_profile_columns():
@@ -772,6 +584,78 @@ def handle_profile_settings(call):
 # def is_user_banned(user_id): ...
 # def update_user_balance(user_id, amount): ...
 # def get_user_balance(user_id): ...
+
+
+
+# ===================================================================
+# ⚙️ ОБРОБКА ЗМІНИ НІКА ТА АВАТАРКИ
+# ===================================================================
+def process_nick_change(message):
+    """Обробляє зміну нікнейму користувача"""
+    user_id = message.from_user.id
+    new_nick = message.text.strip()
+    
+    if new_nick == "-":
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET custom_nick = NULL WHERE user_id = %s", (user_id,))
+                conn.commit()
+                conn.close()
+            bot.reply_to(message, "✅ Нікнейм скинуто до стандартного!")
+        except Exception as e:
+            bot.reply_to(message, f"❌ Помилка: {e}")
+        return
+    
+    if len(new_nick) > 20:
+        bot.reply_to(message, "❌ Нікнейм занадто довгий! Максимум 20 символів.")
+        return
+    
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE stats SET custom_nick = %s WHERE user_id = %s", (new_nick, user_id))
+            conn.commit()
+            conn.close()
+        bot.reply_to(message, f"✅ Нікнейм змінено на: <b>{new_nick}</b>", parse_mode="HTML")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка БД: {e}")
+
+
+def process_photo_change(message):
+    """Обробляє зміну аватарки користувача"""
+    user_id = message.from_user.id
+    
+    if message.content_type != 'photo':
+        bot.reply_to(message, "❌ Потрібно надіслати фотографію!")
+        return
+    
+    try:
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+            tmp.write(downloaded_file)
+            tmp_path = tmp.name
+        
+        with open(tmp_path, 'rb') as photo:
+            bot.send_photo(message.chat.id, photo, caption="✅ Аватарку оновлено!")
+        
+        # Зберігаємо file_id як custom_photo
+        photo_id = message.photo[-1].file_id
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE stats SET custom_photo = %s WHERE user_id = %s", (photo_id, user_id))
+            conn.commit()
+            conn.close()
+        
+        os.unlink(tmp_path)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка завантаження фото: {e}")
 
 # ===================================================================
 # 💼 КАТАЛОГ БІЗНЕСІВ (12 різноманітних об'єктів)
@@ -1440,9 +1324,7 @@ init_moderators_db()
 # Твій ID суперадміна бота
 ADMIN_IDS = [5512316636]
 
-def is_admin(user_id):
-    """Перевіряє, чи є користувач головним розробником/адміном бота"""
-    return user_id in ADMIN_IDS
+# is_admin визначено нижче в секції адмін-панелі
 
 def is_chat_admin(chat_id, user_id):
     """
@@ -2184,7 +2066,7 @@ def transfer_money(message):
                 conn = get_db_connection()
                 try:
                     with conn.cursor() as cursor:
-                        cursor.execute("SELECT user_id, first_name FROM stats WHERE LOWER(username) = LOWER(%s)", (username_arg,))
+                        cursor.execute("SELECT user_id, name FROM stats WHERE LOWER(name) = LOWER(%s)", (username_arg,))
                         res = cursor.fetchone()
                         if res:
                             target_user_id = res[0]
@@ -2250,7 +2132,7 @@ def transfer_money(message):
         bot.reply_to(message, f"❌ Помилка під час транзакції: <code>{str(e)[:100]}</code>", parse_mode="HTML")
 
 # 💼 👑 МАЙНО ТА ПРОФІЛЬ ТЕКСТОВОЮ КОМАНДОЮ
-@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс', 'профіль', 'profile'])
+@bot.message_handler(commands=['money', 'balance', 'майно', 'гаманець', 'баланс'])
 def show_inventory(message):
     if is_user_banned(message.from_user.id): return
     
@@ -2283,6 +2165,53 @@ def handle_view_inventory_callback(call):
     except Exception as e:
         print(f"❌ Помилка кнопки майна: {e}")
 
+
+
+# ===================================================================
+# 🔄 ЗМІНА ПОРЯДКУ БІЗНЕСІВ (/swap)
+# ===================================================================
+@bot.message_handler(commands=['swap', 'поміняти'])
+def swap_business_order(message):
+    if is_user_banned(message.from_user.id): return
+    
+    args = message.text.split()
+    if len(args) < 3:
+        bot.reply_to(message, "⚠️ Формат: <code>/swap [№1] [№2]</code> — поміняти місцями бізнеси у списку", parse_mode="HTML")
+        return
+    
+    try:
+        pos1 = int(args[1])
+        pos2 = int(args[2])
+    except ValueError:
+        bot.reply_to(message, "❌ Номери мають бути числами!")
+        return
+    
+    user_id = message.from_user.id
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT id, position FROM user_businesses WHERE user_id = %s ORDER BY position ASC, id ASC", (user_id,))
+                rows = cursor.fetchall()
+                
+                if pos1 < 1 or pos1 > len(rows) or pos2 < 1 or pos2 > len(rows):
+                    bot.reply_to(message, f"❌ Номер має бути від 1 до {len(rows)}!")
+                    conn.close()
+                    return
+                
+                id1 = rows[pos1 - 1][0]
+                id2 = rows[pos2 - 1][0]
+                pos1_db = rows[pos1 - 1][1]
+                pos2_db = rows[pos2 - 1][1]
+                
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (pos2_db, id1))
+                cursor.execute("UPDATE user_businesses SET position = %s WHERE id = %s", (pos1_db, id2))
+            conn.commit()
+            conn.close()
+        
+        bot.reply_to(message, f"🔄 Бізнеси #{pos1} та #{pos2} поміняні місцями!")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка: {e}")
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
@@ -3120,8 +3049,6 @@ def generate_image_wait_and_send(message):
 # ===================================================================
 # 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all / ЗБІР) — В СТИЛІ БОТА-ЗАЗИВАЛИ
 # ===================================================================
-
-import random
 
 # Список крутих фраз для заклику
 CALL_HEADERS = [
@@ -4088,7 +4015,7 @@ def generate_chat_news(message):
                 chat_id=chat_id,
                 message_id=status_msg.message_id,
                 text=f"⚡️ <b>СПЕЦВИПУСК ДРАГО-NEWS</b> ⚡️\n\n{news_text}",
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             bot.edit_message_text(
@@ -4316,7 +4243,12 @@ def extract_and_save_facts(user_id: int, user_name: str, text: str):
     except Exception as e:
         print(f"Помилка аналізу фактів: {e}")
 
-# ==================== HTTP ВЕБ-СЕРВЕРДЛЯ MINI APP ====================
+
+# ==================== HTTP ВЕБ-СЕРВЕР ДЛЯ MINI APP ====================
+# Вбудована in-memory база для Mini App (синхронізується з основною БД)
+users_db = {}
+
+# ==================== HTTP ВЕБ-СЕРВЕР ДЛЯ MINI APP ====================
 class WebAppHandler(SimpleHTTPRequestHandler):
     def _set_headers(self, status=200):
         self.send_response(status)
@@ -4467,26 +4399,6 @@ def handle_web_app_data(message):
     except Exception:
         bot.send_message(message.chat.id, "Отримано дані з вашої гри!")
 
-# ==================== ЗАПУСК СЕРВЕРА ТА БОТА ====================
-def run_server():
-    # Render передає порт через змінну PORT, за замовчуванням 10000
-    port = int(os.environ.get("PORT", 10000))
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, WebAppHandler)
-    print(f"🌐 Сервер запущено на порту {port}...")
-    httpd.serve_forever()
-
-if __name__ == '__main__':
-    # 1. Запуск HTTP-сервера в окремому фоновому потоці
-    server_thread = threading.Thread(target=run_server)
-    server_thread.daemon = True
-    server_thread.start()
-
-    # 2. Запуск Telegram-бота
-    print("🤖 Telegram бот запущений...")
-    bot.polling(none_stop=True)
-        
-
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
@@ -4633,6 +4545,11 @@ def handle_text(message):
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
+
+# Обов'язкова ініціалізація таблиць шлюбів та спільних гаманців
+init_db()
+
+
 if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
