@@ -50,6 +50,36 @@ function isDbReady() {
     return mongoose.connection.readyState === 1;
 }
 
+// Apply offline energy regen + passive income based on time elapsed since lastUpdate
+function applyOfflineRegen(user) {
+    if (!user.lastUpdate) {
+        user.lastUpdate = Date.now();
+        return;
+    }
+    const lastUpdateMs = new Date(user.lastUpdate).getTime();
+    if (isNaN(lastUpdateMs)) {
+        user.lastUpdate = Date.now();
+        return;
+    }
+    const elapsedSec = Math.floor((Date.now() - lastUpdateMs) / 1000);
+    if (elapsedSec <= 0) return;
+
+    // Cap offline regen to 8 hours
+    const cappedSec = Math.min(elapsedSec, 8 * 3600);
+
+    // Offline energy regen
+    if (user.energy < user.maxEnergy) {
+        const regenAmount = (user.energyRegen || 3) * cappedSec;
+        user.energy = Math.min(user.maxEnergy, user.energy + regenAmount);
+    }
+
+    // Offline passive income
+    if (user.passiveIncome > 0) {
+        const earned = (user.passiveIncome / 3600) * cappedSec;
+        user.money += earned;
+    }
+}
+
 app.post("/api/user/sync", async (req, res) => {
     const { telegramId, username, firstName } = req.body;
     if (!telegramId) return res.status(400).json({ error: "Немає Telegram ID" });
@@ -64,13 +94,17 @@ app.post("/api/user/sync", async (req, res) => {
                 firstName: firstName || "Гравець",
                 isAdmin: telegramId === ADMIN_TELEGRAM_ID
             });
-            await user.save();
         } else {
             user.username = username || user.username;
             user.firstName = firstName || user.firstName;
             if (telegramId === ADMIN_TELEGRAM_ID) user.isAdmin = true;
-            await user.save();
         }
+
+        // Apply offline regen before responding so the client gets updated values
+        applyOfflineRegen(user);
+        user.lastUpdate = Date.now();
+        await user.save();
+
         if (user.isBanned) return res.status(403).json({ banned: true });
         res.json(user);
     } catch (e) {
