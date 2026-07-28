@@ -14,9 +14,17 @@ services:
     name: drago-tap-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot_worker.py
+    # The full Telegram bot is implemented in jarvis_bot.py.
+    # bot_worker.py only exposes a minimal /start Mini App button.
+    startCommand: python jarvis_bot.py
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
       - key: WEB_APP_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DISCORD_TOKEN
         sync: false
