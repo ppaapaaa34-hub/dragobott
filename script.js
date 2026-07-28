@@ -72,6 +72,50 @@ const statTapPower = document.getElementById("stat-tap-power");
 const statEnergyDrain = document.getElementById("stat-energy-drain");
 const statArtifactsCount = document.getElementById("stat-artifacts-count");
 
+// ==================== ЛОКАЛЬНЕ ЗБЕРЕЖЕННЯ (РЕЗЕРВ) ====================
+function saveLocalProgress() {
+    const saveData = {
+        money,
+        tapPower,
+        energy,
+        passiveIncome,
+        totalTaps,
+        cards,
+        collectionItems
+    };
+    localStorage.setItem("drago_local_save", JSON.stringify(saveData));
+}
+
+function loadLocalProgress() {
+    const saved = localStorage.getItem("drago_local_save");
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            money = data.money || 0;
+            tapPower = data.tapPower || 1;
+            energy = data.energy !== undefined ? data.energy : 1000;
+            passiveIncome = data.passiveIncome || 0;
+            totalTaps = data.totalTaps || 0;
+
+            if (data.cards) {
+                data.cards.forEach((c, i) => { 
+                    if(cards[i]) { 
+                        cards[i].lvl = c.lvl; 
+                        cards[i].cost = c.cost; 
+                    } 
+                });
+            }
+            if (data.collectionItems) {
+                data.collectionItems.forEach((c, i) => { 
+                    if(collectionItems[i]) collectionItems[i].owned = c.owned; 
+                });
+            }
+        } catch(e) {
+            console.error("Помилка зчитування локального збереження", e);
+        }
+    }
+}
+
 // ==================== ОНОВЛЕННЯ ІНТЕРФЕЙСУ ====================
 function updateUI() {
     if (moneyEl) moneyEl.innerText = Math.floor(money).toLocaleString() + " ₴";
@@ -112,6 +156,7 @@ if (tapBtn) {
             Telegram.WebApp.HapticFeedback.impactOccurred('light');
         }
 
+        saveLocalProgress();
         updateUI();
     });
 }
@@ -140,6 +185,7 @@ setInterval(() => {
         money += passiveIncome / 3600;
     }
 
+    saveLocalProgress();
     updateUI();
 }, 1000);
 
@@ -174,6 +220,7 @@ window.buyCard = function(id) {
         passiveIncome += card.profit;
         card.lvl++;
         card.cost = Math.floor(card.cost * 1.55); // Зростання ціни
+        saveLocalProgress();
         updateUI();
     }
 };
@@ -222,6 +269,7 @@ window.buyCollectionItem = function(id) {
         if (id === "item_7") passiveIncome = Math.floor(passiveIncome * 1.20);
         if (id === "item_8") tapPower += 150;
 
+        saveLocalProgress();
         updateUI();
     }
 };
@@ -256,16 +304,17 @@ async function syncWithServer() {
             return;
         }
 
-        money = data.money || 0;
-        tapPower = data.tapPower || 1;
-        energy = data.energy !== undefined ? data.energy : 1000;
-        passiveIncome = data.passiveIncome || 0;
-        totalTaps = data.totalTaps || 0;
+        // Беремо дані з сервера, якщо вони більші за локальні
+        money = Math.max(money, data.money || 0);
+        tapPower = Math.max(tapPower, data.tapPower || 1);
+        energy = data.energy !== undefined ? data.energy : energy;
+        passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
+        totalTaps = Math.max(totalTaps, data.totalTaps || 0);
         isAdmin = data.isAdmin || false;
 
         if (data.cards && data.cards.length > 0) {
             data.cards.forEach((savedCard, i) => {
-                if (cards[i]) {
+                if (cards[i] && savedCard.lvl > cards[i].lvl) {
                     cards[i].lvl = savedCard.lvl;
                     cards[i].cost = savedCard.cost;
                 }
@@ -274,7 +323,7 @@ async function syncWithServer() {
 
         if (data.collectionItems && data.collectionItems.length > 0) {
             data.collectionItems.forEach((savedItem, i) => {
-                if (collectionItems[i]) {
+                if (collectionItems[i] && savedItem.owned) {
                     collectionItems[i].owned = savedItem.owned;
                 }
             });
@@ -288,9 +337,10 @@ async function syncWithServer() {
             adminContainer.style.display = "block";
         }
 
+        saveLocalProgress();
         updateUI();
     } catch (e) {
-        console.error("Помилка підключення до сервера:", e);
+        console.error("Помилка підключення до сервера (працює локальний режим):", e);
     }
 }
 
@@ -372,5 +422,8 @@ window.adminToggleBan = async function(targetId) {
 };
 
 // ==================== СТАРТ ГРИ ====================
-syncWithServer();
-setInterval(saveProgressToServer, 5000); // Автозбереження кожні 5 секунд
+loadLocalProgress();     // Спочатку швидке завантаження з браузера
+updateUI();              // Відображаємо збережений прогрес
+syncWithServer();        // Підключаємося та синхронізуємося з сервером Render
+
+setInterval(saveProgressToServer, 5000); // Автозбереження на сервер кожні 5 секунд
