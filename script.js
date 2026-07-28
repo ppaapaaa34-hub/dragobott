@@ -1,7 +1,6 @@
 // Served by the same Express service; a separate host can set window.DRAGO_API_URL.
 const SERVER_URL = window.DRAGO_API_URL || window.location.origin;
 
-// The original bundle has a closing brace at EOF; keep the game scope balanced.
 {
 
 // ==================== TELEGRAM ====================
@@ -77,7 +76,7 @@ const collectionItems = [
     { id: "item_6", name: "Вогняний Меч", rarity: "epic", icon: "⚔️", cost: 800000, bonus: "+50 ₴ до тапу", owned: false },
     { id: "item_7", name: "Корона Імператора", rarity: "legendary", icon: "👑", cost: 2500000, bonus: "+20% до пасиву", owned: false },
     { id: "item_8", name: "Серце Дракона", rarity: "legendary", icon: "💖", cost: 10000000, bonus: "+150 ₴ до тапу", owned: false },
-    { id: "item_9", name: "Криstall Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
+    { id: "item_9", name: "Кристал Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
     { id: "item_10", name: "Крила Фенікса", rarity: "epic", icon: "🪽", cost: 1500000, bonus: "+15% до пасиву", owned: false },
     { id: "item_11", name: "Скіпетр Влади", rarity: "legendary", icon: "🔱", cost: 5000000, bonus: "+100 ₴ до тапу", owned: false },
     { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false }
@@ -182,18 +181,6 @@ function loadLocalProgress() {
         maxEnergy = d.maxEnergy || 1000;
         energyDrain = d.energyDrain || 5;
         energyRegen = d.energyRegen || 3;
-
-        // --- Наш допрацьований розрахунок енергії у фоні ---
-        let lastSeen = Number(localStorage.getItem("drago_last_seen")) || Date.now();
-        let now = Date.now();
-        let secondsPassed = Math.floor((now - lastSeen) / 1000);
-
-        if (secondsPassed > 0) {
-            let restoredEnergy = secondsPassed * energyRegen;
-            energy = Math.min(maxEnergy, energy + restoredEnergy);
-        }
-        // ----------------------------------------------------
-
         passiveIncome = d.passiveIncome || 0;
         totalTaps = d.totalTaps || 0;
         playerLevel = d.playerLevel || 1;
@@ -218,41 +205,53 @@ function loadLocalProgress() {
 }
 
 // ==================== OFFLINE REGEN ====================
-// Calculates energy + passive income earned while the app was closed
 function applyOfflineRegen() {
     const lastSeenRaw = localStorage.getItem("drago_last_seen");
     if (!lastSeenRaw) return;
-    const lastSeen = parseInt(lastSeenRaw);
+    const lastSeen = parseInt(lastSeenRaw, 10);
     if (isNaN(lastSeen)) return;
 
     const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
     if (elapsedSec <= 0) return;
 
-    // Cap offline regen to 8 hours so it doesn't get absurd
-    const cappedSec = Math.min(elapsedSec, 8 * 3600);
+    // Обмеження офлайн-відновлення до 12 годин
+    const cappedSec = Math.min(elapsedSec, 12 * 3600);
 
-    // Offline energy regeneration
+    // Відновлення енергії
     if (energy < maxEnergy) {
         const regenAmount = energyRegen * cappedSec;
         const before = energy;
         energy = Math.min(maxEnergy, energy + regenAmount);
-        if (energy > before && energy >= maxEnergy) {
-            showToast(`⚡ Енергія відновлена під час відсутності (+${Math.floor(energy - before)})`);
+        const diff = Math.floor(energy - before);
+        if (diff > 0) {
+            showToast(`⚡ Офлайн відновлено: +${diff} енергії!`);
         }
     }
 
-    // Offline passive income
+    // Нарахування пасивного доходу
     const passive = getEffectivePassive();
     if (passive > 0) {
         const earned = (passive / 3600) * cappedSec;
         if (earned >= 1) {
             money += earned;
-            showToast(`💰 Пасивний дохід за час відсутності: +${formatNum(earned)} ₴`);
+            showToast(`💰 Офлайн дохід: +${formatNum(earned)} ₴`);
         }
     }
 
     saveLocalProgress();
 }
+
+// Події закриття/згортання додатку для гарантованого збереження часу
+window.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        saveLocalProgress();
+    } else {
+        applyOfflineRegen();
+        updateUI();
+    }
+});
+window.addEventListener("pagehide", saveLocalProgress);
+window.addEventListener("beforeunload", saveLocalProgress);
 
 // ==================== UI ====================
 function formatNum(n) {
@@ -279,14 +278,24 @@ function updateUI() {
     if (xpNeededEl) xpNeededEl.innerText = formatNum(xpNeeded);
     if (levelName) levelName.innerText = `Рівень ${playerLevel} · ${LEVEL_NAMES[playerLevel - 1] || "Бог"}`;
 
-    document.getElementById("energy-drain-text").innerText = energyDrain;
-    document.getElementById("energy-regen-text").innerText = energyRegen;
-    document.getElementById("stat-total-taps").innerText = totalTaps.toLocaleString();
-    document.getElementById("stat-tap-power").innerText = getEffectiveTapPower() + " ₴";
-    document.getElementById("stat-max-combo").innerText = "x" + maxCombo;
-    document.getElementById("stat-artifacts-count").innerText = `${collectionItems.filter(i => i.owned).length} / ${collectionItems.length}`;
-    document.getElementById("stat-achievements").innerText = `${achievements.filter(a => a.unlocked).length} / ${achievements.length}`;
-    document.getElementById("stat-streak").innerText = loginStreak + " днів";
+    const drainText = document.getElementById("energy-drain-text");
+    const regenText = document.getElementById("energy-regen-text");
+    if (drainText) drainText.innerText = energyDrain;
+    if (regenText) regenText.innerText = energyRegen;
+
+    const statTaps = document.getElementById("stat-total-taps");
+    const statTapPower = document.getElementById("stat-tap-power");
+    const statCombo = document.getElementById("stat-max-combo");
+    const statArt = document.getElementById("stat-artifacts-count");
+    const statAch = document.getElementById("stat-achievements");
+    const statStreak = document.getElementById("stat-streak");
+
+    if (statTaps) statTaps.innerText = totalTaps.toLocaleString();
+    if (statTapPower) statTapPower.innerText = getEffectiveTapPower() + " ₴";
+    if (statCombo) statCombo.innerText = "x" + maxCombo;
+    if (statArt) statArt.innerText = `${collectionItems.filter(i => i.owned).length} / ${collectionItems.length}`;
+    if (statAch) statAch.innerText = `${achievements.filter(a => a.unlocked).length} / ${achievements.length}`;
+    if (statStreak) statStreak.innerText = loginStreak + " днів";
 
     const adminContainer = document.getElementById("admin-btn-container");
     if (adminContainer) adminContainer.style.display = (isAdmin || userTelegramId === 5512316636) ? "block" : "none";
@@ -460,7 +469,7 @@ function renderCollection() {
     const container = document.getElementById("collection-container");
     if (!container) return;
     container.innerHTML = "";
-    const rarityNames = { common: "Звичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний" };
+    const rarityNames = { common: "Ззвичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний" };
     collectionItems.forEach(item => {
         const el = document.createElement("div");
         el.className = `item-card ${item.rarity}${item.owned ? " owned" : ""}`;
@@ -987,7 +996,7 @@ window.adminToggleBan = async function(targetId) {
 initAchievements();
 initMissions();
 loadLocalProgress();
-applyOfflineRegen();  // <-- Нараховує енергію та пасивний дохід за час відсутності
+applyOfflineRegen();
 updateUI();
 syncWithServer();
 setInterval(saveProgressToServer, 5000);
