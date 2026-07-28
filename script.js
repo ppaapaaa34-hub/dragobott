@@ -132,6 +132,16 @@ function updateUI() {
         statArtifactsCount.innerText = `${ownedCount} / ${collectionItems.length}`;
     }
 
+    // Показ кнопки адміна
+    const adminContainer = document.getElementById("admin-btn-container");
+    if (adminContainer) {
+        if (isAdmin || userTelegramId === 5512316636) {
+            adminContainer.style.display = "block";
+        } else {
+            adminContainer.style.display = "none";
+        }
+    }
+
     renderCards();
     renderCollection();
 }
@@ -310,7 +320,8 @@ async function syncWithServer() {
         energy = data.energy !== undefined ? data.energy : energy;
         passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
         totalTaps = Math.max(totalTaps, data.totalTaps || 0);
-        isAdmin = data.isAdmin || false;
+        
+        isAdmin = data.isAdmin || (userTelegramId === 5512316636);
 
         if (data.cards && data.cards.length > 0) {
             data.cards.forEach((savedCard, i) => {
@@ -332,15 +343,16 @@ async function syncWithServer() {
         const usernameEl = document.getElementById("username");
         if (usernameEl) usernameEl.innerText = data.firstName;
 
-        const adminContainer = document.getElementById("admin-btn-container");
-        if (isAdmin && adminContainer) {
-            adminContainer.style.display = "block";
-        }
-
         saveLocalProgress();
         updateUI();
     } catch (e) {
         console.error("Помилка підключення до сервера (працює локальний режим):", e);
+        
+        // Показ кнопки навіть без зв'язку з сервером для адміна
+        if (userTelegramId === 5512316636) {
+            isAdmin = true;
+        }
+        updateUI();
     }
 }
 
