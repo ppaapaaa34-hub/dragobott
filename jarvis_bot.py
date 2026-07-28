@@ -4547,6 +4547,43 @@ def handle_text(message):
                 pass
 
 
+# ==========================================
+# ⬇️ СЮДИ ВСТАВЛЯЙ НОВУ КОМАНДУ BROADCAST ⬇️
+# ==========================================
+
+ADMIN_ID = 5512316636
+
+@bot.message_handler(commands=['broadcast'])
+def handle_broadcast(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "❌ У вас немає прав для запуску розсилки.")
+        return
+
+    broadcast_text = (
+        "🔥 *DRAGO CLICKER — ЧАС ЗДОБУВАТИ БАГАТСТВО!* 🔥\n\n"
+        "Готовий побудувати власну імперію та випередити всіх суперників? 🐉💰\n\n"
+        "⚡ *Що на тебе чекає в грі:*\n"
+        "• 💎 Збирай рідкісні артефакти та прокачуй силу тапу\n"
+        "• 🏢 Купуй бізнеси та отримуй пасивний дохід 24/7\n"
+        "• 🎁 Забирай щоденні бонуси та крути Колесо Фортуни\n"
+        "• 🏆 Змагайся з іншими у світовому рейтингу!\n\n"
+        "🚀 *Твоя енергія вже повністю відновилася! Заходь та забирай свої статки:*"
+    )
+
+    keyboard = types.InlineKeyboardMarkup()
+    btn_game = types.InlineKeyboardButton(text="🎮 Грати в Drago Clicker", url="https://t.me/YOUR_BOT_USERNAME/app")
+    btn_channel = types.InlineKeyboardButton(text="📢 Наш канал", url="https://t.me/YOUR_CHANNEL_LINK")
+    keyboard.add(btn_game)
+    keyboard.add(btn_channel)
+
+    try:
+        bot.send_message(message.chat.id, broadcast_text, reply_markup=keyboard, parse_mode="Markdown")
+        bot.send_message(message.chat.id, "✅ Розсилку успішно відправлено!")
+    except Exception as e:
+        print(f"Помилка розсилки: {e}")
+        bot.send_message(message.chat.id, "❌ Помилка під час відправки розсилки.")
+
+
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
