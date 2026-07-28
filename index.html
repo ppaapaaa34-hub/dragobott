@@ -4,53 +4,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Drago Tap Empire</title>
-    <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Підключаємо зовнішні стилі -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-    <!-- ВЕРХНЯ ПАНЕЛЬ (HEADER) -->
+    <canvas id="particles-canvas"></canvas>
     <header class="header">
         <div class="user-info">
-            <!-- Динамічна аватарка Telegram -->
-            <img id="user-avatar" src="https://via.placeholder.com/45" alt="Avatar" class="avatar-img">
+            <div class="avatar-ring">
+                <img id="user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=drago" alt="Avatar" class="avatar-img">
+            </div>
             <div class="user-details">
                 <div class="username" id="username">Drago Boss</div>
-                <div class="level-badge" id="level-name">Рівень 1: Новачок</div>
+                <div class="level-badge" id="level-name">Рівень 1 · Новачок</div>
             </div>
         </div>
-        
-        <!-- Кнопка адмінки у шапці (показується тільки адміну) -->
-        <div id="admin-btn-container" style="display: none;">
-            <button onclick="openAdminModal()" class="admin-header-btn">
-                ⚙️
-            </button>
-        </div>
-
-        <div class="profit-container">
-            <span class="profit-label">Пасивний дохід</span>
-            <div class="profit-val">+<span id="passive-income">0</span> ₴/год</div>
+        <div class="header-actions">
+            <button class="header-icon-btn" id="daily-btn" onclick="openDailyModal()" title="Щоденна нагорода">🎁</button>
+            <button class="header-icon-btn spin-btn" id="spin-btn" onclick="openSpinModal()" title="Колесо удачі">🎡</button>
+            <div id="admin-btn-container" style="display: none;">
+                <button onclick="openAdminModal()" class="admin-header-btn">⚙️</button>
+            </div>
         </div>
     </header>
-
-    <!-- ОСНОВНИЙ БАЛАНС -->
+    <section class="level-section">
+        <div class="level-bar-wrap">
+            <div class="level-bar" id="level-bar"></div>
+        </div>
+        <div class="level-text"><span id="xp-current">0</span> / <span id="xp-needed">1000</span> XP</div>
+    </section>
     <section class="stats-section">
         <div class="balance-title">Ваш Баланс</div>
         <div class="balance-display" id="money">0 ₴</div>
+        <div class="profit-container inline-profit">
+            <span class="profit-label">Пасивний дохід</span>
+            <div class="profit-val">+<span id="passive-income">0</span> ₴/год</div>
+        </div>
+        <div id="active-boosts" class="active-boosts"></div>
     </section>
-
-    <!-- ОСНОВНА ОБГОРТКА ДЛЯ СКРОЛУ -->
     <div class="app-content">
-
-        <!-- ==================== ВКЛАДКА 1: ТАПЕР ==================== -->
+        <!-- TAP -->
         <main id="tab-tap" class="tab-content active">
+            <div class="combo-display" id="combo-display">COMBO x1</div>
             <div class="tap-container">
                 <div class="tap-glow"></div>
+                <div class="tap-ring tap-ring-1"></div>
+                <div class="tap-ring tap-ring-2"></div>
                 <button class="tap-btn" id="tap">🐉</button>
             </div>
-
             <div class="energy-wrapper">
                 <div class="energy-header">
                     <span>⚡ Енергія</span>
@@ -59,95 +62,101 @@
                 <div class="energy-container">
                     <div class="energy-bar" id="energy-bar"></div>
                 </div>
-                <div class="energy-subtext">Витрата: <span id="energy-drain-text">5</span> ⚡ за тап</div>
+                <div class="energy-subtext">Витрата: <span id="energy-drain-text">5</span> ⚡ · Відновлення: <span id="energy-regen-text">3</span>/с</div>
             </div>
         </main>
-
-        <!-- ==================== ВКЛАДКА 2: БІЗНЕС ТА ПРОКАЧКА ==================== -->
+        <!-- BOOST -->
+        <main id="tab-boost" class="tab-content">
+            <div class="section-title">
+                <h2>🚀 Прокачка Сили</h2>
+                <p>Покращуй характеристики імперії</p>
+            </div>
+            <div class="boost-list" id="boost-container"></div>
+            <div class="section-title" style="margin-top: 20px;">
+                <h2>⚡ Активні Бусти</h2>
+            </div>
+            <div class="boost-shop" id="boost-shop"></div>
+        </main>
+        <!-- BUSINESS -->
         <main id="tab-cards" class="tab-content">
             <div class="section-title">
                 <h2>💼 Бізнес-Імперія</h2>
-                <p>Купуй та розвивай бізнес для пасивного прибутку</p>
+                <p>12 бізнесів для пасивного прибутку</p>
             </div>
-            <div class="cards-grid" id="cards-container">
-                <!-- Генерується через JS -->
-            </div>
+            <div class="cards-grid" id="cards-container"></div>
         </main>
-
-        <!-- ==================== ВКЛАДКА 3: КОЛЕКЦІЇ ==================== -->
+        <!-- MISSIONS -->
+        <main id="tab-missions" class="tab-content">
+            <div class="section-title">
+                <h2>🎯 Щоденні Місії</h2>
+                <p>Виконуй завдання — отримуй бонуси</p>
+            </div>
+            <div class="missions-timer" id="missions-reset">Оновлення через: --:--:--</div>
+            <div class="missions-list" id="missions-container"></div>
+        </main>
+        <!-- COLLECTION -->
         <main id="tab-collection" class="tab-content">
             <div class="section-title">
                 <h2>💎 Колекційні Артефакти</h2>
-                <p>Збирай рідкісні реліквії для отримання потужних бонусів</p>
+                <p>12 реліквій з потужними бонусами</p>
             </div>
-            <div class="collection-grid" id="collection-container">
-                <!-- Генерується через JS -->
-            </div>
+            <div class="collection-grid" id="collection-container"></div>
         </main>
-
-        <!-- ==================== ВКЛАДКА 4: ПРОФІЛЬ ==================== -->
+        <!-- PROFILE -->
         <main id="tab-profile" class="tab-content">
             <div class="section-title">
                 <h2>👑 Кабінет Боса</h2>
-                <p>Ваші досягнення та показники</p>
+                <p>Статистика, досягнення та рейтинг</p>
             </div>
             <div class="profile-card">
-                <div class="profile-stat-row">
-                    <span>Всього тапів зроблено:</span>
-                    <strong id="stat-total-taps">0</strong>
-                </div>
-                <div class="profile-stat-row">
-                    <span>Сила тапу:</span>
-                    <strong id="stat-tap-power">1 ₴</strong>
-                </div>
-                <div class="profile-stat-row">
-                    <span>Витрата енергії:</span>
-                    <strong id="stat-energy-drain">5 ⚡</strong>
-                </div>
-                <div class="profile-stat-row">
-                    <span>Зібрано артефактів:</span>
-                    <strong id="stat-artifacts-count">0 / 8</strong>
-                </div>
+                <div class="profile-stat-row"><span>Всього тапів:</span><strong id="stat-total-taps">0</strong></div>
+                <div class="profile-stat-row"><span>Сила тапу:</span><strong id="stat-tap-power">1 ₴</strong></div>
+                <div class="profile-stat-row"><span>Макс. комбо:</span><strong id="stat-max-combo">x1</strong></div>
+                <div class="profile-stat-row"><span>Артефактів:</span><strong id="stat-artifacts-count">0 / 12</strong></div>
+                <div class="profile-stat-row"><span>Досягнень:</span><strong id="stat-achievements">0 / 10</strong></div>
+                <div class="profile-stat-row"><span>Серія входів:</span><strong id="stat-streak">0 днів</strong></div>
+            </div>
+            <div class="section-title"><h2>🏆 Досягнення</h2></div>
+            <div class="achievements-grid" id="achievements-container"></div>
+            <div class="section-title"><h2>📊 Топ Гравців</h2></div>
+            <div class="leaderboard" id="leaderboard-container">
+                <p class="loading-text">Завантаження рейтингу...</p>
             </div>
         </main>
-
-    </div> <!-- КІНЕЦЬ app-content -->
-
-    <!-- НИЖНЄ МЕНЮ НАВІГАЦІЇ -->
+    </div>
     <nav class="navbar">
-        <button class="nav-item active" onclick="switchTab('tap', this)">
-            <span class="nav-icon">🪙</span>
-            <span class="nav-label">Тап</span>
-        </button>
-        <button class="nav-item" onclick="switchTab('cards', this)">
-            <span class="nav-icon">📊</span>
-            <span class="nav-label">Бізнес</span>
-        </button>
-        <button class="nav-item" onclick="switchTab('collection', this)">
-            <span class="nav-icon">💎</span>
-            <span class="nav-label">Колекції</span>
-        </button>
-        <button class="nav-item" onclick="switchTab('profile', this)">
-            <span class="nav-icon">👑</span>
-            <span class="nav-label">Профіль</span>
-        </button>
+        <button class="nav-item active" onclick="switchTab('tap', this)"><span class="nav-icon">🪙</span><span class="nav-label">Тап</span></button>
+        <button class="nav-item" onclick="switchTab('boost', this)"><span class="nav-icon">🚀</span><span class="nav-label">Буст</span></button>
+        <button class="nav-item" onclick="switchTab('cards', this)"><span class="nav-icon">📊</span><span class="nav-label">Бізнес</span></button>
+        <button class="nav-item" onclick="switchTab('missions', this)"><span class="nav-icon">🎯</span><span class="nav-label">Місії</span></button>
+        <button class="nav-item" onclick="switchTab('collection', this)"><span class="nav-icon">💎</span><span class="nav-label">Колекція</span></button>
+        <button class="nav-item" onclick="switchTab('profile', this)"><span class="nav-icon">👑</span><span class="nav-label">Профіль</span></button>
     </nav>
-
-    <!-- МОДАЛЬНЕ ВІКНО АДМІНКИ -->
-    <div id="admin-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; overflow-y: auto; padding: 20px; box-sizing: border-box;">
-        <div style="background: #1e293b; padding: 20px; border-radius: 16px; border: 1px solid #475569; max-width: 500px; margin: 20px auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0; color: #ef4444;">⚙️ Панель Управління</h2>
-                <button onclick="closeAdminModal()" style="background: #64748b; color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer;">✕ Закрити</button>
-            </div>
-            <div id="admin-users-list">
-                <p style="color: white;">Завантаження гравців...</p>
-            </div>
+    <!-- Daily Reward Modal -->
+    <div id="daily-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card daily-modal">
+            <button class="modal-close" onclick="closeDailyModal()">✕</button>
+            <h2>🎁 Щоденна Нагорода</h2>
+            <p class="modal-sub">Заходь кожен день — отримуй більше!</p>
+            <div class="daily-grid" id="daily-grid"></div>
+            <button class="modal-action-btn" id="claim-daily-btn" onclick="claimDailyReward()">Забрати нагороду</button>
         </div>
     </div>
-
-    <!-- Підключаємо логіку гри -->
-    <script src="script.js"></script>
-</body>
-</html>
-```[cite: 5]
+    <!-- Spin Wheel Modal -->
+    <div id="spin-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card spin-modal">
+            <button class="modal-close" onclick="closeSpinModal()">✕</button>
+            <h2>🎡 Колесо Удачі</h2>
+            <p class="modal-sub" id="spin-status">1 безкоштовне обертання на день</p>
+            <div class="wheel-wrap">
+                <div class="wheel-pointer">▼</div>
+                <div class="wheel" id="wheel"></div>
+            </div>
+            <button class="modal-action-btn spin-action" id="spin-action-btn" onclick="spinWheel()">Крутити!</button>
+        </div>
+    </div>
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card admin-modal">
+            <div class="modal-header-row">
+                <h2>⚙️ Панель Управління</h2>
