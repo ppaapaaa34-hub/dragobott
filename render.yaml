@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: drago-tap-web
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: ADMIN_TELEGRAM_ID
+        value: "5512316636"
+  - type: worker
+    name: drago-tap-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot_worker.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: WEB_APP_URL
+        sync: false
