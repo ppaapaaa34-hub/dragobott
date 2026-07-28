@@ -4550,16 +4550,13 @@ def handle_text(message):
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
-
-# Обов'язкова ініціалізація таблиць шлюбів та спільних гаманців
-init_db()
-
-
 if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
     
-    print("🌐 Mini App/API обслуговує окремий Express web service.")
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
+    print("🚀 Dummy-сервер успішно запущено.")
 
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
