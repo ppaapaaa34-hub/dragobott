@@ -194,7 +194,7 @@ function loadLocalProgress() {
         }
         // ----------------------------------------------------
 
-       passiveIncome = d.passiveIncome || 0;
+        passiveIncome = d.passiveIncome || 0;
         totalTaps = d.totalTaps || 0;
         playerLevel = d.playerLevel || 1;
         playerXP = d.playerXP || 0;
@@ -203,20 +203,6 @@ function loadLocalProgress() {
         lastDailyClaim = d.lastDailyClaim || "";
         lastSpinDate = d.lastSpinDate || "";
         spinsUsedToday = d.spinsUsedToday || 0;
-
-        if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
-        if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i] = c; });
-        if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
-        if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
-        if (d.achievements) d.achievements.forEach(sa => {
-            let a = achievements.find(x => x.id === sa.id);
-            if (a) { a.unlocked = sa.unlocked; a.claimed = sa.claimed; a.progress = sa.progress; }
-        });
-
-    } catch (e) {
-        console.error("Помилка завантаження прогресу:", e);
-    }
-}
 
         if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
         if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
@@ -388,7 +374,6 @@ function createFloatingNumber(x, y, text, isCombo) {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 900);
 }
-
 
 function createTapParticles(x, y) {
     const colors = ["#fbbf24", "#a855f7", "#22d3ee", "#f472b6", "#fb923c"];
@@ -568,7 +553,6 @@ function activateBoost(type, seconds) {
     activeBoosts[type] = Date.now() + seconds * 1000;
     showToast(`⚡ Буст активовано на ${seconds / 60} хв!`);
 }
-
 
 // ==================== MISSIONS ====================
 function updateMissionProgress(track, amount) {
@@ -751,7 +735,6 @@ function applySpinPrize(prize) {
     }
 }
 
-
 // ==================== LEADERBOARD ====================
 async function loadLeaderboard() {
     const container = document.getElementById("leaderboard-container");
@@ -831,7 +814,6 @@ async function syncWithServer() {
 function mergeServerData(data) {
     money = Math.max(money, data.money || 0);
     tapPower = Math.max(tapPower, data.tapPower || 1);
-    // Server already applied offline regen, so use server energy directly
     energy = data.energy ?? energy;
     maxEnergy = Math.max(maxEnergy, data.maxEnergy || 1000);
     passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
@@ -908,7 +890,6 @@ window.openAdminModal = async function() {
         list.innerHTML = `<p class='loading-text' style='color:#f87171'>${msg}</p>`;
     };
 
-    // Try up to 2 times (Render free tier may need to wake up)
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
             const res = await fetchWithTimeout(`${SERVER_URL}/api/admin/users/${userTelegramId}`, {}, 15000);
@@ -931,7 +912,6 @@ window.openAdminModal = async function() {
                 showError("Помилка завантаження. Сервер недоступний — спробуйте пізніше.");
             }
         }
-
     }
 };
 
@@ -1007,7 +987,7 @@ window.adminToggleBan = async function(targetId) {
 initAchievements();
 initMissions();
 loadLocalProgress();
-applyOfflineRegen();  // <-- Apply background energy + income earned while app was closed
+applyOfflineRegen();  // <-- Нараховує енергію та пасивний дохід за час відсутності
 updateUI();
 syncWithServer();
 setInterval(saveProgressToServer, 5000);
