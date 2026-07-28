@@ -183,7 +183,18 @@ function loadLocalProgress() {
         energyDrain = d.energyDrain || 5;
         energyRegen = d.energyRegen || 3;
 
-        passiveIncome = d.passiveIncome || 0;
+        // --- Наш допрацьований розрахунок енергії у фоні ---
+        let lastSeen = Number(localStorage.getItem("drago_last_seen")) || Date.now();
+        let now = Date.now();
+        let secondsPassed = Math.floor((now - lastSeen) / 1000);
+
+        if (secondsPassed > 0) {
+            let restoredEnergy = secondsPassed * energyRegen;
+            energy = Math.min(maxEnergy, energy + restoredEnergy);
+        }
+        // ----------------------------------------------------
+
+       passiveIncome = d.passiveIncome || 0;
         totalTaps = d.totalTaps || 0;
         playerLevel = d.playerLevel || 1;
         playerXP = d.playerXP || 0;
@@ -192,6 +203,20 @@ function loadLocalProgress() {
         lastDailyClaim = d.lastDailyClaim || "";
         lastSpinDate = d.lastSpinDate || "";
         spinsUsedToday = d.spinsUsedToday || 0;
+
+        if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
+        if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i] = c; });
+        if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
+        if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
+        if (d.achievements) d.achievements.forEach(sa => {
+            let a = achievements.find(x => x.id === sa.id);
+            if (a) { a.unlocked = sa.unlocked; a.claimed = sa.claimed; a.progress = sa.progress; }
+        });
+
+    } catch (e) {
+        console.error("Помилка завантаження прогресу:", e);
+    }
+}
 
         if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
         if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
