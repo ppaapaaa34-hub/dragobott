@@ -9,3 +9,4 @@ psycopg2-binary
 discord.py
 flask-cors
 flask
+pyTelegramBotAPI==4.28.0
