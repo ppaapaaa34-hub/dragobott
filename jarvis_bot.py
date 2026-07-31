@@ -2271,8 +2271,9 @@ def handle_broadcast(message):
 
 @bot.message_handler(commands=['genmusic', 'створити_музику'])
 def generate_music_command(message):
-    # Отримуємо текст після команди
-    prompt = message.text.replace('/genmusic', '').replace('/створити_музику', '').strip()
+    # Видаляємо назву команди та згадку бота (якщо команда викликана через @botname)
+    raw_text = message.text.split(maxsplit=1)
+    prompt = raw_text[1].strip() if len(raw_text) > 1 else ""
     
     if not prompt:
         bot.reply_to(
@@ -2289,10 +2290,10 @@ def generate_music_command(message):
         parse_mode="Markdown"
     )
 
-    # Запускаємо в окремому потоці, щоб бот не зависав для інших
+    # Запускаємо в окремому потоці, щоб бот не блокував обробку інших повідомлень
     def worker():
         try:
-            # Викликаємо нейромережу MusicGen від Meta
+            # Викликаємо нейромережу MusicGen від Meta через Replicate
             output = replicate.run(
                 "facebook/musicgen:b0519e5dc4222e5773f8eb6820f1228eead1a513c45a1f400570e9a7844053e6",
                 input={
@@ -2310,18 +2311,18 @@ def generate_music_command(message):
                 parse_mode="Markdown"
             )
             
-            # Видаляємо статус про завантаження
+            # Видаляємо тимчасове статусне повідомлення
             bot.delete_message(message.chat.id, status_msg.message_id)
 
         except Exception as e:
             print(f"Помилка генерації музики ШІ: {e}")
             bot.edit_message_text(
                 "⚠️ Не вдалося згенерувати музику. Можливо, сервер перевантажений або закінчилися ліміти.", 
-                message.chat.id, 
-                status_msg.message_id
+                chat_id=message.chat.id, 
+                message_id=status_msg.message_id
             )
 
-    threading.Thread(target=worker).start()
+    threading.Thread(target=worker, daemon=True).start()
 
 
 # ===================================================================
