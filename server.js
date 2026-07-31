@@ -43,12 +43,29 @@ const saveableKeys = ['money','tapPower','energy','maxEnergy','energyDrain','ene
 async function findOrCreate(telegramId, username, firstName) {
   if (!dbReady()) {
     const current = memoryUsers.get(telegramId) || defaults(telegramId, username, firstName);
-    current.username = username || current.username; current.firstName = firstName || current.firstName;
-    memoryUsers.set(telegramId, current); return current;
+    current.username = username || current.username; 
+    current.firstName = firstName || current.firstName;
+    memoryUsers.set(telegramId, current); 
+    return current;
   }
-  const update = { $set: { ...(username ? { username } : {}), ...(firstName ? { firstName } : {}), ...(telegramId === ADMIN_TELEGRAM_ID ? { isAdmin: true } : {}) }, $setOnInsert: defaults(telegramId, username, firstName) };
+  
+  const setFields = {
+    ...(username ? { username } : {}),
+    ...(firstName ? { firstName } : {}),
+    ...(telegramId === ADMIN_TELEGRAM_ID ? { isAdmin: true } : {})
+  };
+  
+  const insertFields = defaults(telegramId, username, firstName);
+  Object.keys(setFields).forEach(key => delete insertFields[key]);
+  
+  const update = { 
+    $set: setFields, 
+    $setOnInsert: insertFields 
+  };
+  
   return User.findOneAndUpdate({ telegramId }, update, { new: true, upsert: true, setDefaultsOnInsert: true });
 }
+
 function requireAdmin(req, res, next) { if (asId(req.params.id || req.body.adminId) !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: 'Недостатньо прав' }); next(); }
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, database: dbReady() ? 'connected' : 'memory-fallback' }));
