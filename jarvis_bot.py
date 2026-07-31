@@ -7,6 +7,7 @@ import random
 import io
 import threading
 import asyncio
+import replicate
 import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
@@ -4593,6 +4594,64 @@ def handle_text(message):
             except Exception:
                 pass
 
+
+# ===================================================================
+# 🎵 ШТУЧНИЙ ІНТЕЛЕКТ: ГЕНЕРАЦІЯ МУЗИКИ (MUSICGEN)
+# ===================================================================
+
+@bot.message_handler(commands=['genmusic', 'створити_музику'])
+def generate_music_command(message):
+    # Отримуємо текст після команди
+    prompt = message.text.replace('/genmusic', '').replace('/створити_музику', '').strip()
+    
+    if not prompt:
+        bot.reply_to(
+            message, 
+            "✍️ **Вкажи опис для створення треку!**\n\n"
+            "Приклад: `/genmusic chill lofi hip hop beat` або `/genmusic epic orchestral battle`", 
+            parse_mode="Markdown"
+        )
+        return
+
+    status_msg = bot.reply_to(
+        message, 
+        "🎵 **ШІ генерує твій трек...** Це займе близько 30–40 секунд.", 
+        parse_mode="Markdown"
+    )
+
+    # Запускаємо в окремому потоці, щоб бот не зависав для інших
+    def worker():
+        try:
+            # Викликаємо нейромережу MusicGen від Meta
+            output = replicate.run(
+                "facebook/musicgen:b0519e5dc4222e5773f8eb6820f1228eead1a513c45a1f400570e9a7844053e6",
+                input={
+                    "prompt": prompt,
+                    "duration": 10,  # Тривалість у секундах
+                    "model_version": "stereo-large"
+                }
+            )
+
+            # Відправляємо згенерований аудіофайл
+            bot.send_audio(
+                chat_id=message.chat.id,
+                audio=output,
+                caption=f"🤖 **ШІ згенерував твій трек!**\n📝 *Запит:* {prompt}",
+                parse_mode="Markdown"
+            )
+            
+            # Видаляємо статус про завантаження
+            bot.delete_message(message.chat.id, status_msg.message_id)
+
+        except Exception as e:
+            print(f"Помилка генерації музики ШІ: {e}")
+            bot.edit_message_text(
+                "⚠️ Не вдалося згенерувати музику. Можливо, сервер перевантажений або закінчилися ліміти.", 
+                message.chat.id, 
+                status_msg.message_id
+            )
+
+    threading.Thread(target=worker).start()
 
 
 # ===================================================================
