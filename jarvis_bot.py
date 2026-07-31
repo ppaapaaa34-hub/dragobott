@@ -7,7 +7,6 @@ import random
 import io
 import threading
 import asyncio
-import replicate
 import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
