@@ -196,10 +196,10 @@ def is_user_banned(user_id):
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     """Генерує голосове через ElevenLabs і надсилає в Telegram"""
-   voice_file = f"drago_voice_{chat_id}.mp3"
+    voice_file = f"drago_voice_{chat_id}.mp3"
     
     # Очищаємо текст від Markdown-символів
-    clean_text = text_to_speak.replace("*", "").replace("_", "").replace("`", "").replace("#", "")
+    clean_text = str(text_to_speak).replace("*", "").replace("_", "").replace("`", "").replace("#", "").strip()
 
     if not ELEVENLABS_API_KEY:
         print("❌ Помилка: ELEVENLABS_API_KEY не вказано в змінних середовища!")
@@ -233,11 +233,11 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
             if os.path.exists(voice_file):
                 os.remove(voice_file)
         else:
-            print(f"Помилка ElevenLabs API ({response.status_code}): {response.text}")
+            print(f"❌ Помилка ElevenLabs API ({response.status_code}): {response.text}")
             bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
 
     except Exception as e:
-        print(f"Помилка озвучки ElevenLabs: {e}")
+        print(f"❌ Помилка озвучки ElevenLabs: {e}")
         bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
 
 @bot.message_handler(content_types=['voice'])
