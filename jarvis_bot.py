@@ -1819,6 +1819,7 @@ def build_shop_page(page=0):
 
     return "\n".join(text), markup
 
+
 # ===================================================================
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
 # ===================================================================
@@ -1827,47 +1828,50 @@ def generate_inventory_ai_image(bought_codes):
         return None
 
     ai_descriptions = []
+    
     for code in bought_codes:
-        str_code = str(code)  # 🔥 Примусово перетворюємо на рядок для пошуку в SHOP_ITEMS
+        str_code = str(code).strip()
         
         if 'SHOP_ITEMS' in globals() and str_code in SHOP_ITEMS:
             item = SHOP_ITEMS[str_code]
-            if "ai_desc" in item and item["ai_desc"]:
-                ai_descriptions.append(item["ai_desc"])
-            elif "name" in item and item["name"]:
-                ai_descriptions.append(item["name"])
+            # Беремо ai_desc, якщо є, інакше name
+            desc = item.get("ai_desc") or item.get("name", "")
+            if desc:
+                ai_descriptions.append(str(desc))
+        else:
+            # Якщо коду немає в SHOP_ITEMS, додаємо його як текст
+            ai_descriptions.append(str(str_code))
 
-    if not ai_descriptions:
-        return None
-
-    # Беремо перші 3-5 предметів для кращої деталізації
+    # Беремо перші 3-5 предметів
     selected_items = ai_descriptions[:5]
-    items_prompt = " and ".join(selected_items)
+
+    if not selected_items:
+        items_prompt = "luxury items, wealthy lifestyle, luxury garage"
+    else:
+        items_prompt = ", ".join(selected_items)
 
     full_prompt = (
-        f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
-        "All listed objects must be clearly visible in one scene. "
-        "Do not add other objects. "
-        "Photorealistic, 8k, ultra detailed."
+        f"Ultra realistic cinematic photo showing a room or garage with: {items_prompt}. "
+        "Photorealistic, 8k, highly detailed, luxury aesthetic."
     )
 
     try:
-        encoded_prompt = requests.utils.quote(full_prompt)
+        # Безпечно кодуємо промпт (включаючи кирилицю та пробіли)
+        encoded_prompt = urllib.parse.quote(full_prompt)
         seed = random.randint(1, 999999)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
 
-        response = requests.get(image_url, timeout=15)
+        response = requests.get(image_url, timeout=20)
 
         if response.status_code == 200:
-            if "image" not in response.headers.get("Content-Type", ""):
-                return None
-
-            img = Image.open(io.BytesIO(response.content)).convert("RGB")
-            bio = io.BytesIO()
-            bio.name = "inventory_art.jpg"
-            img.save(bio, "JPEG", quality=90)
-            bio.seek(0)
-            return bio
+            content_type = response.headers.get("Content-Type", "")
+            if "image" in content_type or "application/octet-stream" in content_type:
+                img = Image.open(io.BytesIO(response.content)).convert("RGB")
+                bio = io.BytesIO()
+                bio.name = "inventory_art.jpg"
+                img.save(bio, "JPEG", quality=90)
+                bio.seek(0)
+                return bio
 
     except Exception as e:
         print(f"⚠️ Помилка генерації AI майна: {e}")
@@ -1913,7 +1917,7 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
     
     for item in items:
         code, name = item[0], item[1]
-        str_code = str(code)  # 🔥 Синхронізуємо тип даних із SHOP_ITEMS
+        str_code = str(code).strip()
         
         item_counts[name] = item_counts.get(name, 0) + 1
         
@@ -1940,8 +1944,8 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
         reply_to_message_id=reply_to_id
     )
 
-    top_7_codes = unique_codes[:5]
-    photo_bio = generate_inventory_ai_image(top_7_codes)
+    top_codes = unique_codes[:5]
+    photo_bio = generate_inventory_ai_image(top_codes)
 
     if photo_bio:
         try:
@@ -1963,7 +1967,6 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
             message_id=status_msg.message_id, 
             parse_mode="HTML"
         )
-
 # 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
 @bot.message_handler(commands=['shop', 'магазин'])
 def show_shop(message):
