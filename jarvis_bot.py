@@ -22,6 +22,7 @@ from flask_cors import CORS
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from datetime import datetime, timezone
 
+
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 # Підключаємося до БД
@@ -3692,12 +3693,10 @@ def show_chat_activity(message):
         bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
 
 
-
 # ===================================================================
-# ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу останньої активності
+# ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу
 # ===================================================================
 def format_time_ago(last_seen):
-    """Перетворює TIMESTAMP з бази в людиночитабельний формат українською."""
     if not last_seen:
         return "давним-давно (немає даних)"
 
@@ -3729,14 +3728,60 @@ def format_time_ago(last_seen):
 
 
 # ===================================================================
+# 🛠️ ГЕНЕРАТОР ТЕКСТУ ТА КНОПОК СТОРОНКИ
+# ===================================================================
+PAGE_SIZE = 5
+
+def build_sleepers_page(rows, page=0):
+    total_users = len(rows)
+    total_pages = (total_users + PAGE_SIZE - 1) // PAGE_SIZE if total_users > 0 else 1
+
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * PAGE_SIZE
+    end_idx = start_idx + PAGE_SIZE
+    page_rows = rows[start_idx:end_idx]
+
+    mentions = []
+    for idx, (user_id, name, count, last_seen) in enumerate(page_rows, start=start_idx + 1):
+        clean_name = html.escape(str(name)) if name else "Чуваче"
+        time_ago = format_time_ago(last_seen)
+        mentions.append(
+            f"{idx}. <a href=\"tg://user?id={user_id}\">{clean_name}</a> "
+            f"— ⏳ <b>{time_ago}</b> <i>({count} пов.)</i>"
+        )
+
+    response_text = (
+        f"📢 <b>ДРАГО ВИХОДИТЬ НА ПОЛЮВАННЯ НА СОННИХ МУХ!</b> 💤\n"
+        f"<i>Ей, ви там що, позасинали у своїх норах? Ану живо в чат! 🪵</i>\n\n"
+        f"⚠️ <b>Список тихушників (Стор. {page + 1}/{total_pages}):</b>\n\n"
+        + "\n".join(mentions) +
+        "\n\n☠️ <i>Якщо не почнете писати — Драго особисто вас забанить.</i>"
+    )
+
+    markup = InlineKeyboardMarkup()
+    buttons = []
+
+    if page > 0:
+        buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"sleepers_page:{page - 1}"))
+    
+    buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+
+    if page < total_pages - 1:
+        buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"sleepers_page:{page + 1}"))
+
+    if buttons:
+        markup.row(*buttons)
+
+    return response_text, markup
+
+
+# ===================================================================
 # 💤 КОМАНДА ДЛЯ ПОШУКУ НЕАКТИВНИХ (/sleepers або /сонні)
 # ===================================================================
 @bot.message_handler(commands=['sleepers', 'сонні'])
 def tag_inactive_users(message):
     chat_id = message.chat.id
-    chat_type = message.chat.type
-
-    if chat_type not in ['group', 'supergroup']:
+    if message.chat.type not in ['group', 'supergroup']:
         bot.reply_to(message, "Ей, бро, які сонні мухи в приватці? Тут тільки ти і я. 👁️")
         return
 
@@ -3745,58 +3790,72 @@ def tag_inactive_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Вибираємо користувачів чату, сортуючи за найдавнішим last_seen
+                # Шукаємо ТІЛЬКИ тих, у кого count < 50 і хто мовчить > 1 години
                 cursor.execute("""
                     SELECT user_id, name, count, last_seen 
                     FROM stats 
                     WHERE in_chat = TRUE 
-                    ORDER BY last_seen ASC NULLS FIRST 
-                    LIMIT 15
+                      AND count < 50
+                      AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL '1 hour')
+                    ORDER BY last_seen ASC NULLS LAST 
+                    LIMIT 30
                 """)
                 rows = cursor.fetchall()
             conn.close()
-            
+
         bot_id = bot.get_me().id
         rows = [row for row in rows if row[0] != bot_id]
 
         if not rows:
-            bot.reply_to(message, "🔥 Ого! Схоже, у цьому чаті всі активні звірі! Жодного сонного лінивця не знайдено. Поважаю. 😎")
+            bot.reply_to(message, "🔥 Ого! Схоже, у цьому чаті всі активні звірі! Жодного сонного лінивця не знайдено. 😎")
             return
 
-        mentions = []
-        for user_id, name, count, last_seen in rows:
-            clean_name = html.escape(str(name)) if name else "Чуваче"
-            time_ago = format_time_ago(last_seen)
-            
-            mentions.append(
-                f'<a href="tg://user?id={user_id}">{clean_name}</a> '
-                f'— ⏳ <b>{time_ago}</b> <i>(всього: {count} пов.)</i>'
-            )
-
-        punchlines = [
-            "Ей, ви там що, позасинали у своїх норах? Ану живо в чат! 🪵",
-            "Якого біса ви мовчите? Я стежу за вами, привиди! 👁️👻",
-            "У вас пальці повідсихали чи що? Ану черкніть хоч слово! 🤬",
-            "Дивлюся на вашу активність і плакати хочеться. Прокидаємося! 💤"
-        ]
-        random_punch = random.choice(punchlines)
-
-        response_text = (
-            f"📢 <b>ДРАГО ВИХОДИТЬ НА ПОЛЮВАННЯ НА СОННИХ МУХ!</b> 💤\n"
-            f"<i>{random_punch}</i>\n\n"
-            "⚠️ <b>Список найдовших тихушників:</b>\n"
-        )
-
-        for idx, mention in enumerate(mentions, 1):
-            response_text += f"{idx}. {mention}\n"
-
-        response_text += "\n☠️ <i>Якщо не почнете писати — Драго особисто вас забанить.</i>"
-        bot.send_message(chat_id, response_text, parse_mode="HTML")
+        text, markup = build_sleepers_page(rows, page=0)
+        bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
     except Exception as e:
         print(f"Помилка пошуку сонних: {e}")
-        # Виводимо точний текст помилки прямо в чат для діагностики:
         bot.reply_to(message, f"❌ <b>Помилка БД або коду:</b> <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+
+
+# ===================================================================
+# 🔘 ОБРОБНИК КНОПОК ПАГІНАЦІЇ (/sleepers)
+# ===================================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith("sleepers_page:"))
+def handle_sleepers_page(call):
+    try:
+        page = int(call.data.split(":")[1])
+        chat_id = call.message.chat.id
+
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT user_id, name, count, last_seen 
+                    FROM stats 
+                    WHERE in_chat = TRUE 
+                      AND count < 50
+                      AND (last_seen IS NULL OR last_seen < NOW() - INTERVAL '1 hour')
+                    ORDER BY last_seen ASC NULLS LAST 
+                    LIMIT 30
+                """)
+                rows = cursor.fetchall()
+            conn.close()
+
+        bot_id = bot.get_me().id
+        rows = [row for row in rows if row[0] != bot_id]
+
+        text, markup = build_sleepers_page(rows, page=page)
+        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.answer_callback_query(call.id)
+
+    except Exception as e:
+        print(f"Помилка перемикання сторінок: {e}")
+        bot.answer_callback_query(call.id, "❌ Не вдалося оновити сторінку")
+
+@bot.callback_query_handler(func=lambda call: call.data == "noop")
+def handle_noop(call):
+    bot.answer_callback_query(call.id)
 
 
 # ===================================================================
