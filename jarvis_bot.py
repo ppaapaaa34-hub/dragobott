@@ -9,6 +9,7 @@ import threading
 import asyncio
 import html
 import edge_tts
+import subprocess
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
 from telebot import types
@@ -192,55 +193,89 @@ def is_user_banned(user_id):
         return False
 
 # ===================================================================
-# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (ElevenLabs API)
+# 🗣️ СИСТЕМА ГОЛОСОВИХ ПОВІДОМЛЕНЬ (Piper TTS)
 # ===================================================================
+
+PIPER_MODEL = "models/uk_UA-ukrainian_tts-medium.onnx"
+
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Генерує голосове (кружечок) через ElevenLabs і надсилає в Telegram"""
-    voice_file = f"drago_voice_{chat_id}.ogg"
-    
-    # Очищаємо текст від Markdown-символів
-    clean_text = str(text_to_speak).replace("*", "").replace("_", "").replace("`", "").replace("#", "").strip()
+    """Генерує українське голосове повідомлення через Piper"""
 
-    if not ELEVENLABS_API_KEY:
-        bot.send_message(chat_id, "❌ Помилка: ELEVENLABS_API_KEY не знайдено на Render!", reply_to_message_id=reply_to_id)
-        return
+    wav_file = f"/tmp/drago_{chat_id}.wav"
+    ogg_file = f"/tmp/drago_{chat_id}.ogg"
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=opus_48000_128"
-    headers = {
-        "Content-Type": "application/json",
-        "xi-api-key": ELEVENLABS_API_KEY
-    }
-    payload = {
-        "text": clean_text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
-        }
-    }
+    clean_text = (
+        str(text_to_speak)
+        .replace("*", "")
+        .replace("_", "")
+        .replace("`", "")
+        .replace("#", "")
+        .strip()
+    )
 
     try:
-        response = requests.post(url, json=payload, headers=headers)
-        
-        if response.status_code == 200:
-            with open(voice_file, "wb") as f:
-                f.write(response.content)
 
-            with open(voice_file, "rb") as f:
-                bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
-        else:
-            error_text = f"❌ ПОМИЛКА ElevenLabs ({response.status_code}):\n{response.text}"
-            bot.send_message(chat_id, error_text, reply_to_message_id=reply_to_id)
+        # Генерація WAV через Piper
+        subprocess.run(
+            [
+                "piper",
+                "--model",
+                PIPER_MODEL,
+                "--output_file",
+                wav_file
+            ],
+            input=clean_text.encode("utf-8"),
+            check=True
+        )
+
+        # Робимо голос схожим на старого діда
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", wav_file,
+
+                "-filter:a",
+                "asetrate=48000*0.72,"
+                "atempo=1.38,"
+                "bass=g=12,"
+                "treble=g=-12,"
+                "volume=1.5,"
+                "aecho=0.8:0.9:35:0.2",
+
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "64k",
+
+                ogg_file
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+
+        with open(ogg_file, "rb") as voice:
+            bot.send_voice(
+                chat_id,
+                voice,
+                reply_to_message_id=reply_to_id
+            )
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Системна помилка відправки: {e}", reply_to_message_id=reply_to_id)
-        
+        bot.send_message(
+            chat_id,
+            f"❌ Помилка генерації голосу:\n{e}",
+            reply_to_message_id=reply_to_id
+        )
+
     finally:
-        if os.path.exists(voice_file):
-            try:
-                os.remove(voice_file)
-            except:
-                pass
+
+        if os.path.exists(wav_file):
+            os.remove(wav_file)
+
+        if os.path.exists(ogg_file):
+            os.remove(ogg_file)
 
 
 # ===================================================================
