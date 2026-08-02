@@ -117,7 +117,6 @@ DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОК�
 TELEGRAM_CHAT_ID = -1003428241218  # ID чату для анонсів
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-genai.configure(api_key=GEMINI_API_KEY)
 
 generation_config = {
     "max_output_tokens": 2096,
