@@ -205,15 +205,14 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
         bot.send_message(chat_id, "❌ Помилка: ELEVENLABS_API_KEY не знайдено на Render!", reply_to_message_id=reply_to_id)
         return
 
-    # 💡 ВАЖЛИВО: додаємо ?output_format=ogg_opus, щоб Телеграм бачив це як кружечок!
-   url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=opus_48000_128"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=opus_48000_128"
     headers = {
         "Content-Type": "application/json",
         "xi-api-key": ELEVENLABS_API_KEY
     }
     payload = {
         "text": clean_text,
-        "model_id": "eleven_multilingual_v2", # Підтримує українську мову
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {
             "stability": 0.5,
             "similarity_boost": 0.75
@@ -224,15 +223,12 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
         response = requests.post(url, json=payload, headers=headers)
         
         if response.status_code == 200:
-            # Зберігаємо OGG файл
             with open(voice_file, "wb") as f:
                 f.write(response.content)
 
-            # Надсилаємо як кружечок
             with open(voice_file, "rb") as f:
                 bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
         else:
-            # 🚨 ЯКЩО ПОМИЛКА — БОТ НАПИШЕ ПРИЧИНУ ПРЯМО В ТЕЛЕГРАМ!
             error_text = f"❌ ПОМИЛКА ElevenLabs ({response.status_code}):\n{response.text}"
             bot.send_message(chat_id, error_text, reply_to_message_id=reply_to_id)
 
@@ -240,40 +236,11 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
         bot.send_message(chat_id, f"❌ Системна помилка відправки: {e}", reply_to_message_id=reply_to_id)
         
     finally:
-        # Завжди видаляємо файл з диска
         if os.path.exists(voice_file):
             try:
                 os.remove(voice_file)
             except:
                 pass
-
-
-@bot.message_handler(content_types=['voice'])
-def handle_voice(message):
-    if is_user_banned(message.from_user.id):
-        return
-
-    chat_id = message.chat.id
-    chat_type = message.chat.type
-    if chat_type in ['group', 'supergroup']:
-        if not (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id):
-            return
-    try:
-        bot.send_chat_action(chat_id, 'record_voice')
-        file_info = bot.get_file(message.voice.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        audio_part = {"data": downloaded_file, "mime_type": "audio/ogg"}
-        
-        prompt = "Послухай це голосове повідомлення користувача і дай відповідь:"
-        
-        # Використовуємо grandfather_model для генерації тексту діда
-        response = grandfather_model.generate_content([prompt, audio_part])
-        
-        send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
-        
-    except Exception as e:
-        print(f"Помилка обробки голосового: {e}")
-        bot.reply_to(message, "Кхм-кхм... Старий не зміг розчути твоє голосове або горло заклинило. 👴")
 
 
 # ===================================================================
