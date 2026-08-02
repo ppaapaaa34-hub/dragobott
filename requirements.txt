@@ -11,3 +11,4 @@ flask-cors
 flask
 pymongo
 dnspython
+piper-tts
