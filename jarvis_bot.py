@@ -195,7 +195,7 @@ def is_user_banned(user_id):
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (ElevenLabs API)
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Генерує голосове через ElevenLabs і надсилає в Telegram"""
+    """Генерує аудіо через ElevenLabs і надсилає в Telegram"""
     voice_file = f"drago_voice_{chat_id}.mp3"
     
     # Очищаємо текст від Markdown-символів
@@ -227,11 +227,9 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
             with open(voice_file, "wb") as f:
                 f.write(response.content)
 
+            # 💡 Використовуємо send_audio (гарантовано працює з MP3)
             with open(voice_file, "rb") as f:
-                bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
-
-            if os.path.exists(voice_file):
-                os.remove(voice_file)
+                bot.send_audio(chat_id, f, reply_to_message_id=reply_to_id, title="Дід Драго 👴", performer="Драго")
         else:
             print(f"❌ Помилка ElevenLabs API ({response.status_code}): {response.text}")
             bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
@@ -239,6 +237,14 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     except Exception as e:
         print(f"❌ Помилка озвучки ElevenLabs: {e}")
         bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+        
+    finally:
+        # Завжди видаляємо тимчасовий файл з диска
+        if os.path.exists(voice_file):
+            try:
+                os.remove(voice_file)
+            except Exception as e:
+                print(f"Не вдалося видалити файл {voice_file}: {e}")
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
@@ -258,7 +264,7 @@ def handle_voice(message):
         
         prompt = "Послухай це голосове повідомлення користувача і дай відповідь:"
         
-        # 👈 Використовуємо grandfather_model, щоб Gemini відповідала СТРОГО в образі діда!
+        # Використовуємо grandfather_model для генерації тексту діда
         response = grandfather_model.generate_content([prompt, audio_part])
         
         send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
@@ -266,7 +272,6 @@ def handle_voice(message):
     except Exception as e:
         print(f"Помилка обробки голосового: {e}")
         bot.reply_to(message, "Кхм-кхм... Старий не зміг розчути твоє голосове або горло заклинило. 👴")
-
 # ===================================================================
 # 🎖️ ФУНКЦІЯ ВИЗНАЧЕННЯ РАНГУ ЗА АКТИВНІСТЮ
 # ===================================================================
