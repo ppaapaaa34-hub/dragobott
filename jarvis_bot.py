@@ -1994,68 +1994,77 @@ def build_shop_page(page=0):
     markup.row(*buttons)
 
     return "\n".join(text), markup, shop_descriptions
-# ===================================================================
-# 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
-# ===================================================================
-def generate_inventory_ai_image(bought_codes):
-    if not bought_codes:
+
+# =====================================================
+# 🖼️ AI ФОТО ДЛЯ МАГАЗИНУ (POLLINATIONS FLUX)
+# =====================================================
+
+def generate_shop_ai_image(descriptions):
+
+    if not descriptions:
         return None
-
-    ai_descriptions = []
-    for code in bought_codes:
-        str_code = str(code)  # Перетворення коду на рядок для точного пошуку
-        if str_code in SHOP_ITEMS and "ai_desc" in SHOP_ITEMS[str_code]:
-            ai_descriptions.append(SHOP_ITEMS[str_code]["ai_desc"])
-        elif str_code in SHOP_ITEMS:
-            ai_descriptions.append(SHOP_ITEMS[str_code]["name"])
-
-    if not ai_descriptions:
-        return None
-
-    # Беремо тільки перші 3 предмети
-    selected_items = ai_descriptions[:3]
-    items_prompt = " and ".join(selected_items)
-
-    full_prompt = (
-        f"Ultra realistic photo of {items_prompt}. "
-        "High quality, 8k, detailed, photorealistic"
-    )
 
     try:
-        encoded_prompt = requests.utils.quote(full_prompt)
-        seed = random.randint(1, 999999)
-        
-        # Стабільне посилання для Pollinations
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=800&height=800&seed={seed}&nologo=true"
+        selected_items = descriptions[:3]
 
-        # Заголовок User-Agent, щоб сервер Pollinations не блокував запит від Render
+        prompt = (
+            "Luxury showcase of "
+            + " and ".join(selected_items)
+            + ". Ultra realistic, cinematic lighting, "
+              "expensive black market store, 8k, photorealistic"
+        )
+
+        encoded_prompt = requests.utils.quote(prompt)
+        seed = random.randint(1, 999999)
+
+        image_url = (
+            f"https://image.pollinations.ai/p/{encoded_prompt}"
+            f"?width=800&height=800&seed={seed}&nologo=true"
+        )
+
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent":
+            "Mozilla/5.0"
         }
 
-        # Збільшено timeout до 35 секунд
-        response = requests.get(image_url, headers=headers, timeout=35)
+        response = requests.get(
+            image_url,
+            headers=headers,
+            timeout=35
+        )
 
         if response.status_code == 200:
-            content_type = response.headers.get("Content-Type", "")
-            # Перевіряємо, чи повернулася саме картинка
-            if "image" in content_type or len(response.content) > 5000:
-                img = Image.open(io.BytesIO(response.content)).convert("RGB")
+
+            if "image" in response.headers.get("Content-Type",""):
+
+                img = Image.open(
+                    io.BytesIO(response.content)
+                ).convert("RGB")
+
                 bio = io.BytesIO()
-                bio.name = "inventory_art.jpg"
-                img.save(bio, "JPEG", quality=85)
+                bio.name = "shop.jpg"
+
+                img.save(
+                    bio,
+                    "JPEG",
+                    quality=85
+                )
+
                 bio.seek(0)
+
                 return bio
-            else:
-                print(f"⚠️ Pollinations повернув не картинку, Content-Type: {content_type}")
-        else:
-            print(f"⚠️ Pollinations повернув статус: {response.status_code}")
+
+        print(
+            "⚠️ Pollinations не повернув фото",
+            response.status_code
+        )
 
     except Exception as e:
-        print(f"⚠️ Помилка генерації AI майна: {e}")
+        print(
+            f"⚠️ Помилка AI магазину: {e}"
+        )
 
     return None
-
 
 # ===================================================================
 # 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (РЕДАКТОР/ВІДПОВІДЬ)
