@@ -93,34 +93,6 @@ const collectionItems = [
     { id: "item_24", name: "Серце Всесвіту", rarity: "legendary", icon: "🌌", cost: 500000000000, bonus: "+500% до пасиву", owned: false }
 ];
 
-const ITEM_BONUSES = {
-    item_1: () => { tapPower += 2; },
-    item_2: () => { tapPower += 5; },
-    item_3: () => { passiveIncome = Math.floor(passiveIncome * 1.05); },
-    item_4: () => { tapPower += 15; },
-    item_5: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
-    item_6: () => { tapPower += 50; },
-    item_7: () => { passiveIncome = Math.floor(passiveIncome * 1.20); },
-    item_8: () => { tapPower += 150; },
-    item_9: () => { tapPower += 25; },
-    item_10: () => { passiveIncome = Math.floor(passiveIncome * 1.15); },
-    item_11: () => { tapPower += 100; },
-    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); },
-    // --- БОНУСИ НОВИХ ПРЕДМЕТІВ ---
-    item_13: () => { passiveIncome = Math.floor(passiveIncome * 1.30); },
-    item_14: () => { tapPower += 200; },
-    item_15: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
-    item_16: () => { passiveIncome = Math.floor(passiveIncome * 1.40); },
-    item_17: () => { tapPower += 75; },
-    item_18: () => { passiveIncome = Math.floor(passiveIncome * 2.0); },
-    item_19: () => { tapPower += 300; },
-    item_20: () => { tapPower += 500; },
-    item_21: () => { tapPower += 750; },
-    item_22: () => { passiveIncome = Math.floor(passiveIncome * 3.0); },
-    item_23: () => { tapPower += 1500; },
-    item_24: () => { passiveIncome = Math.floor(passiveIncome * 6.0); }
-};
-
 const LEVEL_NAMES = [
     "Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат",
     "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог",
@@ -511,7 +483,7 @@ window.buyCard = function(id) {
 
 // ==================== COLLECTION ====================
 const ITEM_BONUSES = {
-    item_1: () => { tapPower += 2; },
+   item_1: () => { tapPower += 2; },
     item_2: () => { tapPower += 5; },
     item_3: () => { passiveIncome = Math.floor(passiveIncome * 1.05); },
     item_4: () => { tapPower += 15; },
@@ -522,7 +494,20 @@ const ITEM_BONUSES = {
     item_9: () => { tapPower += 25; },
     item_10: () => { passiveIncome = Math.floor(passiveIncome * 1.15); },
     item_11: () => { tapPower += 100; },
-    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); }
+    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); },
+    // --- БОНУСИ НОВИХ ПРЕДМЕТІВ ---
+    item_13: () => { passiveIncome = Math.floor(passiveIncome * 1.30); },
+    item_14: () => { tapPower += 200; },
+    item_15: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
+    item_16: () => { passiveIncome = Math.floor(passiveIncome * 1.40); },
+    item_17: () => { tapPower += 75; },
+    item_18: () => { passiveIncome = Math.floor(passiveIncome * 2.0); },
+    item_19: () => { tapPower += 300; },
+    item_20: () => { tapPower += 500; },
+    item_21: () => { tapPower += 750; },
+    item_22: () => { passiveIncome = Math.floor(passiveIncome * 3.0); },
+    item_23: () => { tapPower += 1500; },
+    item_24: () => { passiveIncome = Math.floor(passiveIncome * 6.0); }
 };
 
 function renderCollection() {
