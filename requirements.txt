@@ -1,5 +1,5 @@
 pyTelegramBotAPI
-google-generativeai
+google-genai
 Pillow
 requests
 yt-dlp
@@ -9,3 +9,5 @@ psycopg2-binary
 discord.py
 flask-cors
 flask
+pymongo
+dnspython
