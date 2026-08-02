@@ -206,7 +206,7 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
         return
 
     # 💡 ВАЖЛИВО: додаємо ?output_format=ogg_opus, щоб Телеграм бачив це як кружечок!
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=ogg_opus"
+   url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=opus_48000_128"
     headers = {
         "Content-Type": "application/json",
         "xi-api-key": ELEVENLABS_API_KEY
