@@ -2276,35 +2276,25 @@ def buy_item(message):
     user_id = message.from_user.id
     
     try:
-        with db_lock:
+                with db_lock:
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT balance FROM stats WHERE user_id = %s", (user_id,))
-                    res = cursor.fetchone()
-                    current_balance = res[0] if res else 0
-                    
-                    if current_balance < item["price"]:
-                        shortage = item["price"] - current_balance
-                        bot.reply_to(message, f"💸 <b>Бідність — це не порок, але на покупку не вистачає!</b>\n\nТобі треба ще заробити <code>{shortage:,} грн</code>. Іди спам текст у чат! 💸", parse_mode="HTML")
-                        return
-                        
-                    cursor.execute("UPDATE stats SET balance = balance - %s WHERE user_id = %s", (item["price"], user_id))
-                    cursor.execute(
-                        "INSERT INTO inventory (user_id, item_code, item_name, item_category) VALUES (%s, %s, %s, %s)",
-                        (user_id, item_code, item["name"], item["cat"])
-                    )
+                    # робота з БД тут
+
                 conn.commit()
+
             finally:
                 conn.close()
-                    status = bot.reply_to(
+
+
+        status = bot.reply_to(
             message,
             "📸 <b>Генерую фото твоєї покупки...</b>\n<i>Зачекай кілька секунд.</i>",
             parse_mode="HTML"
         )
 
         photo = generate_shop_ai_image([item["ai_desc"]])
-
         try:
             bot.delete_message(
                 message.chat.id,
