@@ -188,12 +188,19 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     try:
         voice_file = f"drago_voice_{chat_id}.ogg"
         
-        # 👴 Налаштування діда: pitch="-30Hz" (низький тон), rate="-15%" (повільна мова)
+        # 👴 Додаємо старечі паузи та кряхтіння перед озвучкою, якщо їх немає
+        prepared_text = text_to_speak
+        if not prepared_text.startswith("Кхм") and not prepared_text.startswith("Охо"):
+            prepared_text = f"Кхм-кхм... {prepared_text}"
+
+        # 👴 М'які налаштування діда:
+        # pitch="-12Hz" — злегка занижує тон без ефекту монстра
+        # rate="-22%" — робить мову повільною, протяжною та старечою
         communicate = edge_tts.Communicate(
-            text_to_speak, 
+            prepared_text, 
             "uk-UA-OstapNeural", 
-            pitch="-30Hz", 
-            rate="-15%"
+            pitch="-12Hz", 
+            rate="-22%"
         )
         asyncio.run(communicate.save(voice_file))
         
@@ -226,8 +233,8 @@ def handle_voice(message):
         # 👴 Промпт для атмосфери діда
         prompt = (
             "Послухай це голосове повідомлення і дай відповідь від імені буркливого, "
-            "але веселого старого діда Драго (використовуй вислови 'кхм-кхм', 'охо-хо', 'у наші часи', 'онучок'). "
-            "Відповідь роби короткою та зручною для читання голосом:"
+            "але доброго старого діда Драго. Використовуй вислови: 'кхм-кхм', 'охо-хо', 'у наші часи', 'ех, онучок'. "
+            "Пиши коротко, розважливо і простими словами для зручної озвучки:"
         )
         response = model.generate_content([prompt, audio_part])
         
@@ -236,7 +243,6 @@ def handle_voice(message):
     except Exception as e:
         print(f"Помилка голосового: {e}")
         bot.reply_to(message, "Кхм-кхм... Старий не зміг розпарсити твоє голосове або заговорити у відповідь. 👴")
-
 
 # ===================================================================
 # 🎖️ ФУНКЦІЯ ВИЗНАЧЕННЯ РАНГУ ЗА АКТИВНІСТЮ
