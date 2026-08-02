@@ -196,7 +196,7 @@ def is_user_banned(user_id):
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     """Генерує голосове через ElevenLabs і надсилає в Telegram"""
-    voice_file = f"drago_voice_{chat_id}.ogg"
+   voice_file = f"drago_voice_{chat_id}.mp3"
     
     # Очищаємо текст від Markdown-символів
     clean_text = text_to_speak.replace("*", "").replace("_", "").replace("`", "").replace("#", "")
