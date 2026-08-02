@@ -1819,24 +1819,29 @@ def build_shop_page(page=0):
 
     return "\n".join(text), markup
 
+# ===================================================================
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
+# ===================================================================
 def generate_inventory_ai_image(bought_codes):
     if not bought_codes:
         return None
 
     ai_descriptions = []
     for code in bought_codes:
-        if code in SHOP_ITEMS and "ai_desc" in SHOP_ITEMS[code]:
-            ai_descriptions.append(SHOP_ITEMS[code]["ai_desc"])
-        elif code in SHOP_ITEMS:
-            ai_descriptions.append(SHOP_ITEMS[code]["name"])
+        str_code = str(code)  # 🔥 Примусово перетворюємо на рядок для пошуку в SHOP_ITEMS
+        
+        if 'SHOP_ITEMS' in globals() and str_code in SHOP_ITEMS:
+            item = SHOP_ITEMS[str_code]
+            if "ai_desc" in item and item["ai_desc"]:
+                ai_descriptions.append(item["ai_desc"])
+            elif "name" in item and item["name"]:
+                ai_descriptions.append(item["name"])
 
     if not ai_descriptions:
         return None
 
-    # Беремо тільки перші 3 предмети
-    selected_items = ai_descriptions[:3]
-
+    # Беремо перші 3-5 предметів для кращої деталізації
+    selected_items = ai_descriptions[:5]
     items_prompt = " and ".join(selected_items)
 
     full_prompt = (
@@ -1869,7 +1874,10 @@ def generate_inventory_ai_image(bought_codes):
 
     return None
 
-# 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (РЕДАКТОР/ВІДПОВІДЬ)
+
+# ===================================================================
+# 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (АУДИТ ТА ВІДПОВІДЬ)
+# ===================================================================
 def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is_callback=False):
     clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
     
@@ -1905,11 +1913,15 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
     
     for item in items:
         code, name = item[0], item[1]
+        str_code = str(code)  # 🔥 Синхронізуємо тип даних із SHOP_ITEMS
+        
         item_counts[name] = item_counts.get(name, 0) + 1
-        if code not in unique_codes:
-            unique_codes.append(code)
-        if 'SHOP_ITEMS' in globals() and code in SHOP_ITEMS:
-            total_property_value += SHOP_ITEMS[code].get("price", 0)
+        
+        if str_code not in unique_codes:
+            unique_codes.append(str_code)
+            
+        if 'SHOP_ITEMS' in globals() and str_code in SHOP_ITEMS:
+            total_property_value += SHOP_ITEMS[str_code].get("price", 0)
 
     response.append(f"💰 <b>Цінність майна:</b> <code>{total_property_value:,} грн</code>")
     response.append("────────────────────")
