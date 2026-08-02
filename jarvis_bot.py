@@ -778,7 +778,7 @@ def generate_business_ai_image(owned_biz_codes):
     unique_codes = list(set(owned_biz_codes))
     ai_descriptions = []
     
-    for code in unique_codes[:4]:
+    for code in unique_codes[:5]:
         if code in BUSINESSES:
             ai_descriptions.append(BUSINESSES[code]["ai_desc"])
             
@@ -1928,8 +1928,8 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
         reply_to_message_id=reply_to_id
     )
 
-    top_3_codes = unique_codes[:3]
-    photo_bio = generate_inventory_ai_image(top_3_codes)
+    top_7_codes = unique_codes[:5]
+    photo_bio = generate_inventory_ai_image(top_7_codes)
 
     if photo_bio:
         try:
