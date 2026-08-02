@@ -1,5 +1,4 @@
 pyTelegramBotAPI
-google-genai
 Pillow
 requests
 yt-dlp
