@@ -195,20 +195,19 @@ def is_user_banned(user_id):
 # 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (ElevenLabs API)
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Генерує аудіо через ElevenLabs і надсилає в Telegram"""
-    voice_file = f"drago_voice_{chat_id}.mp3"
+    """Генерує голосове (кружечок) через ElevenLabs і надсилає в Telegram"""
+    voice_file = f"drago_voice_{chat_id}.ogg"
     
     # Очищаємо текст від Markdown-символів
     clean_text = str(text_to_speak).replace("*", "").replace("_", "").replace("`", "").replace("#", "").strip()
 
     if not ELEVENLABS_API_KEY:
-        print("❌ Помилка: ELEVENLABS_API_KEY не вказано в змінних середовища!")
-        bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+        bot.send_message(chat_id, "❌ Помилка: ELEVENLABS_API_KEY не знайдено на Render!", reply_to_message_id=reply_to_id)
         return
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    # 💡 ВАЖЛИВО: додаємо ?output_format=ogg_opus, щоб Телеграм бачив це як кружечок!
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=ogg_opus"
     headers = {
-        "Accept": "audio/mpeg",
         "Content-Type": "application/json",
         "xi-api-key": ELEVENLABS_API_KEY
     }
@@ -223,28 +222,31 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
 
     try:
         response = requests.post(url, json=payload, headers=headers)
+        
         if response.status_code == 200:
+            # Зберігаємо OGG файл
             with open(voice_file, "wb") as f:
                 f.write(response.content)
 
-            # 💡 Використовуємо send_audio (гарантовано працює з MP3)
+            # Надсилаємо як кружечок
             with open(voice_file, "rb") as f:
-                bot.send_audio(chat_id, f, reply_to_message_id=reply_to_id, title="Дід Драго 👴", performer="Драго")
+                bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
         else:
-            print(f"❌ Помилка ElevenLabs API ({response.status_code}): {response.text}")
-            bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+            # 🚨 ЯКЩО ПОМИЛКА — БОТ НАПИШЕ ПРИЧИНУ ПРЯМО В ТЕЛЕГРАМ!
+            error_text = f"❌ ПОМИЛКА ElevenLabs ({response.status_code}):\n{response.text}"
+            bot.send_message(chat_id, error_text, reply_to_message_id=reply_to_id)
 
     except Exception as e:
-        print(f"❌ Помилка озвучки ElevenLabs: {e}")
-        bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+        bot.send_message(chat_id, f"❌ Системна помилка відправки: {e}", reply_to_message_id=reply_to_id)
         
     finally:
-        # Завжди видаляємо тимчасовий файл з диска
+        # Завжди видаляємо файл з диска
         if os.path.exists(voice_file):
             try:
                 os.remove(voice_file)
-            except Exception as e:
-                print(f"Не вдалося видалити файл {voice_file}: {e}")
+            except:
+                pass
+
 
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
@@ -272,6 +274,8 @@ def handle_voice(message):
     except Exception as e:
         print(f"Помилка обробки голосового: {e}")
         bot.reply_to(message, "Кхм-кхм... Старий не зміг розчути твоє голосове або горло заклинило. 👴")
+
+
 # ===================================================================
 # 🎖️ ФУНКЦІЯ ВИЗНАЧЕННЯ РАНГУ ЗА АКТИВНІСТЮ
 # ===================================================================
@@ -4624,7 +4628,7 @@ def handle_web_app_data(message):
         bot.send_message(message.chat.id, "Отримано дані з вашої гри!")
 
 # ===================================================================
-# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕННЯ
+# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -4773,7 +4777,6 @@ def handle_text(message):
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Бля, щось у мене мізки на секунду заклинило. Спробуй ще раз, бро!")
             except Exception:
                 pass
-
 
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
