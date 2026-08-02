@@ -1019,15 +1019,41 @@ def buy_business(message):
             conn.commit()
             conn.close()
 
-        bot.reply_to(
-            message, 
-            f"🎉 <b>ВІТАЄМО З УГОДОЮ!</b> 🎉\n\n"
-            f"Ти успішно купив бізнес: <b>{biz['name']}</b>!\n"
-            f"Гроші списано, власність оформлена.\n"
-            f"📈 Дохід <code>+{biz['income']:,} грн/год</code> вже нараховується.\n"
-            f"Не забудь збирати касу через `/зібрати`!", 
+        status = bot.reply_to(
+            message,
+            "📸 <b>Генерую фото нового бізнесу...</b>\n<i>Зачекай кілька секунд.</i>",
             parse_mode="HTML"
         )
+
+        photo = generate_business_purchase_image(biz)
+
+        try:
+            bot.delete_message(message.chat.id, status.message_id)
+        except Exception:
+            pass
+
+        caption = (
+            f"🎉 <b>ВІТАЄМО З УГОДОЮ!</b>\n\n"
+            f"🏢 <b>{biz['name']}</b>\n"
+            f"💰 Ціна: <code>{biz['price']:,} грн</code>\n"
+            f"📈 Дохід: <code>+{biz['income']:,} грн/год</code>\n\n"
+            f"✅ Бізнес оформлено.\n"
+            f"💵 Не забудь забирати прибуток командою <code>/зібрати</code>."
+        )
+
+        if photo:
+            bot.send_photo(
+                message.chat.id,
+                photo=photo,
+                caption=caption,
+                parse_mode="HTML"
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                caption,
+                parse_mode="HTML"
+            )
         
     except Exception as e:
         print(f"❌ Помилка купівлі бізнесу: {e}")
@@ -1240,6 +1266,73 @@ def handle_biz_page(call):
 @bot.callback_query_handler(func=lambda call: call.data == "ignore")
 def handle_ignore_callback(call):
     bot.answer_callback_query(call.id)
+
+# ===================================================================
+# 📸 ГЕНЕРАЦІЯ ФОТО КУПЛЕНОГО БІЗНЕСУ
+# ===================================================================
+
+def generate_business_purchase_image(biz):
+    try:
+
+        prompt = (
+            f"Ultra realistic professional photo of {biz['ai_desc']}. "
+            "Luxury business exterior. "
+            "Cinematic lighting. "
+            "Photorealistic. "
+            "8K HDR. "
+            "Magazine quality. "
+            "No people. "
+            "No text. "
+            "No watermark."
+        )
+
+        encoded = requests.utils.quote(prompt)
+
+        seed = random.randint(1,999999)
+
+        url = (
+            f"https://image.pollinations.ai/p/{encoded}"
+            f"?model=flux"
+            f"&width=1024"
+            f"&height=1024"
+            f"&seed={seed}"
+            f"&enhance=true"
+            f"&nologo=true"
+        )
+
+        headers = {
+            "User-Agent":"Mozilla/5.0"
+        }
+
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=45
+        )
+
+        if r.status_code == 200:
+
+            img = Image.open(io.BytesIO(r.content)).convert("RGB")
+
+            bio = io.BytesIO()
+
+            bio.name = "business.jpg"
+
+            img.save(
+                bio,
+                "JPEG",
+                quality=92
+            )
+
+            bio.seek(0)
+
+            return bio
+
+    except Exception as e:
+        print(e)
+
+    return None
+
 
 # ===================================================================
 # 🎮 ДОДАТКОВІ ІНТЕРАКТИВНІ КОМАНДИ
@@ -1850,7 +1943,11 @@ def build_shop_page(page=0):
 
     start_idx = page * SHOP_ITEMS_PER_PAGE
     end_idx = start_idx + SHOP_ITEMS_PER_PAGE
-    current_keys = item_keys[start_idx:end_idx]
+    current_keys = shop_descriptions = []
+
+for code in current_keys:
+    if "ai_desc" in SHOP_ITEMS[code]:
+        shop_descriptions.append(SHOP_ITEMS[code]["ai_desc"])
 
     text = [
         "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
@@ -2006,8 +2103,12 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
         reply_to_message_id=reply_to_id
     )
 
-    top_codes = unique_codes[:5]
-    photo_bio = generate_inventory_ai_image(top_codes)
+    top_codes = unique_codes[:15]
+    photo_bio = generate_inventory_ai_image(
+    top_codes,
+    total_value=total_property_value,
+    balance=balance
+)
 
     if photo_bio:
         try:
