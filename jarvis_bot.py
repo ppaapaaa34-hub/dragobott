@@ -111,9 +111,9 @@ API_ID = int(os.environ.get('API_ID', 12345678))
 API_HASH = os.environ.get('API_HASH', 'ТВІЙ_API_HASH')
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'ТВІЙ_TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'ТВІЙ_GEMINI_API_KEY')
-# 🌐 Посилання на твій Mini App
-# Public URL of the Express Mini App.  Set WEB_APP_URL in Render after the web
-# service has been deployed; the old GitHub URL remains only as a fallback.
+ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY', '') # 🗝️ Ключ ElevenLabs з Render
+ELEVENLABS_VOICE_ID = "WtDqMP4cPOGB6kDiLZgi" # 👴 ID голосу Діда
+
 WEB_APP_URL = os.environ.get('WEB_APP_URL', 'https://ppaapaaa34-hub.github.io/dragobott/')
 # ======================================================
 
@@ -134,6 +134,7 @@ safety_settings = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
 
+# 🤖 Звичайний зухвалий Драго (для тексту)
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
     generation_config=generation_config,
@@ -145,6 +146,20 @@ model = genai.GenerativeModel(
         "Будь живим, неформальним розмовником, злегка іронізуй, підколюй юзера, але завжди допомагай. "
         "Завжди звертайся до користувача особисто на ім'я або дружніми зверненнями ('друже', 'братан', 'козаче'). "
         "Обов'язково закінчуй свої думки, не обривай речення на пів слові! Пиши коротко і ясно!"
+    )
+)
+
+# 👴 Окрема модель «Діда Драго» для голосових
+grandfather_model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash",
+    generation_config=generation_config,
+    safety_settings=safety_settings,
+    system_instruction=(
+        "Ти — старий, буркливий, але кумедний і добрий дід Драго. "
+        "Спілкуйся виключно українською мовою. "
+        "Використовуй старечі вислови: 'кхм-кхм', 'охо-хо', 'у наші часи', 'ех, онучок', 'радикуліт хапає'. "
+        "Будь буркливим, повчальним, але дружнім. "
+        "Пиши коротко, розважливо і простими словами без складних слів для зручної озвучки!"
     )
 )
 
@@ -162,11 +177,6 @@ def get_gemini_chat(chat_id):
     return bot_chats[chat_id]
 
 def run_dummy_server():
-    """Deprecated compatibility hook.
-
-    Express owns Render's PORT and serves the Mini App/API.  The Telegram bot
-    runs as a worker and must not bind a second HTTP server.
-    """
     return
 
 def is_user_banned(user_id):
@@ -182,36 +192,52 @@ def is_user_banned(user_id):
         return False
 
 # ===================================================================
-# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (Edge TTS)
+# 🗣️ СИСТЕМА РОБОТИ З ГОЛОСОВИМИ ПОВІДОМЛЕННЯМИ (ElevenLabs API)
 # ===================================================================
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    try:
-        voice_file = f"drago_voice_{chat_id}.ogg"
-        
-        # 👴 Додаємо старечі паузи та кряхтіння перед озвучкою, якщо їх немає
-        prepared_text = text_to_speak
-        if not prepared_text.startswith("Кхм") and not prepared_text.startswith("Охо"):
-            prepared_text = f"Кхм-кхм... {prepared_text}"
+    """Генерує голосове через ElevenLabs і надсилає в Telegram"""
+    voice_file = f"drago_voice_{chat_id}.ogg"
+    
+    # Очищаємо текст від Markdown-символів
+    clean_text = text_to_speak.replace("*", "").replace("_", "").replace("`", "").replace("#", "")
 
-        # 👴 М'які налаштування діда:
-        # pitch="-12Hz" — злегка занижує тон без ефекту монстра
-        # rate="-22%" — робить мову повільною, протяжною та старечою
-        communicate = edge_tts.Communicate(
-            prepared_text, 
-            "uk-UA-OstapNeural", 
-            pitch="-12Hz", 
-            rate="-22%"
-        )
-        asyncio.run(communicate.save(voice_file))
-        
-        with open(voice_file, 'rb') as f:
-            bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
-            
-        if os.path.exists(voice_file):
-            os.remove(voice_file)
-            
+    if not ELEVENLABS_API_KEY:
+        print("❌ Помилка: ELEVENLABS_API_KEY не вказано в змінних середовища!")
+        bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+        return
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    payload = {
+        "text": clean_text,
+        "model_id": "eleven_multilingual_v2", # Підтримує українську мову
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75
+        }
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            with open(voice_file, "wb") as f:
+                f.write(response.content)
+
+            with open(voice_file, "rb") as f:
+                bot.send_voice(chat_id, f, reply_to_message_id=reply_to_id)
+
+            if os.path.exists(voice_file):
+                os.remove(voice_file)
+        else:
+            print(f"Помилка ElevenLabs API ({response.status_code}): {response.text}")
+            bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
+
     except Exception as e:
-        print(f"Помилка озвучки TTS: {e}")
+        print(f"Помилка озвучки ElevenLabs: {e}")
         bot.send_message(chat_id, text_to_speak, reply_to_message_id=reply_to_id)
 
 @bot.message_handler(content_types=['voice'])
@@ -230,19 +256,16 @@ def handle_voice(message):
         downloaded_file = bot.download_file(file_info.file_path)
         audio_part = {"data": downloaded_file, "mime_type": "audio/ogg"}
         
-        # 👴 Промпт для атмосфери діда
-        prompt = (
-            "Послухай це голосове повідомлення і дай відповідь від імені буркливого, "
-            "але доброго старого діда Драго. Використовуй вислови: 'кхм-кхм', 'охо-хо', 'у наші часи', 'ех, онучок'. "
-            "Пиши коротко, розважливо і простими словами для зручної озвучки:"
-        )
-        response = model.generate_content([prompt, audio_part])
+        prompt = "Послухай це голосове повідомлення користувача і дай відповідь:"
+        
+        # 👈 Використовуємо grandfather_model, щоб Gemini відповідала СТРОГО в образі діда!
+        response = grandfather_model.generate_content([prompt, audio_part])
         
         send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
         
     except Exception as e:
-        print(f"Помилка голосового: {e}")
-        bot.reply_to(message, "Кхм-кхм... Старий не зміг розпарсити твоє голосове або заговорити у відповідь. 👴")
+        print(f"Помилка обробки голосового: {e}")
+        bot.reply_to(message, "Кхм-кхм... Старий не зміг розчути твоє голосове або горло заклинило. 👴")
 
 # ===================================================================
 # 🎖️ ФУНКЦІЯ ВИЗНАЧЕННЯ РАНГУ ЗА АКТИВНІСТЮ
