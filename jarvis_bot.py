@@ -2244,33 +2244,12 @@ def show_shop(message):
 
     text, markup, _ = build_shop_page(page=0)
 
-    status = bot.reply_to(
-        message,
-        "🎨 <b>Драго малює товари магазину...</b>",
-        parse_mode="HTML"
+    bot.send_message(
+        message.chat.id,
+        text,
+        parse_mode="HTML",
+        reply_markup=markup
     )
-
-
-    try:
-        bot.delete_message(message.chat.id, status.message_id)
-    except:
-        pass
-
-    if photo:
-        bot.send_photo(
-            message.chat.id,
-            photo,
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
-    else:
-        bot.send_message(
-            message.chat.id,
-            text,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
 # 🔄 ОБРОБКА ПЕРЕМЕШЕННЯ ПО СТОРІНКАХ МАГАЗИНУ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('shoppage_'))
 def handle_shop_page(call):
