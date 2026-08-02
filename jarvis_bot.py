@@ -2242,7 +2242,7 @@ def show_shop(message):
     if is_user_banned(message.from_user.id):
         return
 
-    text, markup, shop_descriptions = build_shop_page(page=0)
+    text, markup, _ = build_shop_page(page=0)
 
     status = bot.reply_to(
         message,
@@ -2250,7 +2250,6 @@ def show_shop(message):
         parse_mode="HTML"
     )
 
-    photo = generate_shop_ai_image(shop_descriptions)
 
     try:
         bot.delete_message(message.chat.id, status.message_id)
@@ -2280,10 +2279,9 @@ def handle_shop_page(call):
 
     page = int(call.data.split('_')[1])
 
-    text, markup, shop_descriptions = build_shop_page(page=page)
+    text, markup, _ = build_shop_page(page=page)
 
     try:
-        photo = generate_shop_ai_image(shop_descriptions)
 
         if photo and call.message.content_type == "photo":
 
