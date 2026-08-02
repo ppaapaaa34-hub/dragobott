@@ -167,7 +167,7 @@ function xpForLevel(lvl) {
 
 function addXP(amount) {
     playerXP += amount;
-    while (playerXP >= xpForLevel(playerLevel) && playerLevel < 10) {
+    while (playerXP >= xpForLevel(playerLevel) && playerLevel < LEVEL_NAMES.length) {
         playerXP -= xpForLevel(playerLevel);
         playerLevel++;
         showToast(`🎉 Рівень ${playerLevel}: ${LEVEL_NAMES[playerLevel - 1] || "Бог"}!`);
