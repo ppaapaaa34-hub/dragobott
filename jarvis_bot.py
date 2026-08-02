@@ -2202,57 +2202,59 @@ def show_shop(message):
 # 🔄 ОБРОБКА ПЕРЕМЕШЕННЯ ПО СТОРІНКАХ МАГАЗИНУ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('shoppage_'))
 def handle_shop_page(call):
-    if is_user_banned(call.from_user.id): return
+    if is_user_banned(call.from_user.id):
+        return
 
     page = int(call.data.split('_')[1])
+
     text, markup, shop_descriptions = build_shop_page(page=page)
 
     try:
-    photo = generate_shop_ai_image(shop_descriptions)
+        photo = generate_shop_ai_image(shop_descriptions)
 
-    if photo and call.message.content_type == "photo":
+        if photo and call.message.content_type == "photo":
 
-        bot.edit_message_media(
-            media=types.InputMediaPhoto(
-                media=photo,
+            bot.edit_message_media(
+                media=types.InputMediaPhoto(
+                    media=photo,
+                    caption=text,
+                    parse_mode="HTML"
+                ),
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
+
+        elif photo:
+
+            bot.delete_message(
+                call.message.chat.id,
+                call.message.message_id
+            )
+
+            bot.send_photo(
+                call.message.chat.id,
+                photo=photo,
                 caption=text,
-                parse_mode="HTML"
-            ),
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=markup
-        )
+                parse_mode="HTML",
+                reply_markup=markup
+            )
 
-    elif photo:
+        else:
 
-        bot.delete_message(
-            call.message.chat.id,
-            call.message.message_id
-        )
+            bot.edit_message_text(
+                text,
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
 
-        bot.send_photo(
-            call.message.chat.id,
-            photo=photo,
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
+        bot.answer_callback_query(call.id)
 
-    else:
-
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=markup
-        )
-
-    bot.answer_callback_query(call.id)
-
-except Exception as e:
-    print(f"❌ Помилка гортання магазину: {e}")
-    bot.answer_callback_query(call.id, "❌ Помилка.")
+    except Exception as e:
+        print(f"❌ Помилка гортання магазину: {e}")
+        bot.answer_callback_query(call.id, "❌ Помилка.")
    
 # 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
 @bot.message_handler(commands=['buy', 'купити'])
@@ -2295,14 +2297,45 @@ def buy_item(message):
                 conn.commit()
             finally:
                 conn.close()
-            
-        bot.reply_to(
-            message, 
-            f"🎉 <b>УСПІШНА УГОДА! ОЛІГАРХ НА ЗВ'ЯЗКУ!</b> 🎉\n\n"
-            f"Ти успішно купив: <b>{item['name']}</b> за <code>{item['price']:,} грн</code>!\n"
-            f"Майно внесено до реєстру СБУ. Перевір свій статус через `/майно`.", 
+                    status = bot.reply_to(
+            message,
+            "📸 <b>Генерую фото твоєї покупки...</b>\n<i>Зачекай кілька секунд.</i>",
             parse_mode="HTML"
         )
+
+        photo = generate_shop_ai_image([item["ai_desc"]])
+
+        try:
+            bot.delete_message(
+                message.chat.id,
+                status.message_id
+            )
+        except:
+            pass
+
+        caption = (
+            f"🎉 <b>УСПІШНА УГОДА!</b> 🎉\n\n"
+            f"📦 Ти купив: <b>{item['name']}</b>\n"
+            f"💰 Ціна: <code>{item['price']:,} грн</code>\n"
+            f"🏷 Категорія: <b>{item['cat']}</b>\n\n"
+            f"✅ Майно додано до твого інвентарю.\n"
+            f"📋 Перевірити: /майно"
+        )
+
+        if photo:
+            bot.send_photo(
+                message.chat.id,
+                photo=photo,
+                caption=caption,
+                parse_mode="HTML"
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                caption,
+                parse_mode="HTML"
+            )
+        
         
     except Exception as e:
         print(f"Помилка купівлі: {e}")
