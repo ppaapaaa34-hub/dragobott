@@ -4619,7 +4619,7 @@ def handle_web_app_data(message):
         bot.send_message(message.chat.id, "Отримано дані з вашої гри!")
 
 # ===================================================================
-# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
+# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕННЯ
 # ===================================================================
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -4734,30 +4734,32 @@ def handle_text(message):
     try:
         if wants_voice:
             bot.send_chat_action(chat_id, 'record_voice')
-            status_msg = bot.reply_to(message, "Драго записує голосове повідомлення... 🎤")
+            status_msg = bot.reply_to(message, "Дід Драго прокашлюється і записує голосове... 🎤👴")
+            
+            # 👴 Використовуємо grandfather_model для генерації старечої відповіді!
+            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
+            response = grandfather_model.generate_content(full_prompt)
+            reply_text = response.text
         else:
             bot.send_chat_action(chat_id, 'typing')
             status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
-
-        chat = get_gemini_chat(chat_id)
-        
-        full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
-        
-        response = chat.send_message(full_prompt)
-
-        clean_text_for_speech = response.text.replace("*", "").replace("_", "").replace("`", "")
+            
+            chat = get_gemini_chat(chat_id)
+            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
+            response = chat.send_message(full_prompt)
+            reply_text = response.text
 
         if wants_voice:
             try:
                 bot.delete_message(chat_id, status_msg.message_id)
             except Exception:
                 pass
-            send_voice_reply(chat_id, clean_text_for_speech, reply_to_id=message.message_id)
+            send_voice_reply(chat_id, reply_text, reply_to_id=message.message_id)
         else:
             try:
-                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text, parse_mode="Markdown")
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text, parse_mode="Markdown")
             except Exception:
-                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=response.text)
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text)
         
     except Exception as e:
         print(f"Помилка Gemini в handle_text: {e}")
@@ -4766,7 +4768,6 @@ def handle_text(message):
                 bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Бля, щось у мене мізки на секунду заклинило. Спробуй ще раз, бро!")
             except Exception:
                 pass
-
 
 
 # ===================================================================
