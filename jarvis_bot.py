@@ -2261,44 +2261,13 @@ def handle_shop_page(call):
     text, markup, _ = build_shop_page(page=page)
 
     try:
-
-        if photo and call.message.content_type == "photo":
-
-            bot.edit_message_media(
-                media=types.InputMediaPhoto(
-                    media=photo,
-                    caption=text,
-                    parse_mode="HTML"
-                ),
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=markup
-            )
-
-        elif photo:
-
-            bot.delete_message(
-                call.message.chat.id,
-                call.message.message_id
-            )
-
-            bot.send_photo(
-                call.message.chat.id,
-                photo=photo,
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=markup
-            )
-
-        else:
-
-            bot.edit_message_text(
-                text,
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                parse_mode="HTML",
-                reply_markup=markup
-            )
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
 
         bot.answer_callback_query(call.id)
 
