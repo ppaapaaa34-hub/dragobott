@@ -1050,5 +1050,3 @@ setInterval(renderMissions, 1000);
 if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
 }
-
-}
