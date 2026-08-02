@@ -7,6 +7,7 @@ import random
 import io
 import threading
 import asyncio
+import html
 import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
@@ -3691,6 +3692,7 @@ def show_chat_activity(message):
         bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
 
 
+
 # ===================================================================
 # ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу останньої активності
 # ===================================================================
@@ -3763,7 +3765,7 @@ def tag_inactive_users(message):
 
         mentions = []
         for user_id, name, count, last_seen in rows:
-            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Чуваче"
+            clean_name = html.escape(str(name)) if name else "Чуваче"
             time_ago = format_time_ago(last_seen)
             
             mentions.append(
@@ -3793,7 +3795,8 @@ def tag_inactive_users(message):
 
     except Exception as e:
         print(f"Помилка пошуку сонних: {e}")
-        bot.reply_to(message, "❌ Не зміг розбудити лінивців, щось пішло не так.")
+        # Виводимо точний текст помилки прямо в чат для діагностики:
+        bot.reply_to(message, f"❌ <b>Помилка БД або коду:</b> <code>{html.escape(str(e))}</code>", parse_mode="HTML")
 
 
 # ===================================================================
