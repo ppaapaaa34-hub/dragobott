@@ -1935,22 +1935,18 @@ init_inventory_db()
 # 📄 ДОПОМІЖНА ФУНКЦІЯ ГЕНЕРАЦІЇ ТЕКСТУ ТА КНОПОК МАГАЗИНУ
 def build_shop_page(page=0):
     item_keys = list(SHOP_ITEMS.keys())
+
     if not item_keys:
-        return "🏪 <b>Магазин порожній. Товарів немає!</b>", None
+        return "🏪 <b>Магазин порожній. Товарів немає!</b>", None, []
 
     total_pages = max(1, (len(item_keys) + SHOP_ITEMS_PER_PAGE - 1) // SHOP_ITEMS_PER_PAGE)
     page = max(0, min(page, total_pages - 1))
 
     start_idx = page * SHOP_ITEMS_PER_PAGE
-end_idx = start_idx + SHOP_ITEMS_PER_PAGE
+    end_idx = start_idx + SHOP_ITEMS_PER_PAGE
+    current_keys = item_keys[start_idx:end_idx]
 
-current_keys = item_keys[start_idx:end_idx]
-
-shop_descriptions = []
-
-for code in current_keys:
-    if "ai_desc" in SHOP_ITEMS[code]:
-        shop_descriptions.append(SHOP_ITEMS[code]["ai_desc"])
+    shop_descriptions = []
 
     text = [
         "🏪 <b>ЧОРНИЙ РИНОК ДРАГО: ЧАС ВИТРАЧАТИ БАБЛО</b> 💵\n",
@@ -1959,6 +1955,10 @@ for code in current_keys:
 
     for code in current_keys:
         item = SHOP_ITEMS[code]
+
+        if item.get("ai_desc"):
+            shop_descriptions.append(item["ai_desc"])
+
         text.append(f"📦 <b>{item.get('cat', 'Товар').upper()}</b>")
         text.append(f"• <code>{code}</code> — <b>{item.get('name', 'Без назви')}</b>")
         text.append(f" └ 💰 Ціна: <code>{item.get('price', 0):,} грн</code>\n")
@@ -1969,17 +1969,31 @@ for code in current_keys:
     buttons = []
 
     if page > 0:
-        buttons.append(types.InlineKeyboardButton("◀️ Назад", callback_data=f"shoppage_{page - 1}"))
-    
-    buttons.append(types.InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="ignore"))
+        buttons.append(
+            types.InlineKeyboardButton(
+                "◀️ Назад",
+                callback_data=f"shoppage_{page - 1}"
+            )
+        )
+
+    buttons.append(
+        types.InlineKeyboardButton(
+            f"📄 {page + 1}/{total_pages}",
+            callback_data="ignore"
+        )
+    )
 
     if page < total_pages - 1:
-        buttons.append(types.InlineKeyboardButton("Вперед ▶️", callback_data=f"shoppage_{page + 1}"))
+        buttons.append(
+            types.InlineKeyboardButton(
+                "Вперед ▶️",
+                callback_data=f"shoppage_{page + 1}"
+            )
+        )
 
     markup.row(*buttons)
 
     return "\n".join(text), markup, shop_descriptions
-
 # ===================================================================
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
 # ===================================================================
