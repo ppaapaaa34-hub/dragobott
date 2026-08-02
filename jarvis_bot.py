@@ -19,6 +19,7 @@ from discord.ext import commands
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from datetime import datetime, timezone
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
@@ -3689,6 +3690,42 @@ def show_chat_activity(message):
         print(f"Помилка виведення топу: {e}")
         bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
 
+
+# ===================================================================
+# ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу останньої активності
+# ===================================================================
+def format_time_ago(last_seen):
+    """Перетворює TIMESTAMP з бази в людиночитабельний формат українською."""
+    if not last_seen:
+        return "давним-давно (немає даних)"
+
+    now = datetime.now(timezone.utc) if last_seen.tzinfo else datetime.now()
+    diff = now - last_seen
+    seconds = int(diff.total_seconds())
+
+    if seconds < 0:
+        return "щойно"
+
+    minutes = seconds // 60
+    hours = minutes // 60
+    days = hours // 24
+    months = days // 30
+    years = days // 365
+
+    if seconds < 60:
+        return "менше хвилини тому"
+    elif minutes < 60:
+        return f"{minutes} хв. тому"
+    elif hours < 24:
+        return f"{hours} год. тому"
+    elif days < 30:
+        return f"{days} дн. тому"
+    elif months < 12:
+        return f"{months} міс. тому"
+    else:
+        return f"{years} р. тому"
+
+
 # ===================================================================
 # 💤 КОМАНДА ДЛЯ ПОШУКУ НЕАКТИВНИХ (/sleepers або /сонні)
 # ===================================================================
@@ -3706,21 +3743,33 @@ def tag_inactive_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Шукаємо лінивців ТІЛЬКИ СЕРЕД ТИХ, ХТО ЗАРАЗ Є В ЧАТІ
-                cursor.execute("SELECT user_id, name, count FROM stats WHERE count < 5 AND in_chat = TRUE ORDER BY count ASC LIMIT 15")
+                # Вибираємо користувачів чату, сортуючи за найдавнішим last_seen
+                cursor.execute("""
+                    SELECT user_id, name, count, last_seen 
+                    FROM stats 
+                    WHERE in_chat = TRUE 
+                    ORDER BY last_seen ASC NULLS FIRST 
+                    LIMIT 15
+                """)
                 rows = cursor.fetchall()
             conn.close()
             
-        rows = [row for row in rows if row[0] != bot.get_me().id]
+        bot_id = bot.get_me().id
+        rows = [row for row in rows if row[0] != bot_id]
 
         if not rows:
             bot.reply_to(message, "🔥 Ого! Схоже, у цьому чаті всі активні звірі! Жодного сонного лінивця не знайдено. Поважаю. 😎")
             return
 
         mentions = []
-        for user_id, name, count in rows:
+        for user_id, name, count, last_seen in rows:
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Чуваче"
-            mentions.append(f'<a href="tg://user?id={user_id}">{clean_name}</a> (активність: {count} пов.)')
+            time_ago = format_time_ago(last_seen)
+            
+            mentions.append(
+                f'<a href="tg://user?id={user_id}">{clean_name}</a> '
+                f'— ⏳ <b>{time_ago}</b> <i>(всього: {count} пов.)</i>'
+            )
 
         punchlines = [
             "Ей, ви там що, позасинали у своїх норах? Ану живо в чат! 🪵",
@@ -3733,7 +3782,7 @@ def tag_inactive_users(message):
         response_text = (
             f"📢 <b>ДРАГО ВИХОДИТЬ НА ПОЛЮВАННЯ НА СОННИХ МУХ!</b> 💤\n"
             f"<i>{random_punch}</i>\n\n"
-            "⚠️ <b>Список підозрілих тихушників:</b>\n"
+            "⚠️ <b>Список найдовших тихушників:</b>\n"
         )
 
         for idx, mention in enumerate(mentions, 1):
@@ -4509,20 +4558,27 @@ def handle_text(message):
             except Exception as e:
                 print(f"Помилка оновлення статі: {e}")
 
-    # 2. Нарахування грошей та оновлення лічильника повідомлень
+    # 2. Нарахування грошей, оновлення лічильника повідомлень ТА ЧАСУ АКТИВНОСТІ
     try:
         earned_money = random.randint(5, 15)  # 💰 Генеруємо випадковий заробіток
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "UPDATE stats SET count = count + 1, balance = COALESCE(balance, 0) + %s, name = %s WHERE user_id = %s",
+                    """
+                    UPDATE stats 
+                    SET count = count + 1, 
+                        balance = COALESCE(balance, 0) + %s, 
+                        name = %s, 
+                        last_seen = NOW() 
+                    WHERE user_id = %s
+                    """,
                     (earned_money, user.first_name, user.id)
                 )
             conn.commit()
             conn.close()
     except Exception as e:
-        print(f"Помилка оновлення лічильника та балансу: {e}")
+        print(f"Помилка оновлення лічильника, балансу та last_seen: {e}")
 
     is_mentioned = False
 
