@@ -187,7 +187,14 @@ def is_user_banned(user_id):
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     try:
         voice_file = f"drago_voice_{chat_id}.ogg"
-        communicate = edge_tts.Communicate(text_to_speak, "uk-UA-OstapNeural", rate="+15%")
+        
+        # 👴 Налаштування діда: pitch="-30Hz" (низький тон), rate="-15%" (повільна мова)
+        communicate = edge_tts.Communicate(
+            text_to_speak, 
+            "uk-UA-OstapNeural", 
+            pitch="-30Hz", 
+            rate="-15%"
+        )
         asyncio.run(communicate.save(voice_file))
         
         with open(voice_file, 'rb') as f:
@@ -215,15 +222,20 @@ def handle_voice(message):
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         audio_part = {"data": downloaded_file, "mime_type": "audio/ogg"}
-        prompt = "Послухай це голосове повідомлення, зрозумій що сказав користувач і дай повну дотепну відповідь як Драго:"
+        
+        # 👴 Промпт для атмосфери діда
+        prompt = (
+            "Послухай це голосове повідомлення і дай відповідь від імені буркливого, "
+            "але веселого старого діда Драго (використовуй вислови 'кхм-кхм', 'охо-хо', 'у наші часи', 'онучок'). "
+            "Відповідь роби короткою та зручною для читання голосом:"
+        )
         response = model.generate_content([prompt, audio_part])
         
         send_voice_reply(chat_id, response.text, reply_to_id=message.message_id)
         
     except Exception as e:
         print(f"Помилка голосового: {e}")
-        bot.reply_to(message, "Не зміг розпарсити твоє голосове або заговорити у відповідь.")
-
+        bot.reply_to(message, "Кхм-кхм... Старий не зміг розпарсити твоє голосове або заговорити у відповідь. 👴")
 
 
 # ===================================================================
