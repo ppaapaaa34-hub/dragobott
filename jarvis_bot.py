@@ -2030,7 +2030,7 @@ def generate_shop_ai_image(descriptions):
         response = requests.get(
             image_url,
             headers=headers,
-            timeout=35
+            timeout=15
         )
 
         if response.status_code == 200:
@@ -2195,7 +2195,7 @@ def generate_shop_ai_image(descriptions):
         response = requests.get(
             image_url,
             headers=headers,
-            timeout=35
+            timeout=15
         )
 
 
