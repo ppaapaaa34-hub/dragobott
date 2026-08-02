@@ -2156,21 +2156,85 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
             message_id=status_msg.message_id, 
             parse_mode="HTML"
         )
+
 # =====================================================
-# 🖼️ AI ФОТО ДЛЯ МАГАЗИНУ
+# 🖼️ AI ФОТО ДЛЯ МАГАЗИНУ (POLLINATIONS FLUX)
 # =====================================================
+
 def generate_shop_ai_image(descriptions):
 
     if not descriptions:
         return None
 
-    prompt = (
-        "Luxury showcase of the following items: "
-        + ", ".join(descriptions) +
-        ". Ultra realistic, cinematic lighting, expensive store, 8k."
-    )
+    try:
 
-    return generate_pollinations_image(prompt)
+        selected_items = descriptions[:3]
+
+        prompt = (
+            "Luxury showcase of "
+            + ", ".join(selected_items)
+            + ". Ultra realistic, cinematic lighting, "
+              "expensive store, 8k, photorealistic"
+        )
+
+        encoded_prompt = requests.utils.quote(prompt)
+
+        seed = random.randint(1, 999999)
+
+        image_url = (
+            f"https://image.pollinations.ai/p/{encoded_prompt}"
+            f"?width=800&height=800&seed={seed}&nologo=true"
+        )
+
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+
+        response = requests.get(
+            image_url,
+            headers=headers,
+            timeout=35
+        )
+
+
+        if response.status_code == 200:
+
+            img = Image.open(
+                io.BytesIO(response.content)
+            ).convert("RGB")
+
+
+            bio = io.BytesIO()
+
+            bio.name = "shop_ai.jpg"
+
+            img.save(
+                bio,
+                "JPEG",
+                quality=85
+            )
+
+            bio.seek(0)
+
+            return bio
+
+
+        else:
+            print(
+                f"Pollinations error: {response.status_code}"
+            )
+
+
+    except Exception as e:
+
+        print(
+            f"AI SHOP ERROR: {e}"
+        )
+
+
+    return None
 
 # 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
 @bot.message_handler(commands=['shop', 'магазин'])
