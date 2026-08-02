@@ -2066,6 +2066,80 @@ def generate_shop_ai_image(descriptions):
 
     return None
 
+# ============================================================
+# 🎨 AI ФОТО МАЙНА
+# ============================================================
+
+def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
+
+    if not bought_codes:
+        return None
+
+    descriptions = []
+
+    for code in bought_codes[:3]:
+        code = str(code)
+
+        if code in SHOP_ITEMS:
+            item = SHOP_ITEMS[code]
+
+            if item.get("ai_desc"):
+                descriptions.append(item["ai_desc"])
+            else:
+                descriptions.append(item.get("name", "товар"))
+
+    if not descriptions:
+        return None
+
+
+    prompt = (
+        "Ultra realistic luxury inventory showcase. "
+        "Items: "
+        + ", ".join(descriptions)
+        +
+        ". Expensive collection, cinematic lighting, "
+        "photorealistic, 8k."
+    )
+
+    try:
+        encoded_prompt = requests.utils.quote(prompt)
+
+        seed = random.randint(1, 999999)
+
+        image_url = (
+            f"https://image.pollinations.ai/p/{encoded_prompt}"
+            f"?width=800&height=800&seed={seed}&nologo=true"
+        )
+
+        response = requests.get(
+            image_url,
+            timeout=40
+        )
+
+        if response.status_code == 200:
+
+            img = Image.open(
+                io.BytesIO(response.content)
+            ).convert("RGB")
+
+            bio = io.BytesIO()
+            bio.name = "inventory.jpg"
+
+            img.save(
+                bio,
+                "JPEG",
+                quality=85
+            )
+
+            bio.seek(0)
+
+            return bio
+
+    except Exception as e:
+        print(f"❌ AI майно помилка: {e}")
+
+    return None
+
 # ===================================================================
 # 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (РЕДАКТОР/ВІДПОВІДЬ)
 # ===================================================================
