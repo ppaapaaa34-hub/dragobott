@@ -1514,7 +1514,7 @@ def list_moderators(message):
 
 # 🔇 МУТ (/mute, мут, замутити)
 @bot.message_handler(commands=['mute'])
-@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('мут', 'замутити')))
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('кунімут', 'замутити')))
 def mute_user(message):
     if message.chat.type == 'private':
         return bot.reply_to(message, "⚠️ Ця команда працює лише в групах!")
@@ -1601,7 +1601,7 @@ def unmute_user(message):
 
 # 🔨 БАН (/ban, бан, забанити)
 @bot.message_handler(commands=['ban'])
-@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('бан', 'забанити')))
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('кунібан', 'забанити')))
 def ban_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
@@ -1650,7 +1650,7 @@ def unban_user(message):
 
 # 👞 КІК (/kick, кік, вигнати)
 @bot.message_handler(commands=['kick'])
-@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('кік', 'кик', 'вигнати')))
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('кунікік',  'вигнати')))
 def kick_user(message):
     if message.chat.type == 'private': return
     if not is_chat_admin(message.chat.id, message.from_user.id):
