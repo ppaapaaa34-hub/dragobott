@@ -11,7 +11,6 @@ import edge_tts
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import telebot
 from telebot import types
-import google.generativeai as genai
 from PIL import Image
 import psycopg2
 import discord
@@ -1839,33 +1838,42 @@ def generate_inventory_ai_image(bought_codes):
 
     # Беремо тільки перші 3 предмети
     selected_items = ai_descriptions[:3]
-
     items_prompt = " and ".join(selected_items)
 
     full_prompt = (
-        f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
-        "All listed objects must be clearly visible in one scene. "
-        "Do not add other objects. "
-        "Photorealistic, 8k, ultra detailed."
+        f"Ultra realistic photo of {items_prompt}. "
+        "High quality, 8k, detailed, photorealistic"
     )
 
     try:
         encoded_prompt = requests.utils.quote(full_prompt)
         seed = random.randint(1, 999999)
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
+        
+        # Стабільне посилання для Pollinations
+        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=800&height=800&seed={seed}&nologo=true"
 
-        response = requests.get(image_url, timeout=15)
+        # Заголовок User-Agent, щоб сервер Pollinations не блокував запит від Render
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+
+        # Збільшено timeout до 35 секунд
+        response = requests.get(image_url, headers=headers, timeout=35)
 
         if response.status_code == 200:
-            if "image" not in response.headers.get("Content-Type", ""):
-                return None
-
-            img = Image.open(io.BytesIO(response.content)).convert("RGB")
-            bio = io.BytesIO()
-            bio.name = "inventory_art.jpg"
-            img.save(bio, "JPEG", quality=90)
-            bio.seek(0)
-            return bio
+            content_type = response.headers.get("Content-Type", "")
+            # Перевіряємо, чи повернулася саме картинка
+            if "image" in content_type or len(response.content) > 5000:
+                img = Image.open(io.BytesIO(response.content)).convert("RGB")
+                bio = io.BytesIO()
+                bio.name = "inventory_art.jpg"
+                img.save(bio, "JPEG", quality=85)
+                bio.seek(0)
+                return bio
+            else:
+                print(f"⚠️ Pollinations повернув не картинку, Content-Type: {content_type}")
+        else:
+            print(f"⚠️ Pollinations повернув статус: {response.status_code}")
 
     except Exception as e:
         print(f"⚠️ Помилка генерації AI майна: {e}")
