@@ -1,8 +1,6 @@
 // Served by the same Express service; a separate host can set window.DRAGO_API_URL.
 const SERVER_URL = window.DRAGO_API_URL || window.location.origin;
 
-{
-
 // ==================== TELEGRAM ====================
 let userTelegramId = 5512316636;
 let userUsername = "Admin";
@@ -79,27 +77,84 @@ const collectionItems = [
     { id: "item_9", name: "Кристал Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
     { id: "item_10", name: "Крила Фенікса", rarity: "epic", icon: "🪽", cost: 1500000, bonus: "+15% до пасиву", owned: false },
     { id: "item_11", name: "Скіпетр Влади", rarity: "legendary", icon: "🔱", cost: 5000000, bonus: "+100 ₴ до тапу", owned: false },
-    { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false }
+    { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false },
+    // --- НОВІ ПРЕДМЕТИ ---
+    { id: "item_13", name: "Щит Титана", rarity: "epic", icon: "🛡️", cost: 500000000, bonus: "+30% до пасиву", owned: false },
+    { id: "item_14", name: "Око Дракона", rarity: "legendary", icon: "👁️‍🗨️", cost: 1500000000, bonus: "+200 ₴ до тапу", owned: false },
+    { id: "item_15", name: "Книга Знань", rarity: "rare", icon: "📖", cost: 100000000, bonus: "+10% до пасиву", owned: false },
+    { id: "item_16", name: "Плащ Тіней", rarity: "epic", icon: "🧥", cost: 800000000, bonus: "+40% до пасиву", owned: false },
+    { id: "item_17", name: "Амулет Сонця", rarity: "rare", icon: "☀️", cost: 250000000, bonus: "+75 ₴ до тапу", owned: false },
+    { id: "item_18", name: "Сльоза Фенікса", rarity: "legendary", icon: "💧", cost: 5000000000, bonus: "+100% до пасиву", owned: false },
+    { id: "item_19", name: "Меч Долі", rarity: "legendary", icon: "🗡️", cost: 3000000000, bonus: "+300 ₴ до тапу", owned: false },
+    { id: "item_20", name: "Кільце Владарювання", rarity: "legendary", icon: "💍", cost: 10000000000, bonus: "+500 ₴ до тапу", owned: false },
+    { id: "item_21", name: "Скіпетр Небес", rarity: "legendary", icon: "⚡", cost: 25000000000, bonus: "+750 ₴ до тапу", owned: false },
+    { id: "item_22", name: "Чаша Безсмертя", rarity: "legendary", icon: "🏆", cost: 50000000000, bonus: "+200% до пасиву", owned: false },
+    { id: "item_23", name: "Посох Архімага", rarity: "legendary", icon: "🪄", cost: 100000000000, bonus: "+1500 ₴ до тапу", owned: false },
+    { id: "item_24", name: "Серце Всесвіту", rarity: "legendary", icon: "🌌", cost: 500000000000, bonus: "+500% до пасиву", owned: false }
 ];
 
-const LEVEL_NAMES = ["Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат", "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог"];
-const DAILY_REWARDS = [500, 1000, 2500, 5000, 10000, 25000, 100000];
+const ITEM_BONUSES = {
+    item_1: () => { tapPower += 2; },
+    item_2: () => { tapPower += 5; },
+    item_3: () => { passiveIncome = Math.floor(passiveIncome * 1.05); },
+    item_4: () => { tapPower += 15; },
+    item_5: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
+    item_6: () => { tapPower += 50; },
+    item_7: () => { passiveIncome = Math.floor(passiveIncome * 1.20); },
+    item_8: () => { tapPower += 150; },
+    item_9: () => { tapPower += 25; },
+    item_10: () => { passiveIncome = Math.floor(passiveIncome * 1.15); },
+    item_11: () => { tapPower += 100; },
+    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); },
+    // --- БОНУСИ НОВИХ ПРЕДМЕТІВ ---
+    item_13: () => { passiveIncome = Math.floor(passiveIncome * 1.30); },
+    item_14: () => { tapPower += 200; },
+    item_15: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
+    item_16: () => { passiveIncome = Math.floor(passiveIncome * 1.40); },
+    item_17: () => { tapPower += 75; },
+    item_18: () => { passiveIncome = Math.floor(passiveIncome * 2.0); },
+    item_19: () => { tapPower += 300; },
+    item_20: () => { tapPower += 500; },
+    item_21: () => { tapPower += 750; },
+    item_22: () => { passiveIncome = Math.floor(passiveIncome * 3.0); },
+    item_23: () => { tapPower += 1500; },
+    item_24: () => { passiveIncome = Math.floor(passiveIncome * 6.0); }
+};
+
+const LEVEL_NAMES = [
+    "Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат",
+    "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог",
+    "Володар TON", "Крипто-Барон", "Галактичний Магнат", "Верховний Дракон", "Титан Мультивсесвіту",
+    "Володар Часу", "Повелитель Енергії", "Квантовий Творець", "Галактичний Владика", "Абсолютний Архітектор",
+    "Нескінченна Сутність", "Творець Всесвітів", "Провісник Вічності", "Бог Нескінченності", "Альфа і Омега"
+];
+
+const DAILY_REWARDS = [
+    500, 1000, 2500, 5000, 10000, 25000, 100000,
+    250000, 500000, 1000000, 2500000, 5000000, 10000000, 50000000
+];
+
 const SPIN_PRIZES = [
-    { label: "500 ₴", type: "money", value: 500 },
-    { label: "2K ₴", type: "money", value: 2000 },
-    { label: "10K ₴", type: "money", value: 10000 },
+    { label: "1K ₴", type: "money", value: 1000 },
+    { label: "5K ₴", type: "money", value: 5000 },
+    { label: "25K ₴", type: "money", value: 25000 },
     { label: "x2 Тап 5хв", type: "boost", boost: "tap2x", duration: 300 },
-    { label: "100 ⚡", type: "energy", value: 100 },
-    { label: "500 ⚡", type: "energy", value: 500 },
+    { label: "200 ⚡", type: "energy", value: 200 },
+    { label: "100K ₴", type: "money", value: 100000 },
+    { label: "1000 ⚡", type: "energy", value: 1000 },
     { label: "x2 Пасив 5хв", type: "boost", boost: "passive2x", duration: 300 },
-    { label: "50K ₴", type: "money", value: 50000 }
+    { label: "500K ₴", type: "money", value: 500000 },
+    { label: "x5 Тап 3хв", type: "boost", boost: "tap5x", duration: 180 },
+    { label: "1M ₴", type: "money", value: 1000000 },
+    { label: "Full Енергія", type: "energy", value: 5000 }
 ];
 
 let missions = [];
 let achievements = [];
 
 function initMissions() {
-    const today = todayKey();
+    // Впевнись, що функція todayKey() у тебе десь визначена нижче по коду
+    const today = typeof todayKey === 'function' ? todayKey() : new Date().toISOString().split('T')[0];
     missions = [
         { id: "m1", icon: "👆", name: "Зроби 100 тапів", target: 100, progress: 0, reward: 2000, claimed: false, track: "taps" },
         { id: "m2", icon: "💰", name: "Зароби 10,000 ₴", target: 10000, progress: 0, reward: 5000, claimed: false, track: "earned" },
@@ -124,7 +179,9 @@ function initAchievements() {
         { id: "a7", icon: "🎁", name: "Вірний", desc: "7 днів серії", unlocked: false, check: () => loginStreak >= 7 },
         { id: "a8", icon: "👑", name: "Імператор", desc: "1M ₴", unlocked: false, check: () => money >= 1000000 },
         { id: "a9", icon: "🚀", name: "Космонавт", desc: "Космопорт", unlocked: false, check: () => cards.find(c => c.id === 10)?.lvl > 0 },
-        { id: "a10", icon: "🐉", name: "Драко-Бог", desc: "Рівень 10", unlocked: false, check: () => playerLevel >= 10 }
+        { id: "a10", icon: "🐉", name: "Драко-Бог", desc: "Рівень 10", unlocked: false, check: () => playerLevel >= 10 },
+        { id: "a11", icon: "🌌", name: "Титан Всесвіту", desc: "Рівень 15", unlocked: false, check: () => playerLevel >= 15 },
+        { id: "a12", icon: "⚛️", name: "Альфа і Омега", desc: "Рівень 25", unlocked: false, check: () => playerLevel >= 25 }
     ];
 }
 
