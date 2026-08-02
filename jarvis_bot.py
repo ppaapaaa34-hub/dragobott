@@ -2259,42 +2259,118 @@ def handle_shop_page(call):
 # 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
 @bot.message_handler(commands=['buy', 'купити'])
 def buy_item(message):
-    if is_user_banned(message.from_user.id): return
-    
+    if is_user_banned(message.from_user.id):
+        return
+
     args = message.text.split()
+
     if len(args) < 2:
-        bot.reply_to(message, "⚠️ Код товару хто писати буде? Наприклад: <code>/купити bmw</code>", parse_mode="HTML")
+        bot.reply_to(
+            message,
+            "⚠️ Вкажи код товару!\nПриклад: <code>/купити bmw</code>",
+            parse_mode="HTML"
+        )
         return
-        
+
     item_code = args[1].lower().strip()
-    
+
     if item_code not in SHOP_ITEMS:
-        bot.reply_to(message, "🤡 Ти щось переплутав, бариго. Такого товару на моєму ринку немає! Глянь в `/магазин`.")
+        bot.reply_to(
+            message,
+            "🤡 Такого товару немає! Дивись /магазин",
+            parse_mode="HTML"
+        )
         return
-        
+
     item = SHOP_ITEMS[item_code]
     user_id = message.from_user.id
-    
+
     try:
-                with db_lock:
+
+        # 💾 Робота з базою
+        with db_lock:
             conn = get_db_connection()
+
             try:
                 with conn.cursor() as cursor:
-                    # робота з БД тут
+
+                    # Баланс
+                    cursor.execute(
+                        "SELECT balance FROM stats WHERE user_id = %s",
+                        (user_id,)
+                    )
+
+                    res = cursor.fetchone()
+                    balance = res[0] if res else 0
+
+
+                    # Перевірка грошей
+                    if balance < item["price"]:
+
+                        shortage = item["price"] - balance
+
+                        bot.reply_to(
+                            message,
+                            f"💸 <b>Не вистачає грошей!</b>\n\n"
+                            f"Треба ще: <code>{shortage:,} грн</code>",
+                            parse_mode="HTML"
+                        )
+
+                        return
+
+
+                    # Списання грошей
+                    cursor.execute(
+                        """
+                        UPDATE stats
+                        SET balance = balance - %s
+                        WHERE user_id = %s
+                        """,
+                        (item["price"], user_id)
+                    )
+
+
+                    # Додавання в інвентар
+                    cursor.execute(
+                        """
+                        INSERT INTO inventory
+                        (user_id, item_code, item_name, item_category)
+                        VALUES (%s,%s,%s,%s)
+                        """,
+                        (
+                            user_id,
+                            item_code,
+                            item["name"],
+                            item["cat"]
+                        )
+                    )
+
 
                 conn.commit()
+
 
             finally:
                 conn.close()
 
 
+
+        # 📸 Генерація фото
         status = bot.reply_to(
             message,
-            "📸 <b>Генерую фото твоєї покупки...</b>\n<i>Зачекай кілька секунд.</i>",
+            "📸 <b>Генерую фото покупки...</b>\n"
+            "⏳ Зачекай кілька секунд.",
             parse_mode="HTML"
         )
 
-        photo = generate_shop_ai_image([item["ai_desc"]])
+
+        photo = None
+
+        if item.get("ai_desc"):
+            photo = generate_shop_ai_image(
+                [item["ai_desc"]]
+            )
+
+
         try:
             bot.delete_message(
                 message.chat.id,
@@ -2303,33 +2379,45 @@ def buy_item(message):
         except:
             pass
 
+
+
         caption = (
             f"🎉 <b>УСПІШНА УГОДА!</b> 🎉\n\n"
-            f"📦 Ти купив: <b>{item['name']}</b>\n"
+            f"📦 Товар: <b>{item['name']}</b>\n"
             f"💰 Ціна: <code>{item['price']:,} грн</code>\n"
             f"🏷 Категорія: <b>{item['cat']}</b>\n\n"
-            f"✅ Майно додано до твого інвентарю.\n"
+            f"✅ Додано у твоє майно!\n"
             f"📋 Перевірити: /майно"
         )
 
+
         if photo:
+
             bot.send_photo(
                 message.chat.id,
                 photo=photo,
                 caption=caption,
                 parse_mode="HTML"
             )
+
         else:
+
             bot.send_message(
                 message.chat.id,
                 caption,
                 parse_mode="HTML"
             )
-        
-        
+
+
     except Exception as e:
-        print(f"Помилка купівлі: {e}")
-        bot.reply_to(message, f"❌ Не вдалося здійснити покупку: <code>{str(e)[:100]}</code>", parse_mode="HTML")
+
+        print(f"❌ Помилка купівлі: {e}")
+
+        bot.reply_to(
+            message,
+            f"❌ Помилка угоди:\n<code>{str(e)[:150]}</code>",
+            parse_mode="HTML"
+        )
 
 # 💸 КОМАНДА: ПЕРЕДАТИ ГРОШІ ІНШОМУ ГРАВЦЮ (/pay, /передати, /переказ, /дати)
 @bot.message_handler(commands=['pay', 'передати', 'переказ', 'дати'])
