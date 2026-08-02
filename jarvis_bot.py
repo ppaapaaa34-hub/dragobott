@@ -2066,10 +2066,9 @@ def generate_shop_ai_image(descriptions):
 
     return None
 
-# ============================================================
-# 🎨 AI ФОТО МАЙНА
-# ============================================================
-
+# ===================================================================
+# 🎨 AI ФОТО МАЙНА (ЯКІСНЕ)
+# ===================================================================
 def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
     if not bought_codes:
@@ -2083,38 +2082,52 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
         if code in SHOP_ITEMS:
             item = SHOP_ITEMS[code]
 
-            if item.get("ai_desc"):
-                descriptions.append(item["ai_desc"])
-            else:
-                descriptions.append(item.get("name", "товар"))
+            desc = item.get("ai_desc") or item.get("name")
+            descriptions.append(desc)
+
 
     if not descriptions:
         return None
 
 
     prompt = (
-        "Ultra realistic luxury inventory showcase. "
-        "Items: "
+        "Professional product photography, ultra realistic. "
+        "A luxury collection display showing: "
         + ", ".join(descriptions)
         +
-        ". Expensive collection, cinematic lighting, "
-        "photorealistic, 8k."
+        ". "
+        "Real objects, sharp focus, extremely detailed textures, "
+        "studio lighting, 8K resolution, DSLR photo, "
+        "no cartoon, no painting, no blur."
     )
+
 
     try:
         encoded_prompt = requests.utils.quote(prompt)
 
-        seed = random.randint(1, 999999)
+        seed = random.randint(100000,999999)
 
-        image_url = (
+        url = (
             f"https://image.pollinations.ai/p/{encoded_prompt}"
-            f"?width=800&height=800&seed={seed}&nologo=true"
+            "?width=1200"
+            "&height=1200"
+            "&model=flux"
+            f"&seed={seed}"
+            "&nologo=true"
         )
+
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
 
         response = requests.get(
-            image_url,
-            timeout=40
+            url,
+            headers=headers,
+            timeout=60
         )
+
 
         if response.status_code == 200:
 
@@ -2122,21 +2135,25 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
                 io.BytesIO(response.content)
             ).convert("RGB")
 
+
             bio = io.BytesIO()
-            bio.name = "inventory.jpg"
+            bio.name = "inventory_hd.jpg"
 
             img.save(
                 bio,
                 "JPEG",
-                quality=85
+                quality=95,
+                optimize=True
             )
 
             bio.seek(0)
 
             return bio
 
+
     except Exception as e:
-        print(f"❌ AI майно помилка: {e}")
+        print("❌ AI фото помилка:", e)
+
 
     return None
 
