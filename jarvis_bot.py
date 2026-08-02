@@ -202,7 +202,7 @@ import requests
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 # Твій власний Voice ID
-ELEVENLABS_VOICE_ID = "6zRELZ180126w5INrcT7"
+ELEVENLABS_VOICE_ID = "9UV6eRr7JXijUz2nYdOP"
 
 
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
