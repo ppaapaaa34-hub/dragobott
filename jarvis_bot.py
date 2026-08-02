@@ -193,16 +193,22 @@ def is_user_banned(user_id):
         return False
 
 # ===================================================================
-# 🗣️ СИСТЕМА ГОЛОСОВИХ ПОВІДОМЛЕНЬ (Piper TTS)
+# 🗣️ СИСТЕМА ГОЛОСОВИХ ПОВІДОМЛЕНЬ (ElevenLabs)
 # ===================================================================
 
-PIPER_MODEL = "models/uk_UA-ukrainian_tts-medium.onnx"
+import os
+import requests
+
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
+# Твій власний Voice ID
+ELEVENLABS_VOICE_ID = "6zRELZ180126w5INrcT7"
+
 
 def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
-    """Генерує українське голосове повідомлення через Piper"""
+    """Генерує голосове повідомлення через ElevenLabs"""
 
-    wav_file = f"/tmp/drago_{chat_id}.wav"
-    ogg_file = f"/tmp/drago_{chat_id}.ogg"
+    voice_file = f"/tmp/drago_{chat_id}.ogg"
 
     clean_text = (
         str(text_to_speak)
@@ -213,49 +219,54 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
         .strip()
     )
 
+    if not ELEVENLABS_API_KEY:
+        bot.send_message(
+            chat_id,
+            "❌ Не знайдено ELEVENLABS_API_KEY",
+            reply_to_message_id=reply_to_id
+        )
+        return
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}?output_format=opus_48000_128"
+
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "text": clean_text,
+        "model_id": "eleven_multilingual_v2",
+
+        "voice_settings": {
+            "stability": 0.65,
+            "similarity_boost": 1.0,
+            "style": 0.9,
+            "use_speaker_boost": True
+        }
+    }
+
     try:
 
-        # Генерація WAV через Piper
-        subprocess.run(
-            [
-                "piper",
-                "--model",
-                PIPER_MODEL,
-                "--output_file",
-                wav_file
-            ],
-            input=clean_text.encode("utf-8"),
-            check=True
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=120
         )
 
-        # Робимо голос схожим на старого діда
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i", wav_file,
+        if response.status_code != 200:
+            bot.send_message(
+                chat_id,
+                f"❌ ElevenLabs Error {response.status_code}\n{response.text}",
+                reply_to_message_id=reply_to_id
+            )
+            return
 
-                "-filter:a",
-                "asetrate=48000*0.72,"
-                "atempo=1.38,"
-                "bass=g=12,"
-                "treble=g=-12,"
-                "volume=1.5,"
-                "aecho=0.8:0.9:35:0.2",
+        with open(voice_file, "wb") as f:
+            f.write(response.content)
 
-                "-c:a",
-                "libopus",
-                "-b:a",
-                "64k",
-
-                ogg_file
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True
-        )
-
-        with open(ogg_file, "rb") as voice:
+        with open(voice_file, "rb") as voice:
             bot.send_voice(
                 chat_id,
                 voice,
@@ -265,17 +276,13 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
     except Exception as e:
         bot.send_message(
             chat_id,
-            f"❌ Помилка генерації голосу:\n{e}",
+            f"❌ Помилка:\n{e}",
             reply_to_message_id=reply_to_id
         )
 
     finally:
-
-        if os.path.exists(wav_file):
-            os.remove(wav_file)
-
-        if os.path.exists(ogg_file):
-            os.remove(ogg_file)
+        if os.path.exists(voice_file):
+            os.remove(voice_file)
 
 
 # ===================================================================
