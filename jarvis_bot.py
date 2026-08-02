@@ -1942,8 +1942,11 @@ def build_shop_page(page=0):
     page = max(0, min(page, total_pages - 1))
 
     start_idx = page * SHOP_ITEMS_PER_PAGE
-    end_idx = start_idx + SHOP_ITEMS_PER_PAGE
-    current_keys = shop_descriptions = []
+end_idx = start_idx + SHOP_ITEMS_PER_PAGE
+
+current_keys = item_keys[start_idx:end_idx]
+
+shop_descriptions = []
 
 for code in current_keys:
     if "ai_desc" in SHOP_ITEMS[code]:
@@ -1975,7 +1978,7 @@ for code in current_keys:
 
     markup.row(*buttons)
 
-    return "\n".join(text), markup
+    return "\n".join(text), markup, shop_descriptions
 
 # ===================================================================
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
@@ -2130,29 +2133,113 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
             message_id=status_msg.message_id, 
             parse_mode="HTML"
         )
+# =====================================================
+# 🖼️ AI ФОТО ДЛЯ МАГАЗИНУ
+# =====================================================
+def generate_shop_ai_image(descriptions):
+
+    if not descriptions:
+        return None
+
+    prompt = (
+        "Luxury showcase of the following items: "
+        + ", ".join(descriptions) +
+        ". Ultra realistic, cinematic lighting, expensive store, 8k."
+    )
+
+    return generate_pollinations_image(prompt)
+
 # 🏪 🛒 КОМАНДА: МАГАЗИН (/shop, /магазин)
 @bot.message_handler(commands=['shop', 'магазин'])
 def show_shop(message):
-    if is_user_banned(message.from_user.id): return
-    
-    text, markup = build_shop_page(page=0)
-    bot.reply_to(message, text, parse_mode="HTML", reply_markup=markup)
+    if is_user_banned(message.from_user.id):
+        return
 
+    text, markup, shop_descriptions = build_shop_page(page=0)
+
+    status = bot.reply_to(
+        message,
+        "🎨 <b>Драго малює товари магазину...</b>",
+        parse_mode="HTML"
+    )
+
+    photo = generate_shop_ai_image(shop_descriptions)
+
+    try:
+        bot.delete_message(message.chat.id, status.message_id)
+    except:
+        pass
+
+    if photo:
+        bot.send_photo(
+            message.chat.id,
+            photo,
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
+    else:
+        bot.send_message(
+            message.chat.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
 # 🔄 ОБРОБКА ПЕРЕМЕШЕННЯ ПО СТОРІНКАХ МАГАЗИНУ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('shoppage_'))
 def handle_shop_page(call):
     if is_user_banned(call.from_user.id): return
 
     page = int(call.data.split('_')[1])
-    text, markup = build_shop_page(page=page)
+    text, markup, shop_descriptions = build_shop_page(page=page)
 
     try:
-        bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
-        bot.answer_callback_query(call.id)
-    except Exception as e:
-        print(f"❌ Помилка гортання магазину: {e}")
-        bot.answer_callback_query(call.id, "❌ Помилка.")
+    photo = generate_shop_ai_image(shop_descriptions)
 
+    if photo and call.message.content_type == "photo":
+
+        bot.edit_message_media(
+            media=types.InputMediaPhoto(
+                media=photo,
+                caption=text,
+                parse_mode="HTML"
+            ),
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+
+    elif photo:
+
+        bot.delete_message(
+            call.message.chat.id,
+            call.message.message_id
+        )
+
+        bot.send_photo(
+            call.message.chat.id,
+            photo=photo,
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
+
+    else:
+
+        bot.edit_message_text(
+            text,
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
+
+    bot.answer_callback_query(call.id)
+
+except Exception as e:
+    print(f"❌ Помилка гортання магазину: {e}")
+    bot.answer_callback_query(call.id, "❌ Помилка.")
+   
 # 🛍️ КОМАНДА: КУПИТИ ТОВАР (/buy, /купити)
 @bot.message_handler(commands=['buy', 'купити'])
 def buy_item(message):
