@@ -1819,7 +1819,6 @@ def build_shop_page(page=0):
 
     return "\n".join(text), markup
 
-
 # ===================================================================
 # 🎨 ФУНКЦІЯ ГЕНЕРАЦІЇ ЄДИНОГО ФОТО ЧЕРЕЗ POLLINATIONS AI (FLUX)
 # ===================================================================
@@ -1828,50 +1827,45 @@ def generate_inventory_ai_image(bought_codes):
         return None
 
     ai_descriptions = []
-    
     for code in bought_codes:
-        str_code = str(code).strip()
-        
-        if 'SHOP_ITEMS' in globals() and str_code in SHOP_ITEMS:
-            item = SHOP_ITEMS[str_code]
-            # Беремо ai_desc, якщо є, інакше name
-            desc = item.get("ai_desc") or item.get("name", "")
-            if desc:
-                ai_descriptions.append(str(desc))
-        else:
-            # Якщо коду немає в SHOP_ITEMS, додаємо його як текст
-            ai_descriptions.append(str(str_code))
+        str_code = str(code)  # Перетворення коду на рядок для точного пошуку
+        if str_code in SHOP_ITEMS and "ai_desc" in SHOP_ITEMS[str_code]:
+            ai_descriptions.append(SHOP_ITEMS[str_code]["ai_desc"])
+        elif str_code in SHOP_ITEMS:
+            ai_descriptions.append(SHOP_ITEMS[str_code]["name"])
 
-    # Беремо перші 3-5 предметів
-    selected_items = ai_descriptions[:5]
+    if not ai_descriptions:
+        return None
 
-    if not selected_items:
-        items_prompt = "luxury items, wealthy lifestyle, luxury garage"
-    else:
-        items_prompt = ", ".join(selected_items)
+    # Беремо тільки перші 3 предмети
+    selected_items = ai_descriptions[:3]
+
+    items_prompt = " and ".join(selected_items)
 
     full_prompt = (
-        f"Ultra realistic cinematic photo showing a room or garage with: {items_prompt}. "
-        "Photorealistic, 8k, highly detailed, luxury aesthetic."
+        f"Ultra realistic cinematic photo showing ONLY these objects: {items_prompt}. "
+        "All listed objects must be clearly visible in one scene. "
+        "Do not add other objects. "
+        "Photorealistic, 8k, ultra detailed."
     )
 
     try:
-        # Безпечно кодуємо промпт (включаючи кирилицю та пробіли)
-        encoded_prompt = urllib.parse.quote(full_prompt)
+        encoded_prompt = requests.utils.quote(full_prompt)
         seed = random.randint(1, 999999)
         image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={seed}&model=flux&nologo=true"
 
-        response = requests.get(image_url, timeout=20)
+        response = requests.get(image_url, timeout=15)
 
         if response.status_code == 200:
-            content_type = response.headers.get("Content-Type", "")
-            if "image" in content_type or "application/octet-stream" in content_type:
-                img = Image.open(io.BytesIO(response.content)).convert("RGB")
-                bio = io.BytesIO()
-                bio.name = "inventory_art.jpg"
-                img.save(bio, "JPEG", quality=90)
-                bio.seek(0)
-                return bio
+            if "image" not in response.headers.get("Content-Type", ""):
+                return None
+
+            img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            bio = io.BytesIO()
+            bio.name = "inventory_art.jpg"
+            img.save(bio, "JPEG", quality=90)
+            bio.seek(0)
+            return bio
 
     except Exception as e:
         print(f"⚠️ Помилка генерації AI майна: {e}")
@@ -1880,7 +1874,7 @@ def generate_inventory_ai_image(bought_codes):
 
 
 # ===================================================================
-# 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (АУДИТ ТА ВІДПОВІДЬ)
+# 🧠 ДОПОМІЖНА ФУНКЦІЯ ВІДОБРАЖЕННЯ МАЙНА (РЕДАКТОР/ВІДПОВІДЬ)
 # ===================================================================
 def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is_callback=False):
     clean_name = user_name.replace("<", "&lt;").replace(">", "&gt;")
@@ -1917,13 +1911,11 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
     
     for item in items:
         code, name = item[0], item[1]
-        str_code = str(code).strip()
+        str_code = str(code)
         
         item_counts[name] = item_counts.get(name, 0) + 1
-        
         if str_code not in unique_codes:
             unique_codes.append(str_code)
-            
         if 'SHOP_ITEMS' in globals() and str_code in SHOP_ITEMS:
             total_property_value += SHOP_ITEMS[str_code].get("price", 0)
 
