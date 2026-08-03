@@ -259,14 +259,41 @@ app.post('/api/fight', async (req, res, next) => {
     { id: 4, name: "Еліта", hp: 320, attack: 48, defense: 18 },
     { id: 5, name: "Легенда", hp: 500, attack: 70, defense: 30 }
 ];
+// =======================================================
+// ⚔️ ЗБРОЯ
+// =======================================================
 
+const WEAPONS = [
+
+    { id:1, name:"Дерев'яний меч", attack:5, price:500 },
+
+    { id:2, name:"Залізний меч", attack:15, price:5000 },
+
+    { id:3, name:"Сталевий меч", attack:35, price:25000 },
+
+    { id:4, name:"Алмазний меч", attack:70, price:120000 },
+
+    { id:5, name:"Міфічний меч", attack:150, price:700000 }
+
+];
 const heroIndex = Math.min(
     HEROES.length - 1,
     Math.floor((user.playerLevel - 1) / 20)
 );
 
+const currentWeapon =
+    WEAPONS.find(
+        w => w.id === (user.weapon || 1)
+    ) || WEAPONS[0];
+
 const hero = {
-    ...HEROES[heroIndex]
+
+    ...HEROES[heroIndex],
+
+    attack:
+        HEROES[heroIndex].attack +
+        currentWeapon.attack
+
 };
 
         const enemy = ENEMIES[Math.floor(Math.random() * ENEMIES.length)];
