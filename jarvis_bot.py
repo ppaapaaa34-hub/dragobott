@@ -2764,9 +2764,9 @@ def handle_broadcast(message):
         bot.send_message(message.chat.id, f"❌ Помилка під час відправки: {e}")
         
 
-# =====================================================
 
-# 1. Словник дій та відповідних категорій в API / текстів
+# ==================== RP-КОМАНДИ (ОБІЙМИ, ВКУСИТИ ТОЩО) ====================
+
 ACTIONS = {
     "обняти": {"text": "обійняв(ла)", "category": "hug"},
     "hug": {"text": "обійняв(ла)", "category": "hug"},
@@ -2781,8 +2781,8 @@ ACTIONS = {
     "kiss": {"text": "поцілував(ла)", "category": "kiss"},
     
     "погладити": {"text": "погладив(ла) по голові", "category": "pat"},
-    
-    # Кастомна дія (можна вказати свою гіфку, якщо в API немає аналога)
+    "pat": {"text": "погладив(ла) по голові", "category": "pat"},
+
     "виебати": {
         "text": "жорстко покарав(ла)", 
         "custom_gif": "https://media.giphy.com/media/l3V0j3ytFYGHqiV7W/giphy.gif"
@@ -2793,68 +2793,65 @@ ACTIONS = {
     }
 }
 
-# Помічник для формування клікабельного нікнейму з HTML-розміткою
 def get_user_mention(user):
     name = user.first_name
     if user.last_name:
         name += f" {user.last_name}"
     return f'<a href="tg://user?id={user.id}">{name}</a>'
 
-# 2. Загальний хендлер для RP-команд
-@bot.message_handler(commands=list(ACTIONS.keys()))
-def handle_rp_action(message):
-    # Перевірка: команда повинна бути відповіддю на чиєсь повідомлення
-    if not message.reply_to_message:
-        bot.reply_to(message, "⚠️ Цю команду потрібно використовувати **у відповідь** на повідомлення користувача!")
-        return
+@bot.message_handler(func=lambda message: message.text is not None)
+def handle_rp_words(message):
+    raw_word = message.text.strip().split()[0].lower()
+    word = raw_word.lstrip('/!.')
 
-    # Отримуємо назву команди без "/"
-    cmd = message.text.split()[0].replace('/', '').lower()
-    action_info = ACTIONS.get(cmd)
+    if word in ACTIONS:
+        if not message.reply_to_message:
+            bot.reply_to(message, "⚠️ Зроби **відповідь (reply)** на повідомлення того, до кого застосовуєш дію!")
+            return
 
-    if not action_info:
-        return
+        if message.from_user.id == message.reply_to_message.from_user.id:
+            bot.reply_to(message, "Ти не можеш застосувати цю дію до самого себе! 😅")
+            return
 
-    # Формуємо згадки учасників
-    sender = get_user_mention(message.from_user)
-    target = get_user_mention(message.reply_to_message.from_user)
-    
-    # Не дозволяємо застосовувати дію до самого себе
-    if message.from_user.id == message.reply_to_message.from_user.id:
-        bot.reply_to(message, "Ти не можеш застосувати цю дію до самого себе! 😅")
-        return
+        action_info = ACTIONS[word]
+        sender = get_user_mention(message.from_user)
+        target = get_user_mention(message.reply_to_message.from_user)
+        caption = f"✨ {sender} {action_info['text']} {target}!"
 
-    gif_url = None
+        gif_url = action_info.get("custom_gif")
 
-    # Отримання GIF: або кастомне посилання, або запит до API
-    if "custom_gif" in action_info:
-        gif_url = action_info["custom_gif"]
-    else:
-        try:
-            res = requests.get(f"https://nekos.best/api/v2/{action_info['category']}", timeout=5).json()
-            gif_url = res['results'][0]['url']
-        except Exception as e:
-            print(f"Помилка завантаження GIF: {e}")
+        if not gif_url and "category" in action_info:
+            try:
+                res = requests.get(f"https://nekos.best/api/v2/{action_info['category']}", timeout=5).json()
+                if "results" in res and len(res["results"]) > 0:
+                    gif_url = res["results"][0]["url"]
+            except Exception as e:
+                print(f"Помилка завантаження GIF: {e}")
 
-    # Текст під анімацією
-    caption = f"✨ {sender} {action_info['text']} {target}!"
-
-    # Надсилання анімації з текстом
-    if gif_url:
-        bot.send_animation(
-            chat_id=message.chat.id,
-            animation=gif_url,
-            caption=caption,
-            parse_mode="HTML",
-            reply_to_message_id=message.reply_to_message.message_id
-        )
-    else:
-        bot.send_message(
-            chat_id=message.chat.id,
-            text=caption,
-            parse_mode="HTML",
-            reply_to_message_id=message.reply_to_message.message_id
-        )
+        if gif_url:
+            try:
+                bot.send_animation(
+                    chat_id=message.chat.id,
+                    animation=gif_url,
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_to_message_id=message.reply_to_message.message_id
+                )
+            except Exception as e:
+                print(f"Помилка відправки анімації: {e}")
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_to_message_id=message.reply_to_message.message_id
+                )
+        else:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text=caption,
+                parse_mode="HTML",
+                reply_to_message_id=message.reply_to_message.message_id
+            )
 
         
 
