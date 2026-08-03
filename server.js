@@ -84,7 +84,56 @@ const starterInventory = () => ['weapon-1-1', 'armor-1-1', 'accessory-1-1'];
 function defaults(telegramId, username, firstName) {
   return { telegramId, username: username || 'Анонім', firstName: firstName || 'Гравець', money: 0, tapPower: 1, energy: 1000, maxEnergy: 1000, energyDrain: 5, energyRegen: 3, passiveIncome: 0, totalTaps: 0, playerLevel: 1, playerXP: 0, maxCombo: 1, loginStreak: 0, lastDailyClaim: '', lastSpinDate: '', spinsUsedToday: 0, cards: [], collectionItems: [], heroes: [], selectedHero: 0, heroSouls: 0, upgrades: {}, activeBoosts: {}, rpgInventory: starterInventory(), equipped: { weapon: 'weapon-1-1', armor: 'armor-1-1', accessory: 'accessory-1-1' }, fightCount: 0, isBanned: false, isAdmin: telegramId === ADMIN_TELEGRAM_ID };
 }
-function ensureRpg(user){if(!Array.isArray(user.rpgInventory)){user.rpgInventory=[];}// залишаємо тільки існуючі предметиuser.rpgInventory=user.rpgInventory.filter(item=>{if(typeof item==="object"){return byId.has(item.id);}return byId.has(item);});// якщо інвентар пустий — видати стартовийif(user.rpgInventory.length===0){user.rpgInventory=starterInventory();}user.equipped=user.equipped || {};for(const slot of EQUIP_SLOTS){const current=user.equipped[slot];if(current && byId.has(current)){const item=byId.get(current);if(item.slot===slot){continue;}}const found=user.rpgInventory.find(item=>{const id=typeof item==="object"? item.id: item;const equip=byId.get(id);return equip && equip.slot===slot;});user.equipped[slot]=typeof found==="object"? found.id: found || null;}}
+function ensureRpg(user) {
+
+    if (!Array.isArray(user.rpgInventory)) {
+        user.rpgInventory = [];
+    }
+
+    // залишаємо тільки існуючі предмети
+    user.rpgInventory = user.rpgInventory.filter(item => {
+        const id = typeof item === "object" ? item.id : item;
+        return byId.has(id);
+    });
+
+    // стартовий інвентар
+    if (user.rpgInventory.length === 0) {
+        user.rpgInventory = starterInventory();
+    }
+
+    if (!user.equipped || typeof user.equipped !== "object") {
+        user.equipped = {};
+    }
+
+    for (const slot of EQUIP_SLOTS) {
+
+        const currentId = user.equipped[slot];
+
+        if (currentId && byId.has(currentId)) {
+
+            const item = byId.get(currentId);
+
+            if (item.slot === slot) continue;
+
+        }
+
+        const found = user.rpgInventory.find(entry => {
+
+            const id = typeof entry === "object"
+                ? entry.id
+                : entry;
+
+            const item = byId.get(id);
+
+            return item && item.slot === slot;
+
+        });
+
+        user.equipped[slot] = found
+            ? (typeof found === "object" ? found.id : found)
+            : null;
+    }
+}
 async function findOrCreate(telegramId, username, firstName) {
   if (!dbReady()) { const user = memoryUsers.get(telegramId) || defaults(telegramId, username, firstName); user.username = username || user.username; user.firstName = firstName || user.firstName; ensureRpg(user); memoryUsers.set(telegramId, user); return user; }
   const user = await User.findOneAndUpdate({ telegramId }, { $set: { ...(username && { username }), ...(firstName && { firstName }), ...(telegramId === ADMIN_TELEGRAM_ID && { isAdmin: true }) }, $setOnInsert: defaults(telegramId, username, firstName) }, { new: true, upsert: true, setDefaultsOnInsert: true });
