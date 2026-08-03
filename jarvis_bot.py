@@ -5263,6 +5263,62 @@ def init_heroes_db():
 
 init_heroes_db()
 
+# =====================================================
+# ⚔️ СТВОРЕННЯ ГЕРОЯ
+# =====================================================
+
+def ensure_hero(user_id):
+
+    with db_lock:
+
+        conn = get_db_connection()
+
+        try:
+
+            with conn.cursor() as cursor:
+
+                cursor.execute(
+                    "SELECT user_id FROM heroes WHERE user_id=%s",
+                    (user_id,)
+                )
+
+                if cursor.fetchone() is None:
+
+                    cursor.execute("""
+                        INSERT INTO heroes
+                        (
+                            user_id,
+                            hero_name,
+                            level,
+                            exp,
+                            hp,
+                            attack,
+                            defense,
+                            coins,
+                            wins,
+                            loses
+                        )
+                        VALUES
+                        (
+                            %s,
+                            'Новачок',
+                            1,
+                            0,
+                            100,
+                            15,
+                            5,
+                            0,
+                            0,
+                            0
+                        )
+                    """, (user_id,))
+
+            conn.commit()
+
+        finally:
+
+            conn.close()
+
 
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
