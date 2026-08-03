@@ -4279,8 +4279,31 @@ def search_and_send_music(message):
             pass
 
 # ===================================================================
-# 📊 ТОП АКТИВНОСТІ (Стиль бота Соняшник)
+# 2. 📊 ПОВНА СТАТИСТИКА ЧАТУ (БЕЗ ТЕГУВАННЯ УЧАСНИКІВ)
 # ===================================================================
+
+def format_last_seen(dt_value):
+    """Форматує дату останньої активності у зручний вигляд"""
+    if not dt_value:
+        return "невідомо"
+    
+    if isinstance(dt_value, str):
+        try:
+            dt_value = datetime.strptime(dt_value, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return dt_value
+            
+    now = datetime.now()
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    msg_date = dt_value.date()
+
+    if msg_date == today:
+        return f"сьогодні о {dt_value.strftime('%H:%M')}"
+    elif msg_date == yesterday:
+        return f"учора о {dt_value.strftime('%H:%M')}"
+    else:
+        return dt_value.strftime("%d.%m.%Y %H:%M")
 
 @bot.message_handler(commands=['top', 'stats', 'топ'])
 def show_chat_activity(message):
@@ -4295,11 +4318,15 @@ def show_chat_activity(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо топ 10 активних у чаті
-                cursor.execute("SELECT name, count FROM stats WHERE in_chat = TRUE ORDER BY count DESC LIMIT 10")
+                # Беремо всіх учасників чату за кількістю повідомлень
+                cursor.execute("""
+                    SELECT name, count, last_seen 
+                    FROM stats 
+                    WHERE in_chat = TRUE 
+                    ORDER BY count DESC
+                """)
                 rows = cursor.fetchall()
                 
-                # Загальна сума повідомлень усього чату
                 cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
                 total_messages = cursor.fetchone()[0] or 0
             conn.close()
@@ -4308,32 +4335,42 @@ def show_chat_activity(message):
             bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
             return
 
-        # Шапка
         chat_title = message.chat.title or "цьому чаті"
         chat_title_clean = chat_title.replace("<", "&lt;").replace(">", "&gt;")
         
         response = [
-            f"📊 <b>Топ найактивніших учасників в {chat_title_clean}:</b>\n"
+            f"📊 <b>Повна статистика активності в {chat_title_clean}:</b>\n"
         ]
 
-        # Іконки топу
         medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
-        # Формування списку активності з правильними відступами
-        for idx, (name, count) in enumerate(rows):
+        for idx, row in enumerate(rows):
+            name = row[0]
+            count = row[1]
+            last_seen = row[2] if len(row) > 2 else None
+            
             icon = medals[idx] if idx < len(medals) else "🔹"
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
             
-            # Вираховуємо відсоток від загальної кількості
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
+            last_time_str = format_last_seen(last_seen)
             
-            # Форматований вивід у стилі Соняшника
-            response.append(f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)")
+            # Вивід без створення HTML-посилань (щоб не надходило сповіщення-тег)
+            response.append(
+                f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. "
+                f"(<i>{percent:.1f}%</i>) | 🕒 <i>{last_time_str}</i>"
+            )
 
-        # Підвал
         response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
         
-        bot.reply_to(message, "\n".join(response), parse_mode="HTML")
+        full_text = "\n".join(response)
+        
+        # Захист від перевищення ліміту 4096 символів Telegram
+        if len(full_text) > 4000:
+            for x in range(0, len(full_text), 4000):
+                bot.send_message(chat_id, full_text[x:x+4000], parse_mode="HTML")
+        else:
+            bot.reply_to(message, full_text, parse_mode="HTML")
 
     except Exception as e:
         print(f"Помилка виведення топу: {e}")
