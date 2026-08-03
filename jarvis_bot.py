@@ -2773,74 +2773,74 @@ ACTIONS_DB = {
     "обняти": {
         "text": "обійняв(ла)",
         "media": [
-            "https://media.giphy.com/media/l3V0j3ytFYGHqiV7W/giphy.gif",
-            # "СЮДИ_ВСТАВЛЯЙ_FILE_ID_З_ТЕЛЕГРАМУ",
+            "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ,
+            # "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
         ]
     },
     "hug": {
         "text": "обійняв(ла)",
         "media": [
-            "https://media.giphy.com/media/l3V0j3ytFYGHqiV7W/giphy.gif",
+            "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
         ]
     },
     "вкусити": {
         "text": "укусив(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+             CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ
         ]
     },
     "bite": {
         "text": "укусив(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+            # CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ
         ]
     },
     "вдарити": {
         "text": "дав(ла) ляпаса",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFi2pxBJJ9G3d1ekXbto3XtmZww08dAAINAwACk-MMU4BAYuiTKueyPQQ"
         ]
     },
     "slap": {
         "text": "дав(ла) ляпаса",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFi2pxBJJ9G3d1ekXbto3XtmZww08dAAINAwACk-MMU4BAYuiTKueyPQQ"
         ]
     },
     "поцілувати": {
         "text": "поцілував(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFjWpxBPlPKu8xv2MG2tXzgkMhesEgAALeAwACJLO9UEiqtTpaB3CpPQQ"
         ]
     },
     "kiss": {
         "text": "поцілував(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFjWpxBPlPKu8xv2MG2tXzgkMhesEgAALeAwACJLO9UEiqtTpaB3CpPQQ"
         ]
     },
     "погладити": {
         "text": "погладив(ла) по голові",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
         ]
     },
     "pat": {
         "text": "погладив(ла) по голові",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
         ]
     },
     "виебати": {
         "text": "жорстко покарав(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+            "CgACAgIAAxkBAAIFkWpxBYhTEALJ9ttWT_7GbsT4hVxgAALDMAACVomZSkFGVQPimQeUPQQ"
         ]
     },
     "трахнути": {
         "text": "жорстко покарав(ла)",
         "media": [
-            # Вставити сюди гіфки/фото
+           "CgACAgIAAxkBAAIFkWpxBYhTEALJ9ttWT_7GbsT4hVxgAALDMAACVomZSkFGVQPimQeUPQQ"
         ]
     }
 }
