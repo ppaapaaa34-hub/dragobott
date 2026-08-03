@@ -1113,53 +1113,90 @@ async function startFight() {
     try {
 
         const response = await fetch(`${SERVER_URL}/api/fight`, {
-
             method: "POST",
-
             headers: {
                 "Content-Type": "application/json"
             },
-
             body: JSON.stringify({
                 telegramId: userTelegramId
             })
-
         });
 
         const data = await response.json();
 
         if (!data.success) {
-
-            result.innerHTML = "❌ Помилка.";
-
+            result.innerHTML = `❌ ${data.error || "Помилка бою"}`;
             return;
         }
 
-        if (data.win) {
-
-            result.innerHTML = `
-                <h2>🏆 Перемога!</h2>
-                <p>👹 ${data.enemy.name}</p>
-                <p>💰 +${data.reward.toLocaleString()} ₴</p>
-                <p>⭐ Рівень ${data.level}</p>
-                ${data.loot ? `<div class="loot-drop rarity-${data.loot.rarity}"><span>${data.loot.icon}</span><div><small>${RARITY_LABELS[data.loot.rarity]}</small><b>${data.loot.name}</b><em>Новий предмет!</em></div></div>` : '<p class="no-loot">Цього разу лут не випав</p>'}
-            `;
-
-        } else {
-
-            result.innerHTML = `
-                <h2>💀 Поразка</h2>
-                <p>👹 ${data.enemy.name}</p>
-            `;
-
-        }
-
+        // Оновлення локальних даних
         money = data.money;
         playerLevel = data.level;
         playerXP = data.xp;
 
         updateUI();
-        loadRpgInventory();
+
+        // Оновлення RPG
+        await loadRpgInventory();
+
+        // HP
+        const heroHp = document.getElementById("heroHp");
+        const enemyHp = document.getElementById("enemyHp");
+
+        if (heroHp)
+            heroHp.style.width =
+                (data.heroHp / data.stats.hp * 100) + "%";
+
+        if (enemyHp)
+            enemyHp.style.width =
+                (data.enemyHp / data.enemy.hp * 100) + "%";
+
+        // Лут
+        let lootHtml = "";
+
+        if (data.loot) {
+
+            lootHtml = `
+            <div class="loot-drop rarity-${data.loot.rarity}">
+                <div class="loot-icon">${data.loot.icon || "📦"}</div>
+                <div>
+                    <b>${data.loot.name}</b><br>
+                    <small>${RARITY_LABELS[data.loot.rarity] || data.loot.rarity}</small>
+                </div>
+            </div>
+            `;
+
+        } else {
+
+            lootHtml = `
+            <div class="no-loot">
+                😔 Лут не випав
+            </div>
+            `;
+
+        }
+
+        result.innerHTML = `
+        <div class="fight-result-card">
+
+            <h2>${data.win ? "🏆 Перемога!" : "💀 Поразка"}</h2>
+
+            <h3>${data.enemy.icon} ${data.enemy.name}</h3>
+
+            <p>❤️ Ваше HP: ${data.heroHp}</p>
+
+            <p>👹 HP ворога: ${data.enemyHp}</p>
+
+            <p>💰 Нагорода: ${Number(data.reward).toLocaleString()} ₴</p>
+
+            <p>⭐ Рівень: ${data.level}</p>
+
+            <p>⚔️ Раундів: ${data.rounds}</p>
+
+            ${lootHtml}
+
+        </div>
+        `;
 
     } catch (err) {
 
