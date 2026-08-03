@@ -2773,7 +2773,7 @@ ACTIONS_DB = {
     "обняти": {
         "text": "обійняв(ла)",
         "media": [
-            "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ,
+            "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
             # "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
         ]
     },
@@ -2786,13 +2786,13 @@ ACTIONS_DB = {
     "вкусити": {
         "text": "укусив(ла)",
         "media": [
-             CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ
+             "CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ"
         ]
     },
     "bite": {
         "text": "укусив(ла)",
         "media": [
-            # CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ
+             "CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ"
         ]
     },
     "вдарити": {
