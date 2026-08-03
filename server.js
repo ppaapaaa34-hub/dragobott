@@ -136,7 +136,7 @@ function ensureRpg(user) {
 }
 async function findOrCreate(telegramId, username, firstName) {
   if (!dbReady()) { const user = memoryUsers.get(telegramId) || defaults(telegramId, username, firstName); user.username = username || user.username; user.firstName = firstName || user.firstName; ensureRpg(user); memoryUsers.set(telegramId, user); return user; }
-  const user = await User.findOneAndUpdate({ telegramId }, { $set: { ...(username && { username }), ...(firstName && { firstName }), ...(telegramId === ADMIN_TELEGRAM_ID && { isAdmin: true }) }, $setOnInsert: defaults(telegramId, username, firstName) }, { new: true, upsert: true, setDefaultsOnInsert: true });
+  const user = await User.findOneAndUpdate({ telegramId }, { $set: { ...(username && { username }), ...(firstName && { firstName }), ... }, $setOnInsert: defaults(telegramId, username, firstName) }, { new: true, upsert: true, setDefaultsOnInsert: true });
   ensureRpg(user); return user;
 }
 async function persist(user) { user.lastUpdate = new Date(); if (dbReady()) await user.save(); else memoryUsers.set(user.telegramId, user); }
