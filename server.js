@@ -15,21 +15,92 @@ app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 const userSchema = new mongoose.Schema({
   telegramId: { type: Number, required: true, unique: true, index: true },
+
   username: { type: String, default: 'Анонім', maxlength: 64 },
   firstName: { type: String, default: 'Гравець', maxlength: 128 },
-  money: { type: Number, default: 0, min: 0 }, tapPower: { type: Number, default: 1, min: 1 },
-  energy: { type: Number, default: 1000, min: 0 }, maxEnergy: { type: Number, default: 1000, min: 1 },
-  energyDrain: { type: Number, default: 5, min: 1 }, energyRegen: { type: Number, default: 3, min: 0 },
-  passiveIncome: { type: Number, default: 0, min: 0 }, totalTaps: { type: Number, default: 0, min: 0 },
-  playerLevel: { type: Number, default: 1, min: 1 }, playerXP: { type: Number, default: 0, min: 0 },
-  maxCombo: { type: Number, default: 1, min: 1 }, loginStreak: { type: Number, default: 0, min: 0 },
-  lastDailyClaim: { type: String, default: '' }, lastSpinDate: { type: String, default: '' }, spinsUsedToday: { type: Number, default: 0, min: 0 },
-  isBanned: { type: Boolean, default: false }, isAdmin: { type: Boolean, default: false },
-  cards: { type: [mongoose.Schema.Types.Mixed], default: [] }, collectionItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
-  upgrades: { type: mongoose.Schema.Types.Mixed, default: {} }, activeBoosts: { type: mongoose.Schema.Types.Mixed, default: {} },
-  lastUpdate: { type: Date, default: Date.now }
+
+  money: { type: Number, default: 0, min: 0 },
+
+  tapPower: { type: Number, default: 1, min: 1 },
+
+  energy: { type: Number, default: 1000, min: 0 },
+  maxEnergy: { type: Number, default: 1000, min: 1 },
+  energyDrain: { type: Number, default: 5, min: 1 },
+  energyRegen: { type: Number, default: 3, min: 0 },
+
+  passiveIncome: { type: Number, default: 0, min: 0 },
+  totalTaps: { type: Number, default: 0, min: 0 },
+
+  playerLevel: { type: Number, default: 1, min: 1 },
+  playerXP: { type: Number, default: 0, min: 0 },
+
+  maxCombo: { type: Number, default: 1, min: 1 },
+  loginStreak: { type: Number, default: 0, min: 0 },
+
+  lastDailyClaim: { type: String, default: '' },
+  lastSpinDate: { type: String, default: '' },
+  spinsUsedToday: { type: Number, default: 0, min: 0 },
+
+  isBanned: { type: Boolean, default: false },
+  isAdmin: { type: Boolean, default: false },
+
+  // ===========================
+  // КОЛЕКЦІЇ
+  // ===========================
+
+  cards: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
+  },
+
+  collectionItems: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
+  },
+
+  // ===========================
+  // ГЕРОЇ
+  // ===========================
+
+  heroes: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
+  },
+
+  selectedHero: {
+    type: Number,
+    default: 0
+  },
+
+  heroSouls: {
+    type: Number,
+    default: 0
+  },
+
+  // ===========================
+  // ПРОКАЧКА
+  // ===========================
+
+  upgrades: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+
+  activeBoosts: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+
+  lastUpdate: {
+    type: Date,
+    default: Date.now
+  }
+
 }, { versionKey: false });
-const User = mongoose.models.User || mongoose.model('User', userSchema);
+
+const User =
+  mongoose.models.User ||
+  mongoose.model('User', userSchema);
 
 // A short-lived memory store keeps the Mini App usable during a Mongo outage.
 const memoryUsers = new Map();
