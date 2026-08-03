@@ -136,6 +136,31 @@ const defaults = (telegramId, username, firstName) => ({
   collectionItems: [],
 
   // ===========================
+  // 🦸 ГЕРОЇ
+  // ===========================
+
+  heroes: [],
+  selectedHero: 0,
+  heroSouls: 0,
+
+  // ===========================
+  // ⚔️ RPG
+  // ===========================
+
+  weapon: 1,
+  armor: 1,
+
+  weaponLevel: 1,
+  armorLevel: 1,
+
+  upgrades: {},
+  activeBoosts: {},
+
+  isBanned: false,
+  isAdmin: telegramId === ADMIN_TELEGRAM_ID
+});
+
+  // ===========================
   // ГЕРОЇ
   // ===========================
 
@@ -146,6 +171,30 @@ const defaults = (telegramId, username, firstName) => ({
   upgrades: {},
   activeBoosts: {},
 
+  // ===========================
+// ⚔️ RPG
+// ===========================
+
+weapon: {
+  type: Number,
+  default: 1
+},
+
+armor: {
+  type: Number,
+  default: 1
+},
+
+weaponLevel: {
+  type: Number,
+  default: 1
+},
+
+armorLevel: {
+  type: Number,
+  default: 1
+},
+  
   isBanned: false,
   isAdmin: telegramId === ADMIN_TELEGRAM_ID
 });
@@ -276,6 +325,29 @@ const WEAPONS = [
     { id:5, name:"Міфічний меч", attack:150, price:700000 }
 
 ];
+
+// =======================================================
+// 🛡️ БРОНЯ
+// =======================================================
+
+const ARMORS = [
+
+    { id:1, name:"Футболка", defense:0, price:0 },
+
+    { id:2, name:"Шкіряна броня", defense:6, price:3000 },
+
+    { id:3, name:"Залізна броня", defense:15, price:15000 },
+
+    { id:4, name:"Титанова броня", defense:35, price:90000 },
+
+    { id:5, name:"Драконяча броня", defense:70, price:500000 }
+
+];
+
+// =======================================================
+// 🦸 ГЕРОЙ
+// =======================================================
+
 const heroIndex = Math.min(
     HEROES.length - 1,
     Math.floor((user.playerLevel - 1) / 20)
@@ -286,13 +358,22 @@ const currentWeapon =
         w => w.id === (user.weapon || 1)
     ) || WEAPONS[0];
 
+const currentArmor =
+    ARMORS.find(
+        a => a.id === (user.armor || 1)
+    ) || ARMORS[0];
+
 const hero = {
 
     ...HEROES[heroIndex],
 
     attack:
         HEROES[heroIndex].attack +
-        currentWeapon.attack
+        currentWeapon.attack,
+
+    defense:
+        HEROES[heroIndex].defense +
+        currentArmor.defense
 
 };
 
