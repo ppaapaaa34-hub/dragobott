@@ -104,13 +104,95 @@ const User =
 
 // A short-lived memory store keeps the Mini App usable during a Mongo outage.
 const memoryUsers = new Map();
-const defaults = (telegramId, username, firstName) => ({ telegramId, username: username || 'Анонім', firstName: firstName || 'Гравець', money: 0, tapPower: 1, energy: 1000, maxEnergy: 1000, energyDrain: 5, energyRegen: 3, passiveIncome: 0, totalTaps: 0, playerLevel: 1, playerXP: 0, maxCombo: 1, loginStreak: 0, lastDailyClaim: '', lastSpinDate: '', spinsUsedToday: 0, cards: [], collectionItems: [], upgrades: {}, activeBoosts: {}, isBanned: false, isAdmin: telegramId === ADMIN_TELEGRAM_ID });
-const dbReady = () => mongoose.connection.readyState === 1;
-const asId = value => Number(value);
-const validId = value => Number.isSafeInteger(asId(value)) && asId(value) > 0;
-const publicUser = user => ({ ...((user.toObject && user.toObject()) || user), isAdmin: Number(user.telegramId) === ADMIN_TELEGRAM_ID || Boolean(user.isAdmin) });
-const saveableKeys = ['money','tapPower','energy','maxEnergy','energyDrain','energyRegen','passiveIncome','totalTaps','playerLevel','playerXP','maxCombo','loginStreak','lastDailyClaim','lastSpinDate','spinsUsedToday','cards','collectionItems','upgrades','activeBoosts'];
 
+const defaults = (telegramId, username, firstName) => ({
+  telegramId,
+  username: username || 'Анонім',
+  firstName: firstName || 'Гравець',
+
+  money: 0,
+
+  tapPower: 1,
+
+  energy: 1000,
+  maxEnergy: 1000,
+  energyDrain: 5,
+  energyRegen: 3,
+
+  passiveIncome: 0,
+  totalTaps: 0,
+
+  playerLevel: 1,
+  playerXP: 0,
+
+  maxCombo: 1,
+  loginStreak: 0,
+
+  lastDailyClaim: '',
+  lastSpinDate: '',
+  spinsUsedToday: 0,
+
+  cards: [],
+  collectionItems: [],
+
+  // ===========================
+  // ГЕРОЇ
+  // ===========================
+
+  heroes: [],
+  selectedHero: 0,
+  heroSouls: 0,
+
+  upgrades: {},
+  activeBoosts: {},
+
+  isBanned: false,
+  isAdmin: telegramId === ADMIN_TELEGRAM_ID
+});
+
+const dbReady = () => mongoose.connection.readyState === 1;
+
+const asId = value => Number(value);
+
+const validId = value =>
+  Number.isSafeInteger(asId(value)) &&
+  asId(value) > 0;
+
+const publicUser = user => ({
+  ...((user.toObject && user.toObject()) || user),
+  isAdmin:
+    Number(user.telegramId) === ADMIN_TELEGRAM_ID ||
+    Boolean(user.isAdmin)
+});
+
+const saveableKeys = [
+  'money',
+  'tapPower',
+  'energy',
+  'maxEnergy',
+  'energyDrain',
+  'energyRegen',
+  'passiveIncome',
+  'totalTaps',
+  'playerLevel',
+  'playerXP',
+  'maxCombo',
+  'loginStreak',
+  'lastDailyClaim',
+  'lastSpinDate',
+  'spinsUsedToday',
+
+  'cards',
+  'collectionItems',
+
+  // Герої
+  'heroes',
+  'selectedHero',
+  'heroSouls',
+
+  'upgrades',
+  'activeBoosts'
+];
 async function findOrCreate(telegramId, username, firstName) {
   if (!dbReady()) {
     const current = memoryUsers.get(telegramId) || defaults(telegramId, username, firstName);
