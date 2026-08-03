@@ -2819,6 +2819,12 @@ ACTIONS_DB = {
             "CgACAgQAAxkBAAIFjWpxBPlPKu8xv2MG2tXzgkMhesEgAALeAwACJLO9UEiqtTpaB3CpPQQ"
         ]
     },
+    "копнути": {
+        "text": "копнув(ла)",
+        "media": [
+            "CgACAgIAAyEFAATMVs9CAAEBnuJqcQeAWFZ_t0ZJD1Cg8CVnSlLLnQACt1MAAsMe2UgBiUAfPpeGvD0E"
+        ]
+    },
     "погладити": {
         "text": "погладив(ла) по голові",
         "media": [
