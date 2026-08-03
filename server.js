@@ -252,11 +252,22 @@ app.post('/api/fight', async (req, res, next) => {
 
         const user = await findOrCreate(asId(telegramId));
 
-        const hero = {
-            hp: 100 + user.playerLevel * 15,
-            attack: 15 + user.tapPower * 2,
-            defense: Math.floor(user.playerLevel / 2)
-        };
+        const HEROES = [
+    { id: 1, name: "Новачок", hp: 100, attack: 15, defense: 5 },
+    { id: 2, name: "Боєць", hp: 150, attack: 22, defense: 8 },
+    { id: 3, name: "Ветеран", hp: 220, attack: 35, defense: 12 },
+    { id: 4, name: "Еліта", hp: 320, attack: 48, defense: 18 },
+    { id: 5, name: "Легенда", hp: 500, attack: 70, defense: 30 }
+];
+
+const heroIndex = Math.min(
+    HEROES.length - 1,
+    Math.floor((user.playerLevel - 1) / 20)
+);
+
+const hero = {
+    ...HEROES[heroIndex]
+};
 
         const enemy = ENEMIES[Math.floor(Math.random() * ENEMIES.length)];
 
