@@ -1,15 +1,13 @@
 // Served by the same Express service; a separate host can set window.DRAGO_API_URL.
 const SERVER_URL = window.DRAGO_API_URL || window.location.origin;
 
-// The original bundle has a closing brace at EOF; keep the game scope balanced.
-{
-
 // ==================== TELEGRAM ====================
 let userTelegramId = 5512316636;
 let userUsername = "Admin";
 let userFirstName = "Drago Boss";
 let isAdmin = false;
 let serverOnline = false;
+let rpgState = { items: [], equipped: {}, stats: { attack: 0, defense: 0, hp: 0 }, totalCatalogItems: 0 };
 
 if (window.Telegram?.WebApp) {
     Telegram.WebApp.expand();
@@ -77,30 +75,59 @@ const collectionItems = [
     { id: "item_6", name: "Вогняний Меч", rarity: "epic", icon: "⚔️", cost: 800000, bonus: "+50 ₴ до тапу", owned: false },
     { id: "item_7", name: "Корона Імператора", rarity: "legendary", icon: "👑", cost: 2500000, bonus: "+20% до пасиву", owned: false },
     { id: "item_8", name: "Серце Дракона", rarity: "legendary", icon: "💖", cost: 10000000, bonus: "+150 ₴ до тапу", owned: false },
-    { id: "item_9", name: "Криstall Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
+    { id: "item_9", name: "Кристал Вічності", rarity: "rare", icon: "🔮", cost: 500000, bonus: "+25 ₴ до тапу", owned: false },
     { id: "item_10", name: "Крила Фенікса", rarity: "epic", icon: "🪽", cost: 1500000, bonus: "+15% до пасиву", owned: false },
     { id: "item_11", name: "Скіпетр Влади", rarity: "legendary", icon: "🔱", cost: 5000000, bonus: "+100 ₴ до тапу", owned: false },
-    { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false }
+    { id: "item_12", name: "Душа Імперії", rarity: "legendary", icon: "✨", cost: 50000000, bonus: "+50% до пасиву", owned: false },
+    // --- НОВІ ПРЕДМЕТИ ---
+    { id: "item_13", name: "Щит Титана", rarity: "epic", icon: "🛡️", cost: 500000000, bonus: "+30% до пасиву", owned: false },
+    { id: "item_14", name: "Око Дракона", rarity: "legendary", icon: "👁️‍🗨️", cost: 1500000000, bonus: "+200 ₴ до тапу", owned: false },
+    { id: "item_15", name: "Книга Знань", rarity: "rare", icon: "📖", cost: 100000000, bonus: "+10% до пасиву", owned: false },
+    { id: "item_16", name: "Плащ Тіней", rarity: "epic", icon: "🧥", cost: 800000000, bonus: "+40% до пасиву", owned: false },
+    { id: "item_17", name: "Амулет Сонця", rarity: "rare", icon: "☀️", cost: 250000000, bonus: "+75 ₴ до тапу", owned: false },
+    { id: "item_18", name: "Сльоза Фенікса", rarity: "legendary", icon: "💧", cost: 5000000000, bonus: "+100% до пасиву", owned: false },
+    { id: "item_19", name: "Меч Долі", rarity: "legendary", icon: "🗡️", cost: 3000000000, bonus: "+300 ₴ до тапу", owned: false },
+    { id: "item_20", name: "Кільце Владарювання", rarity: "legendary", icon: "💍", cost: 10000000000, bonus: "+500 ₴ до тапу", owned: false },
+    { id: "item_21", name: "Скіпетр Небес", rarity: "legendary", icon: "⚡", cost: 25000000000, bonus: "+750 ₴ до тапу", owned: false },
+    { id: "item_22", name: "Чаша Безсмертя", rarity: "legendary", icon: "🏆", cost: 50000000000, bonus: "+200% до пасиву", owned: false },
+    { id: "item_23", name: "Посох Архімага", rarity: "legendary", icon: "🪄", cost: 100000000000, bonus: "+1500 ₴ до тапу", owned: false },
+    { id: "item_24", name: "Серце Всесвіту", rarity: "legendary", icon: "🌌", cost: 500000000000, bonus: "+500% до пасиву", owned: false }
 ];
 
-const LEVEL_NAMES = ["Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат", "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог"];
-const DAILY_REWARDS = [500, 1000, 2500, 5000, 10000, 25000, 100000];
+const LEVEL_NAMES = [
+    "Новачок", "Учень", "Торговець", "Бізнесмен", "Магнат",
+    "Олігарх", "Імператор", "Легенда", "Бог Тапу", "Драко-Бог",
+    "Володар TON", "Крипто-Барон", "Галактичний Магнат", "Верховний Дракон", "Титан Мультивсесвіту",
+    "Володар Часу", "Повелитель Енергії", "Квантовий Творець", "Галактичний Владика", "Абсолютний Архітектор",
+    "Нескінченна Сутність", "Творець Всесвітів", "Провісник Вічності", "Бог Нескінченності", "Альфа і Омега"
+];
+
+const DAILY_REWARDS = [
+    500, 1000, 2500, 5000, 10000, 25000, 100000,
+    250000, 500000, 1000000, 2500000, 5000000, 10000000, 50000000
+];
+
 const SPIN_PRIZES = [
-    { label: "500 ₴", type: "money", value: 500 },
-    { label: "2K ₴", type: "money", value: 2000 },
-    { label: "10K ₴", type: "money", value: 10000 },
+    { label: "1K ₴", type: "money", value: 1000 },
+    { label: "5K ₴", type: "money", value: 5000 },
+    { label: "25K ₴", type: "money", value: 25000 },
     { label: "x2 Тап 5хв", type: "boost", boost: "tap2x", duration: 300 },
-    { label: "100 ⚡", type: "energy", value: 100 },
-    { label: "500 ⚡", type: "energy", value: 500 },
+    { label: "200 ⚡", type: "energy", value: 200 },
+    { label: "100K ₴", type: "money", value: 100000 },
+    { label: "1000 ⚡", type: "energy", value: 1000 },
     { label: "x2 Пасив 5хв", type: "boost", boost: "passive2x", duration: 300 },
-    { label: "50K ₴", type: "money", value: 50000 }
+    { label: "500K ₴", type: "money", value: 500000 },
+    { label: "x5 Тап 3хв", type: "boost", boost: "tap5x", duration: 180 },
+    { label: "1M ₴", type: "money", value: 1000000 },
+    { label: "Full Енергія", type: "energy", value: 5000 }
 ];
 
 let missions = [];
 let achievements = [];
 
 function initMissions() {
-    const today = todayKey();
+    // Впевнись, що функція todayKey() у тебе десь визначена нижче по коду
+    const today = typeof todayKey === 'function' ? todayKey() : new Date().toISOString().split('T')[0];
     missions = [
         { id: "m1", icon: "👆", name: "Зроби 100 тапів", target: 100, progress: 0, reward: 2000, claimed: false, track: "taps" },
         { id: "m2", icon: "💰", name: "Зароби 10,000 ₴", target: 10000, progress: 0, reward: 5000, claimed: false, track: "earned" },
@@ -125,7 +152,9 @@ function initAchievements() {
         { id: "a7", icon: "🎁", name: "Вірний", desc: "7 днів серії", unlocked: false, check: () => loginStreak >= 7 },
         { id: "a8", icon: "👑", name: "Імператор", desc: "1M ₴", unlocked: false, check: () => money >= 1000000 },
         { id: "a9", icon: "🚀", name: "Космонавт", desc: "Космопорт", unlocked: false, check: () => cards.find(c => c.id === 10)?.lvl > 0 },
-        { id: "a10", icon: "🐉", name: "Драко-Бог", desc: "Рівень 10", unlocked: false, check: () => playerLevel >= 10 }
+        { id: "a10", icon: "🐉", name: "Драко-Бог", desc: "Рівень 10", unlocked: false, check: () => playerLevel >= 10 },
+        { id: "a11", icon: "🌌", name: "Титан Всесвіту", desc: "Рівень 15", unlocked: false, check: () => playerLevel >= 15 },
+        { id: "a12", icon: "⚛️", name: "Альфа і Омега", desc: "Рівень 25", unlocked: false, check: () => playerLevel >= 25 }
     ];
 }
 
@@ -139,7 +168,7 @@ function xpForLevel(lvl) {
 
 function addXP(amount) {
     playerXP += amount;
-    while (playerXP >= xpForLevel(playerLevel) && playerLevel < 10) {
+    while (playerXP >= xpForLevel(playerLevel) && playerLevel < LEVEL_NAMES.length) {
         playerXP -= xpForLevel(playerLevel);
         playerLevel++;
         showToast(`🎉 Рівень ${playerLevel}: ${LEVEL_NAMES[playerLevel - 1] || "Бог"}!`);
@@ -156,7 +185,7 @@ const passiveEl = document.getElementById("passive-income");
 const tapBtn = document.getElementById("tap");
 const comboDisplay = document.getElementById("combo-display");
 
-// ==================== SAVE / LOAD ====================
+// ==================== SAVE / LOAD & OFFLINE REGEN ====================
 function getSaveData() {
     return {
         money, tapPower, energy, maxEnergy, energyDrain, energyRegen, passiveIncome, totalTaps,
@@ -171,77 +200,90 @@ function saveLocalProgress() {
     localStorage.setItem(`drago_missions_${todayKey()}`, JSON.stringify(missions));
 }
 
-function loadLocalProgress() {
+function loadAndApplyOfflineProgress() {
+    // 1. Спочатку завантажуємо дані стану гри
     const saved = localStorage.getItem("drago_local_save");
-    if (!saved) return;
-    try {
-        const d = JSON.parse(saved);
-        money = d.money || 0;
-        tapPower = d.tapPower || 1;
-        energy = d.energy ?? 1000;
-        maxEnergy = d.maxEnergy || 1000;
-        energyDrain = d.energyDrain || 5;
-        energyRegen = d.energyRegen || 3;
+    if (saved) {
+        try {
+            const d = JSON.parse(saved);
+            money = d.money || 0;
+            tapPower = d.tapPower || 1;
+            energy = d.energy ?? 1000;
+            maxEnergy = d.maxEnergy || 1000;
+            energyDrain = d.energyDrain || 5;
+            energyRegen = d.energyRegen || 3;
+            passiveIncome = d.passiveIncome || 0;
+            totalTaps = d.totalTaps || 0;
+            playerLevel = d.playerLevel || 1;
+            playerXP = d.playerXP || 0;
+            maxCombo = d.maxCombo || 1;
+            loginStreak = d.loginStreak || 0;
+            lastDailyClaim = d.lastDailyClaim || "";
+            lastSpinDate = d.lastSpinDate || "";
+            spinsUsedToday = d.spinsUsedToday || 0;
 
-        passiveIncome = d.passiveIncome || 0;
-        totalTaps = d.totalTaps || 0;
-        playerLevel = d.playerLevel || 1;
-        playerXP = d.playerXP || 0;
-        maxCombo = d.maxCombo || 1;
-        loginStreak = d.loginStreak || 0;
-        lastDailyClaim = d.lastDailyClaim || "";
-        lastSpinDate = d.lastSpinDate || "";
-        spinsUsedToday = d.spinsUsedToday || 0;
-
-        if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
-        if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
-        if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
-        if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
-        if (d.achievements) d.achievements.forEach(sa => {
-            const a = achievements.find(x => x.id === sa.id);
-            if (a) a.unlocked = sa.unlocked;
-        });
-    } catch (e) {
-        console.error("Load error:", e);
+            if (d.cards) d.cards.forEach((c, i) => { if (cards[i]) { cards[i].lvl = c.lvl; cards[i].cost = c.cost; } });
+            if (d.collectionItems) d.collectionItems.forEach((c, i) => { if (collectionItems[i]) collectionItems[i].owned = c.owned; });
+            if (d.upgrades) Object.keys(upgrades).forEach(k => { if (d.upgrades[k]) upgrades[k].lvl = d.upgrades[k].lvl; });
+            if (d.activeBoosts) Object.assign(activeBoosts, d.activeBoosts);
+            if (d.achievements) d.achievements.forEach(sa => {
+                const a = achievements.find(x => x.id === sa.id);
+                if (a) a.unlocked = sa.unlocked;
+            });
+        } catch (e) {
+            console.error("Load error:", e);
+        }
     }
-}
 
-// ==================== OFFLINE REGEN ====================
-// Calculates energy + passive income earned while the app was closed
-function applyOfflineRegen() {
+    // 2. Тепер вираховуємо офлайн прогрес
     const lastSeenRaw = localStorage.getItem("drago_last_seen");
-    if (!lastSeenRaw) return;
-    const lastSeen = parseInt(lastSeenRaw);
-    if (isNaN(lastSeen)) return;
+    if (lastSeenRaw) {
+        const lastSeen = parseInt(lastSeenRaw, 10);
+        if (!isNaN(lastSeen)) {
+            const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
+            if (elapsedSec > 0) {
+                // Обмеження до 12 годин
+                const cappedSec = Math.min(elapsedSec, 12 * 3600);
 
-    const elapsedSec = Math.floor((Date.now() - lastSeen) / 1000);
-    if (elapsedSec <= 0) return;
+                // Нарахування енергії
+                if (energy < maxEnergy) {
+                    const regenAmount = energyRegen * cappedSec;
+                    const before = energy;
+                    energy = Math.min(maxEnergy, energy + regenAmount);
+                    const diff = Math.floor(energy - before);
+                    if (diff > 0) {
+                        setTimeout(() => showToast(`⚡ Офлайн відновлено: +${diff} енергії!`), 1000);
+                    }
+                }
 
-    // Cap offline regen to 8 hours so it doesn't get absurd
-    const cappedSec = Math.min(elapsedSec, 8 * 3600);
-
-    // Offline energy regeneration
-    if (energy < maxEnergy) {
-        const regenAmount = energyRegen * cappedSec;
-        const before = energy;
-        energy = Math.min(maxEnergy, energy + regenAmount);
-        if (energy > before && energy >= maxEnergy) {
-            showToast(`⚡ Енергія відновлена під час відсутності (+${Math.floor(energy - before)})`);
+                // Нарахування пасивного доходу
+                const passive = getEffectivePassive();
+                if (passive > 0) {
+                    const earned = (passive / 3600) * cappedSec;
+                    if (earned >= 1) {
+                        money += earned;
+                        setTimeout(() => showToast(`💰 Офлайн дохід: +${formatNum(earned)} ₴`), 1200);
+                    }
+                }
+            }
         }
     }
 
-    // Offline passive income
-    const passive = getEffectivePassive();
-    if (passive > 0) {
-        const earned = (passive / 3600) * cappedSec;
-        if (earned >= 1) {
-            money += earned;
-            showToast(`💰 Пасивний дохід за час відсутності: +${formatNum(earned)} ₴`);
-        }
-    }
-
+    // 3. Зберігаємо оновлений час
     saveLocalProgress();
 }
+
+// Події закриття та зміни вкладки
+window.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        saveLocalProgress();
+    } else {
+        loadAndApplyOfflineProgress();
+        updateUI();
+    }
+});
+window.addEventListener("pagehide", saveLocalProgress);
+window.addEventListener("beforeunload", saveLocalProgress);
 
 // ==================== UI ====================
 function formatNum(n) {
@@ -268,14 +310,24 @@ function updateUI() {
     if (xpNeededEl) xpNeededEl.innerText = formatNum(xpNeeded);
     if (levelName) levelName.innerText = `Рівень ${playerLevel} · ${LEVEL_NAMES[playerLevel - 1] || "Бог"}`;
 
-    document.getElementById("energy-drain-text").innerText = energyDrain;
-    document.getElementById("energy-regen-text").innerText = energyRegen;
-    document.getElementById("stat-total-taps").innerText = totalTaps.toLocaleString();
-    document.getElementById("stat-tap-power").innerText = getEffectiveTapPower() + " ₴";
-    document.getElementById("stat-max-combo").innerText = "x" + maxCombo;
-    document.getElementById("stat-artifacts-count").innerText = `${collectionItems.filter(i => i.owned).length} / ${collectionItems.length}`;
-    document.getElementById("stat-achievements").innerText = `${achievements.filter(a => a.unlocked).length} / ${achievements.length}`;
-    document.getElementById("stat-streak").innerText = loginStreak + " днів";
+    const drainText = document.getElementById("energy-drain-text");
+    const regenText = document.getElementById("energy-regen-text");
+    if (drainText) drainText.innerText = energyDrain;
+    if (regenText) regenText.innerText = energyRegen;
+
+    const statTaps = document.getElementById("stat-total-taps");
+    const statTapPower = document.getElementById("stat-tap-power");
+    const statCombo = document.getElementById("stat-max-combo");
+    const statArt = document.getElementById("stat-artifacts-count");
+    const statAch = document.getElementById("stat-achievements");
+    const statStreak = document.getElementById("stat-streak");
+
+    if (statTaps) statTaps.innerText = totalTaps.toLocaleString();
+    if (statTapPower) statTapPower.innerText = getEffectiveTapPower() + " ₴";
+    if (statCombo) statCombo.innerText = "x" + maxCombo;
+    if (statArt) statArt.innerText = `${collectionItems.filter(i => i.owned).length} / ${collectionItems.length}`;
+    if (statAch) statAch.innerText = `${achievements.filter(a => a.unlocked).length} / ${achievements.length}`;
+    if (statStreak) statStreak.innerText = loginStreak + " днів";
 
     const adminContainer = document.getElementById("admin-btn-container");
     if (adminContainer) adminContainer.style.display = (isAdmin || userTelegramId === 5512316636) ? "block" : "none";
@@ -364,7 +416,6 @@ function createFloatingNumber(x, y, text, isCombo) {
     setTimeout(() => el.remove(), 900);
 }
 
-
 function createTapParticles(x, y) {
     const colors = ["#fbbf24", "#a855f7", "#22d3ee", "#f472b6", "#fb923c"];
     for (let i = 0; i < 8; i++) {
@@ -394,7 +445,8 @@ setInterval(() => {
             comboDisplay.classList.remove("active");
         }
     }
-    saveLocalProgress();
+    // Легке збереження стану без перезапису drago_last_seen
+    localStorage.setItem("drago_local_save", JSON.stringify(getSaveData()));
     updateUI();
 }, 1000);
 
@@ -432,7 +484,7 @@ window.buyCard = function(id) {
 
 // ==================== COLLECTION ====================
 const ITEM_BONUSES = {
-    item_1: () => { tapPower += 2; },
+   item_1: () => { tapPower += 2; },
     item_2: () => { tapPower += 5; },
     item_3: () => { passiveIncome = Math.floor(passiveIncome * 1.05); },
     item_4: () => { tapPower += 15; },
@@ -443,7 +495,20 @@ const ITEM_BONUSES = {
     item_9: () => { tapPower += 25; },
     item_10: () => { passiveIncome = Math.floor(passiveIncome * 1.15); },
     item_11: () => { tapPower += 100; },
-    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); }
+    item_12: () => { passiveIncome = Math.floor(passiveIncome * 1.50); },
+    // --- БОНУСИ НОВИХ ПРЕДМЕТІВ ---
+    item_13: () => { passiveIncome = Math.floor(passiveIncome * 1.30); },
+    item_14: () => { tapPower += 200; },
+    item_15: () => { passiveIncome = Math.floor(passiveIncome * 1.10); },
+    item_16: () => { passiveIncome = Math.floor(passiveIncome * 1.40); },
+    item_17: () => { tapPower += 75; },
+    item_18: () => { passiveIncome = Math.floor(passiveIncome * 2.0); },
+    item_19: () => { tapPower += 300; },
+    item_20: () => { tapPower += 500; },
+    item_21: () => { tapPower += 750; },
+    item_22: () => { passiveIncome = Math.floor(passiveIncome * 3.0); },
+    item_23: () => { tapPower += 1500; },
+    item_24: () => { passiveIncome = Math.floor(passiveIncome * 6.0); }
 };
 
 function renderCollection() {
@@ -543,7 +608,6 @@ function activateBoost(type, seconds) {
     activeBoosts[type] = Date.now() + seconds * 1000;
     showToast(`⚡ Буст активовано на ${seconds / 60} хв!`);
 }
-
 
 // ==================== MISSIONS ====================
 function updateMissionProgress(track, amount) {
@@ -726,7 +790,6 @@ function applySpinPrize(prize) {
     }
 }
 
-
 // ==================== LEADERBOARD ====================
 async function loadLeaderboard() {
     const container = document.getElementById("leaderboard-container");
@@ -762,6 +825,54 @@ window.switchTab = function(tabName, element) {
     document.getElementById(`tab-${tabName}`)?.classList.add("active");
     element?.classList.add("active");
     if (tabName === "profile") loadLeaderboard();
+    if (tabName === "inventory") loadRpgInventory();
+};
+
+const RARITY_LABELS = { common: "Звичайний", uncommon: "Незвичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний", mythic: "Міфічний" };
+const SLOT_LABELS = { weapon: "Зброя", armor: "Броня", accessory: "Аксесуар" };
+
+async function loadRpgInventory() {
+    const container = document.getElementById("rpg-inventory");
+    if (!container || !serverOnline) return;
+    container.innerHTML = '<p class="loading-text">Завантажую арсенал…</p>';
+    try {
+        const res = await fetch(`${SERVER_URL}/api/rpg/${userTelegramId}`);
+        if (!res.ok) throw new Error("Inventory error");
+        rpgState = await res.json();
+        renderRpgInventory();
+    } catch (error) {
+        console.error(error);
+        container.innerHTML = '<p class="loading-text">Арсенал тимчасово недоступний</p>';
+    }
+}
+
+window.renderRpgInventory = function() {
+    const container = document.getElementById("rpg-inventory");
+    const filter = document.getElementById("inventory-filter")?.value || "all";
+    if (!container) return;
+    const items = rpgState.items.filter(item => filter === "all" || item.slot === filter);
+    document.getElementById("inventory-count").textContent = `${rpgState.items.length} / ${rpgState.totalCatalogItems} предметів`;
+    document.getElementById("rpg-stats").innerHTML = `<span>⚔️ ${rpgState.stats.attack || 0} атака</span><span>🛡️ ${rpgState.stats.defense || 0} захист</span><span>❤️ ${rpgState.stats.hp || 0} HP</span>`;
+    document.getElementById("rpg-equipped").innerHTML = ["weapon", "armor", "accessory"].map(slot => {
+        const item = rpgState.items.find(x => x.id === rpgState.equipped[slot]);
+        return `<div class="equipped-slot"><small>${SLOT_LABELS[slot]}</small><b>${item ? `${item.icon} ${item.name}` : "—"}</b></div>`;
+    }).join("");
+    if (!items.length) { container.innerHTML = '<p class="loading-text">У цій категорії ще немає предметів</p>'; return; }
+    container.innerHTML = items.map(item => {
+        const equipped = rpgState.equipped[item.slot] === item.id;
+        const bonus = item.attack ? `+${item.attack} ATK` : item.defense ? `+${item.defense} DEF` : `+${item.vitality} HP`;
+        return `<article class="rpg-item rarity-${item.rarity} ${equipped ? "is-equipped" : ""}"><div class="rpg-item-icon">${item.icon}</div><div class="rpg-item-copy"><span class="rarity-tag">${RARITY_LABELS[item.rarity]}</span><strong>${item.name}</strong><small>${SLOT_LABELS[item.slot]} · ${bonus}</small></div><button ${equipped ? "disabled" : ""} onclick="equipRpgItem('${item.id}')">${equipped ? "Екіпіровано" : "Екіпірувати"}</button></article>`;
+    }).join("");
+};
+
+window.equipRpgItem = async function(itemId) {
+    try {
+        const res = await fetch(`${SERVER_URL}/api/rpg/equip`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ telegramId: userTelegramId, itemId }) });
+        if (!res.ok) throw new Error("Equip error");
+        rpgState = await res.json();
+        renderRpgInventory();
+        showToast("✨ Предмет екіпіровано");
+    } catch (error) { showToast("❌ Не вдалося екіпірувати предмет"); }
 };
 
 // ==================== TOAST ====================
@@ -794,6 +905,7 @@ async function syncWithServer() {
         document.getElementById("username").innerText = data.firstName || userFirstName;
         saveLocalProgress();
         updateUI();
+        loadRpgInventory();
     } catch (e) {
         console.error("Offline mode:", e);
         serverOnline = false;
@@ -806,7 +918,6 @@ async function syncWithServer() {
 function mergeServerData(data) {
     money = Math.max(money, data.money || 0);
     tapPower = Math.max(tapPower, data.tapPower || 1);
-    // Server already applied offline regen, so use server energy directly
     energy = data.energy ?? energy;
     maxEnergy = Math.max(maxEnergy, data.maxEnergy || 1000);
     passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
@@ -883,7 +994,6 @@ window.openAdminModal = async function() {
         list.innerHTML = `<p class='loading-text' style='color:#f87171'>${msg}</p>`;
     };
 
-    // Try up to 2 times (Render free tier may need to wake up)
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
             const res = await fetchWithTimeout(`${SERVER_URL}/api/admin/users/${userTelegramId}`, {}, 15000);
@@ -906,7 +1016,6 @@ window.openAdminModal = async function() {
                 showError("Помилка завантаження. Сервер недоступний — спробуйте пізніше.");
             }
         }
-
     }
 };
 
@@ -981,8 +1090,8 @@ window.adminToggleBan = async function(targetId) {
 // ==================== START ====================
 initAchievements();
 initMissions();
-loadLocalProgress();
-applyOfflineRegen();  // <-- Apply background energy + income earned while app was closed
+// Послідовність важлива: завантажуємо та нараховуємо ОФЛАЙН ЕНЕРГІЮ
+loadAndApplyOfflineProgress();
 updateUI();
 syncWithServer();
 setInterval(saveProgressToServer, 5000);
@@ -991,4 +1100,73 @@ setInterval(renderMissions, 1000);
 if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
 }
+// =====================================================
+// ⚔️ БОЇ
+// =====================================================
+
+async function startFight() {
+
+    const result = document.getElementById("fight-result");
+
+    result.innerHTML = "⚔️ Йде бій...";
+
+    try {
+
+        const response = await fetch(`${SERVER_URL}/api/fight`, {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                telegramId: userTelegramId
+            })
+
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+
+            result.innerHTML = "❌ Помилка.";
+
+            return;
+        }
+
+        if (data.win) {
+
+            result.innerHTML = `
+                <h2>🏆 Перемога!</h2>
+                <p>👹 ${data.enemy.name}</p>
+                <p>💰 +${data.reward.toLocaleString()} ₴</p>
+                <p>⭐ Рівень ${data.level}</p>
+                ${data.loot ? `<div class="loot-drop rarity-${data.loot.rarity}"><span>${data.loot.icon}</span><div><small>${RARITY_LABELS[data.loot.rarity]}</small><b>${data.loot.name}</b><em>Новий предмет!</em></div></div>` : '<p class="no-loot">Цього разу лут не випав</p>'}
+            `;
+
+        } else {
+
+            result.innerHTML = `
+                <h2>💀 Поразка</h2>
+                <p>👹 ${data.enemy.name}</p>
+            `;
+
+        }
+
+        money = data.money;
+        playerLevel = data.level;
+        playerXP = data.xp;
+
+        updateUI();
+        loadRpgInventory();
+
+    } catch (err) {
+
+        console.error(err);
+
+        result.innerHTML = "❌ Сервер недоступний.";
+
+    }
+
 }
