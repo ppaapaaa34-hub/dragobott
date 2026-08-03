@@ -4282,17 +4282,21 @@ def search_and_send_music(message):
 # 📊 ДІАГНОСТИЧНИЙ І ГНУЧКИЙ ТОП АКТИВНОСТІ
 # ===================================================================
 
+# Кількість користувачів на 1 сторінці
+PAGE_SIZE = 10
+
+
 def format_last_seen(dt_value):
     """Форматує дату останньої активності"""
     if not dt_value:
         return None
-    
+
     if isinstance(dt_value, str):
         try:
             dt_value = datetime.strptime(dt_value, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             return dt_value
-            
+
     try:
         now = datetime.now()
         today = now.date()
@@ -4309,104 +4313,157 @@ def format_last_seen(dt_value):
         return str(dt_value)
 
 
-@bot.message_handler(commands=['top', 'stats', 'топ'])
-def show_chat_activity(message):
-    if is_user_banned(message.from_user.id): 
-        return
-    
-    chat_id = message.chat.id
-    
-    try:
-        bot.send_chat_action(chat_id, 'typing')
-        
-        rows = []
+def fetch_top_rows():
+    """Безпечне отримання списку всіх активних користувачів із БД (3 рівні захисту)"""
+    rows = []
+    with db_lock:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-        with db_lock:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # РІВЕНЬ 1: Спробуємо дістати з last_seen та in_chat
+        try:
+            cursor.execute("""
+                SELECT name, count, last_seen 
+                FROM stats 
+                WHERE in_chat = TRUE OR in_chat = 1 
+                ORDER BY count DESC
+            """)
+            rows = cursor.fetchall()
+        except Exception:
+            if hasattr(conn, "rollback"):
+                conn.rollback()
+
             try:
                 cursor.execute("""
-                    SELECT name, count, last_seen 
+                    SELECT name, count 
                     FROM stats 
                     WHERE in_chat = TRUE OR in_chat = 1 
                     ORDER BY count DESC
                 """)
-                rows = cursor.fetchall()
+                raw_rows = cursor.fetchall()
+                rows = [(r[0], r[1], None) for r in raw_rows]
             except Exception:
-                if hasattr(conn, 'rollback'):
+                if hasattr(conn, "rollback"):
                     conn.rollback()
-                
-                # РІВЕНЬ 2: Спробуємо без last_seen
-                try:
-                    cursor.execute("""
-                        SELECT name, count 
-                        FROM stats 
-                        WHERE in_chat = TRUE OR in_chat = 1 
-                        ORDER BY count DESC
-                    """)
-                    raw_rows = cursor.fetchall()
-                    rows = [(r[0], r[1], None) for r in raw_rows]
-                except Exception:
-                    if hasattr(conn, 'rollback'):
-                        conn.rollback()
-                    
-                    # РІВЕНЬ 3: Беремо найпростіший SELECT без додаткових фільтрів
-                    cursor.execute("SELECT name, count FROM stats ORDER BY count DESC")
-                    raw_rows = cursor.fetchall()
-                    rows = [(r[0], r[1], None) for r in raw_rows]
 
-            cursor.close()
-            conn.close()
+                cursor.execute(
+                    "SELECT name, count FROM stats ORDER BY count DESC"
+                )
+                raw_rows = cursor.fetchall()
+                rows = [(r[0], r[1], None) for r in raw_rows]
 
-        total_messages = sum(r[1] for r in rows if r[1] is not None)
+        cursor.close()
+        conn.close()
 
-        if not rows or total_messages == 0:
-            bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
-            return
+    return rows
 
-        chat_title = message.chat.title or "цьому чаті"
-        chat_title_clean = chat_title.replace("<", "&lt;").replace(">", "&gt;")
-        
-        response = [
-            f"📊 <b>Повна статистика активності в {chat_title_clean}:</b>\n"
-        ]
 
-        medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+def build_top_view(rows, chat_title, page=1):
+    """Формує текст сторінки та Inline-кнопки"""
+    total_messages = sum(r[1] for r in rows if r[1] is not None)
+    total_items = len(rows)
 
-        for idx, row in enumerate(rows):
-            name = row[0]
-            count = row[1]
-            last_seen = row[2] if len(row) > 2 else None
-            
-            icon = medals[idx] if idx < len(medals) else "🔹"
-            clean_name = str(name).replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
-            percent = (count / total_messages) * 100 if total_messages > 0 else 0
-            
-            # Вивід без створення тегів (чистий текст)
-            line = f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)"
-            
-            last_time_str = format_last_seen(last_seen)
-            if last_time_str:
-                line += f" | 🕒 <i>{last_time_str}</i>"
-                
-            response.append(line)
+    if total_items == 0 or total_messages == 0:
+        return "🕸 <b>У чаті ще немає зафіксованої активності!</b>", None
 
-        response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
-        
-        full_text = "\n".join(response)
-        
-        # Захист від ліміту 4096 символів
-        if len(full_text) > 4000:
-            for x in range(0, len(full_text), 4000):
-                bot.send_message(chat_id, full_text[x:x+4000], parse_mode="HTML")
-        else:
-            bot.reply_to(message, full_text, parse_mode="HTML")
+    total_pages = math.ceil(total_items / PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+
+    start_idx = (page - 1) * PAGE_SIZE
+    end_idx = start_idx + PAGE_SIZE
+    page_rows = rows[start_idx:end_idx]
+
+    chat_title_clean = (chat_title or "цьому чаті").replace("<", "&lt;").replace(">", "&gt;")
+
+    response = [f"📊 <b>Топ активності в {chat_title_clean}:</b>\n"]
+
+    medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+    for idx, row in enumerate(page_rows):
+        global_rank = start_idx + idx
+        name = row[0]
+        count = row[1]
+        last_seen = row[2] if len(row) > 2 else None
+
+        icon = (
+            medals[global_rank]
+            if global_rank < len(medals)
+            else f"<code>{global_rank + 1}.</code>"
+        )
+        clean_name = (
+            str(name).replace("<", "&lt;").replace(">", "&gt;")
+            if name
+            else "Анонім"
+        )
+        percent = (count / total_messages) * 100 if total_messages > 0 else 0
+
+        # Форматування без тегів (чистий текст)
+        line = f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)"
+
+        last_time_str = format_last_seen(last_seen)
+        if last_time_str:
+            line += f" | 🕒 <i>{last_time_str}</i>"
+
+        response.append(line)
+
+    response.append(
+        f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>"
+    )
+    text = "\n".join(response)
+
+    # Клавіатура
+    markup = InlineKeyboardMarkup()
+    buttons = []
+
+    if page > 1:
+        buttons.append(
+            InlineKeyboardButton("⬅️ Назад", callback_data=f"top_page:{page - 1}")
+        )
+
+    buttons.append(
+        InlineKeyboardButton(
+            f"📄 {page}/{total_pages}", callback_data="top_noop"
+        )
+    )
+
+    if page < total_pages:
+        buttons.append(
+            InlineKeyboardButton(
+                "Вперед ➡️", callback_data=f"top_page:{page + 1}"
+            )
+        )
+
+    markup.row(*buttons)
+    return text, markup
+
+
+# ===================================================================
+# 📊 ОСНОВНА КОМАНДА /топ
+# ===================================================================
+
+
+@bot.message_handler(commands=["top", "stats", "топ"])
+def show_chat_activity(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    chat_id = message.chat.id
+
+    try:
+        bot.send_chat_action(chat_id, "typing")
+        rows = fetch_top_rows()
+
+        text, markup = build_top_view(
+            rows, message.chat.title, page=1
+        )
+        bot.reply_to(message, text, parse_mode="HTML", reply_markup=markup)
 
     except Exception as e:
-        # Покаже точну помилку прямо в Телеграм!
-        bot.reply_to(message, f"❌ <b>Помилка виконання:</b>\n<code>{e}</code>", parse_mode="HTML")
+        bot.reply_to(
+            message,
+            f"❌ <b>Помилка виконання:</b>\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
+
 
 # ===================================================================
 # 🔄 ОБРОБНИК КНОПОК «Вперед» / «Назад»
@@ -4433,7 +4490,6 @@ def handle_top_pagination(call):
         )
         text, markup = build_top_view(rows, chat_title, page=page)
 
-        # Оновлюємо текст і кнопки в існуючому повідомленні
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
