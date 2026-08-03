@@ -229,6 +229,94 @@ app.get('/api/admin/users/:id', requireAdmin, async (_req, res, next) => { try {
 app.post('/api/admin/add-money', requireAdmin, async (req, res, next) => { try { const targetId = asId(req.body.targetTelegramId); const amount = Number(req.body.amount || 100000); if (!validId(targetId) || !Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Некоректні дані' }); const user = await findOrCreate(targetId); user.money += amount; if (dbReady()) await user.save(); else memoryUsers.set(targetId, user); res.json({ success: true, newBalance: user.money }); } catch (error) { next(error); } });
 app.post('/api/admin/toggle-ban', requireAdmin, async (req, res, next) => { try { const targetId = asId(req.body.targetTelegramId); if (!validId(targetId)) return res.status(400).json({ error: 'Некоректний Telegram ID' }); const user = await findOrCreate(targetId); user.isBanned = !user.isBanned; if (dbReady()) await user.save(); else memoryUsers.set(targetId, user); res.json({ success: true, isBanned: user.isBanned }); } catch (error) { next(error); } });
 
+// =======================================================
+// ⚔️ API АВТОБОЇВ
+// =======================================================
+
+const ENEMIES = [
+    { id: 1, name: "Бомж", hp: 80, attack: 8, reward: 250 },
+    { id: 2, name: "Гопнік", hp: 150, attack: 12, reward: 500 },
+    { id: 3, name: "Бандит", hp: 250, attack: 18, reward: 1000 },
+    { id: 4, name: "Мафіозі", hp: 450, attack: 28, reward: 2500 },
+    { id: 5, name: "БОС", hp: 900, attack: 45, reward: 6000 }
+];
+
+app.post('/api/fight', async (req, res, next) => {
+
+    try {
+
+        const { telegramId } = req.body;
+
+        if (!validId(telegramId))
+            return res.status(400).json({ error: "Некоректний ID" });
+
+        const user = await findOrCreate(asId(telegramId));
+
+        const hero = {
+            hp: 100 + user.playerLevel * 15,
+            attack: 15 + user.tapPower * 2,
+            defense: Math.floor(user.playerLevel / 2)
+        };
+
+        const enemy = ENEMIES[Math.floor(Math.random() * ENEMIES.length)];
+
+        let heroHp = hero.hp;
+        let enemyHp = enemy.hp;
+
+        while (heroHp > 0 && enemyHp > 0) {
+
+            enemyHp -= Math.max(
+                1,
+                hero.attack - Math.floor(Math.random() * 5)
+            );
+
+            if (enemyHp <= 0) break;
+
+            heroHp -= Math.max(
+                1,
+                enemy.attack - hero.defense
+            );
+        }
+
+        const win = heroHp > 0;
+
+        if (win) {
+
+            user.money += enemy.reward;
+            user.playerXP += enemy.reward;
+
+            while (user.playerXP >= user.playerLevel * 1000) {
+                user.playerXP -= user.playerLevel * 1000;
+                user.playerLevel++;
+            }
+
+            user.lastUpdate = new Date();
+
+            if (dbReady())
+                await user.save();
+            else
+                memoryUsers.set(user.telegramId, user);
+
+        }
+
+        res.json({
+            success: true,
+            win,
+            heroHp,
+            enemyHp,
+            reward: win ? enemy.reward : 0,
+            enemy,
+            level: user.playerLevel,
+            xp: user.playerXP,
+            money: user.money
+        });
+
+    } catch (err) {
+        next(err);
+    }
+
+});
+
 app.use(express.static(__dirname, { index: 'index.html', dotfiles: 'ignore' }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
 app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ error: 'Internal server error' }); });
