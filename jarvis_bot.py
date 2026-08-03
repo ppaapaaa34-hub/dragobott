@@ -4409,6 +4409,47 @@ def show_chat_activity(message):
         bot.reply_to(message, f"❌ <b>Помилка виконання:</b>\n<code>{e}</code>", parse_mode="HTML")
 
 # ===================================================================
+# 🔄 ОБРОБНИК КНОПОК «Вперед» / «Назад»
+# ===================================================================
+
+
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith("top_page:")
+    or call.data == "top_noop"
+)
+def handle_top_pagination(call):
+    if call.data == "top_noop":
+        bot.answer_callback_query(call.id)
+        return
+
+    try:
+        page = int(call.data.split(":")[1])
+        rows = fetch_top_rows()
+
+        chat_title = (
+            call.message.chat.title
+            if call.message.chat
+            else "цьому чаті"
+        )
+        text, markup = build_top_view(rows, chat_title, page=page)
+
+        # Оновлюємо текст і кнопки в існуючому повідомленні
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+        bot.answer_callback_query(call.id)
+
+    except Exception as e:
+        bot.answer_callback_query(
+            call.id, "❌ Помилка переключення сторінки"
+        )
+
+
+# ===================================================================
 # ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу
 # ===================================================================
 def format_time_ago(last_seen):
