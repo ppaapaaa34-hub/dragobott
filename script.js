@@ -7,6 +7,7 @@ let userUsername = "Admin";
 let userFirstName = "Drago Boss";
 let isAdmin = false;
 let serverOnline = false;
+let rpgState = { items: [], equipped: {}, stats: { attack: 0, defense: 0, hp: 0 }, totalCatalogItems: 0 };
 
 if (window.Telegram?.WebApp) {
     Telegram.WebApp.expand();
@@ -824,6 +825,54 @@ window.switchTab = function(tabName, element) {
     document.getElementById(`tab-${tabName}`)?.classList.add("active");
     element?.classList.add("active");
     if (tabName === "profile") loadLeaderboard();
+    if (tabName === "inventory") loadRpgInventory();
+};
+
+const RARITY_LABELS = { common: "Звичайний", uncommon: "Незвичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний", mythic: "Міфічний" };
+const SLOT_LABELS = { weapon: "Зброя", armor: "Броня", accessory: "Аксесуар" };
+
+async function loadRpgInventory() {
+    const container = document.getElementById("rpg-inventory");
+    if (!container || !serverOnline) return;
+    container.innerHTML = '<p class="loading-text">Завантажую арсенал…</p>';
+    try {
+        const res = await fetch(`${SERVER_URL}/api/rpg/${userTelegramId}`);
+        if (!res.ok) throw new Error("Inventory error");
+        rpgState = await res.json();
+        renderRpgInventory();
+    } catch (error) {
+        console.error(error);
+        container.innerHTML = '<p class="loading-text">Арсенал тимчасово недоступний</p>';
+    }
+}
+
+window.renderRpgInventory = function() {
+    const container = document.getElementById("rpg-inventory");
+    const filter = document.getElementById("inventory-filter")?.value || "all";
+    if (!container) return;
+    const items = rpgState.items.filter(item => filter === "all" || item.slot === filter);
+    document.getElementById("inventory-count").textContent = `${rpgState.items.length} / ${rpgState.totalCatalogItems} предметів`;
+    document.getElementById("rpg-stats").innerHTML = `<span>⚔️ ${rpgState.stats.attack || 0} атака</span><span>🛡️ ${rpgState.stats.defense || 0} захист</span><span>❤️ ${rpgState.stats.hp || 0} HP</span>`;
+    document.getElementById("rpg-equipped").innerHTML = ["weapon", "armor", "accessory"].map(slot => {
+        const item = rpgState.items.find(x => x.id === rpgState.equipped[slot]);
+        return `<div class="equipped-slot"><small>${SLOT_LABELS[slot]}</small><b>${item ? `${item.icon} ${item.name}` : "—"}</b></div>`;
+    }).join("");
+    if (!items.length) { container.innerHTML = '<p class="loading-text">У цій категорії ще немає предметів</p>'; return; }
+    container.innerHTML = items.map(item => {
+        const equipped = rpgState.equipped[item.slot] === item.id;
+        const bonus = item.attack ? `+${item.attack} ATK` : item.defense ? `+${item.defense} DEF` : `+${item.vitality} HP`;
+        return `<article class="rpg-item rarity-${item.rarity} ${equipped ? "is-equipped" : ""}"><div class="rpg-item-icon">${item.icon}</div><div class="rpg-item-copy"><span class="rarity-tag">${RARITY_LABELS[item.rarity]}</span><strong>${item.name}</strong><small>${SLOT_LABELS[item.slot]} · ${bonus}</small></div><button ${equipped ? "disabled" : ""} onclick="equipRpgItem('${item.id}')">${equipped ? "Екіпіровано" : "Екіпірувати"}</button></article>`;
+    }).join("");
+};
+
+window.equipRpgItem = async function(itemId) {
+    try {
+        const res = await fetch(`${SERVER_URL}/api/rpg/equip`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ telegramId: userTelegramId, itemId }) });
+        if (!res.ok) throw new Error("Equip error");
+        rpgState = await res.json();
+        renderRpgInventory();
+        showToast("✨ Предмет екіпіровано");
+    } catch (error) { showToast("❌ Не вдалося екіпірувати предмет"); }
 };
 
 // ==================== TOAST ====================
@@ -856,6 +905,7 @@ async function syncWithServer() {
         document.getElementById("username").innerText = data.firstName || userFirstName;
         saveLocalProgress();
         updateUI();
+        loadRpgInventory();
     } catch (e) {
         console.error("Offline mode:", e);
         serverOnline = false;
@@ -1092,6 +1142,7 @@ async function startFight() {
                 <p>👹 ${data.enemy.name}</p>
                 <p>💰 +${data.reward.toLocaleString()} ₴</p>
                 <p>⭐ Рівень ${data.level}</p>
+                ${data.loot ? `<div class="loot-drop rarity-${data.loot.rarity}"><span>${data.loot.icon}</span><div><small>${RARITY_LABELS[data.loot.rarity]}</small><b>${data.loot.name}</b><em>Новий предмет!</em></div></div>` : '<p class="no-loot">Цього разу лут не випав</p>'}
             `;
 
         } else {
@@ -1108,6 +1159,7 @@ async function startFight() {
         playerXP = data.xp;
 
         updateUI();
+        loadRpgInventory();
 
     } catch (err) {
 
