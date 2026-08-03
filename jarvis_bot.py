@@ -4279,13 +4279,13 @@ def search_and_send_music(message):
             pass
 
 # ===================================================================
-# 2. 📊 ПОВНА СТАТИСТИКА ЧАТУ (БЕЗ ТЕГУВАННЯ УЧАСНИКІВ)
+# 2. 📊 ПОВНА СТАТИСТИКА ЧАТУ (З БЕЗПЕЧНИМ ЗАПИТОМ ДО БД)
 # ===================================================================
 
 def format_last_seen(dt_value):
     """Форматує дату останньої активності у зручний вигляд"""
     if not dt_value:
-        return "невідомо"
+        return None
     
     if isinstance(dt_value, str):
         try:
@@ -4293,17 +4293,20 @@ def format_last_seen(dt_value):
         except ValueError:
             return dt_value
             
-    now = datetime.now()
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    msg_date = dt_value.date()
+    try:
+        now = datetime.now()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        msg_date = dt_value.date()
 
-    if msg_date == today:
-        return f"сьогодні о {dt_value.strftime('%H:%M')}"
-    elif msg_date == yesterday:
-        return f"учора о {dt_value.strftime('%H:%M')}"
-    else:
-        return dt_value.strftime("%d.%m.%Y %H:%M")
+        if msg_date == today:
+            return f"сьогодні о {dt_value.strftime('%H:%M')}"
+        elif msg_date == yesterday:
+            return f"учора о {dt_value.strftime('%H:%M')}"
+        else:
+            return dt_value.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(dt_value)
 
 @bot.message_handler(commands=['top', 'stats', 'топ'])
 def show_chat_activity(message):
@@ -4315,20 +4318,39 @@ def show_chat_activity(message):
     try:
         bot.send_chat_action(chat_id, 'typing')
         
+        rows = []
+        total_messages = 0
+
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Беремо всіх учасників чату за кількістю повідомлень
-                cursor.execute("""
-                    SELECT name, count, last_seen 
-                    FROM stats 
-                    WHERE in_chat = TRUE 
-                    ORDER BY count DESC
-                """)
-                rows = cursor.fetchall()
+                # 1. Пробуємо отримати дані разом із колонкою last_seen
+                try:
+                    cursor.execute("""
+                        SELECT name, count, last_seen 
+                        FROM stats 
+                        WHERE in_chat = TRUE 
+                        ORDER BY count DESC
+                    """)
+                    rows = cursor.fetchall()
+                except Exception:
+                    # Якщо колонки last_seen немає — відкочуємо транзакцію і беремо тільки ім'я та count
+                    if hasattr(conn, 'rollback'):
+                        conn.rollback()
+                    cursor.execute("""
+                        SELECT name, count 
+                        FROM stats 
+                        WHERE in_chat = TRUE 
+                        ORDER BY count DESC
+                    """)
+                    raw_rows = cursor.fetchall()
+                    rows = [(r[0], r[1], None) for r in raw_rows]
                 
+                # 2. Загальна сума
                 cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
-                total_messages = cursor.fetchone()[0] or 0
+                total_res = cursor.fetchone()
+                total_messages = total_res[0] if total_res and total_res[0] else 0
+                
             conn.close()
 
         if not rows or total_messages == 0:
@@ -4351,21 +4373,21 @@ def show_chat_activity(message):
             
             icon = medals[idx] if idx < len(medals) else "🔹"
             clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
-            
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
-            last_time_str = format_last_seen(last_seen)
             
-            # Вивід без створення HTML-посилань (щоб не надходило сповіщення-тег)
-            response.append(
-                f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. "
-                f"(<i>{percent:.1f}%</i>) | 🕒 <i>{last_time_str}</i>"
-            )
+            line = f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)"
+            
+            # Додаємо час тільки якщо він є в БД
+            last_time_str = format_last_seen(last_seen)
+            if last_time_str:
+                line += f" | 🕒 <i>{last_time_str}</i>"
+                
+            response.append(line)
 
         response.append(f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>")
         
         full_text = "\n".join(response)
         
-        # Захист від перевищення ліміту 4096 символів Telegram
         if len(full_text) > 4000:
             for x in range(0, len(full_text), 4000):
                 bot.send_message(chat_id, full_text[x:x+4000], parse_mode="HTML")
@@ -4375,7 +4397,6 @@ def show_chat_activity(message):
     except Exception as e:
         print(f"Помилка виведення топу: {e}")
         bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
-
 
 # ===================================================================
 # ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу
