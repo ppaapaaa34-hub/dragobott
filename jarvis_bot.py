@@ -4279,11 +4279,11 @@ def search_and_send_music(message):
             pass
 
 # ===================================================================
-# 2. 📊 ПОВНА СТАТИСТИКА ЧАТУ (З БЕЗПЕЧНИМ ЗАПИТОМ ДО БД)
+# 📊 ДІАГНОСТИЧНИЙ І ГНУЧКИЙ ТОП АКТИВНОСТІ
 # ===================================================================
 
 def format_last_seen(dt_value):
-    """Форматує дату останньої активності у зручний вигляд"""
+    """Форматує дату останньої активності"""
     if not dt_value:
         return None
     
@@ -4308,6 +4308,7 @@ def format_last_seen(dt_value):
     except Exception:
         return str(dt_value)
 
+
 @bot.message_handler(commands=['top', 'stats', 'топ'])
 def show_chat_activity(message):
     if is_user_banned(message.from_user.id): 
@@ -4319,39 +4320,47 @@ def show_chat_activity(message):
         bot.send_chat_action(chat_id, 'typing')
         
         rows = []
-        total_messages = 0
 
         with db_lock:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # 1. Пробуємо отримати дані разом із колонкою last_seen
+            cursor = conn.cursor()
+            
+            # РІВЕНЬ 1: Спробуємо дістати з last_seen та in_chat
+            try:
+                cursor.execute("""
+                    SELECT name, count, last_seen 
+                    FROM stats 
+                    WHERE in_chat = TRUE OR in_chat = 1 
+                    ORDER BY count DESC
+                """)
+                rows = cursor.fetchall()
+            except Exception:
+                if hasattr(conn, 'rollback'):
+                    conn.rollback()
+                
+                # РІВЕНЬ 2: Спробуємо без last_seen
                 try:
-                    cursor.execute("""
-                        SELECT name, count, last_seen 
-                        FROM stats 
-                        WHERE in_chat = TRUE 
-                        ORDER BY count DESC
-                    """)
-                    rows = cursor.fetchall()
-                except Exception:
-                    # Якщо колонки last_seen немає — відкочуємо транзакцію і беремо тільки ім'я та count
-                    if hasattr(conn, 'rollback'):
-                        conn.rollback()
                     cursor.execute("""
                         SELECT name, count 
                         FROM stats 
-                        WHERE in_chat = TRUE 
+                        WHERE in_chat = TRUE OR in_chat = 1 
                         ORDER BY count DESC
                     """)
                     raw_rows = cursor.fetchall()
                     rows = [(r[0], r[1], None) for r in raw_rows]
-                
-                # 2. Загальна сума
-                cursor.execute("SELECT SUM(count) FROM stats WHERE in_chat = TRUE")
-                total_res = cursor.fetchone()
-                total_messages = total_res[0] if total_res and total_res[0] else 0
-                
+                except Exception:
+                    if hasattr(conn, 'rollback'):
+                        conn.rollback()
+                    
+                    # РІВЕНЬ 3: Беремо найпростіший SELECT без додаткових фільтрів
+                    cursor.execute("SELECT name, count FROM stats ORDER BY count DESC")
+                    raw_rows = cursor.fetchall()
+                    rows = [(r[0], r[1], None) for r in raw_rows]
+
+            cursor.close()
             conn.close()
+
+        total_messages = sum(r[1] for r in rows if r[1] is not None)
 
         if not rows or total_messages == 0:
             bot.reply_to(message, "🕸 <b>У чаті ще немає зафіксованої активності!</b>", parse_mode="HTML")
@@ -4372,12 +4381,12 @@ def show_chat_activity(message):
             last_seen = row[2] if len(row) > 2 else None
             
             icon = medals[idx] if idx < len(medals) else "🔹"
-            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
+            clean_name = str(name).replace("<", "&lt;").replace(">", "&gt;") if name else "Анонім"
             percent = (count / total_messages) * 100 if total_messages > 0 else 0
             
+            # Вивід без створення тегів (чистий текст)
             line = f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)"
             
-            # Додаємо час тільки якщо він є в БД
             last_time_str = format_last_seen(last_seen)
             if last_time_str:
                 line += f" | 🕒 <i>{last_time_str}</i>"
@@ -4388,6 +4397,7 @@ def show_chat_activity(message):
         
         full_text = "\n".join(response)
         
+        # Захист від ліміту 4096 символів
         if len(full_text) > 4000:
             for x in range(0, len(full_text), 4000):
                 bot.send_message(chat_id, full_text[x:x+4000], parse_mode="HTML")
@@ -4395,8 +4405,8 @@ def show_chat_activity(message):
             bot.reply_to(message, full_text, parse_mode="HTML")
 
     except Exception as e:
-        print(f"Помилка виведення топу: {e}")
-        bot.reply_to(message, "❌ Не вдалося завантажити топ активності.", parse_mode="HTML")
+        # Покаже точну помилку прямо в Телеграм!
+        bot.reply_to(message, f"❌ <b>Помилка виконання:</b>\n<code>{e}</code>", parse_mode="HTML")
 
 # ===================================================================
 # ⏱️ ДОПОМІЖНА ФУНКЦІЯ: Форматування часу
