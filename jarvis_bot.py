@@ -5210,6 +5210,60 @@ def handle_text(message):
             except Exception:
                 pass
 
+# =====================================================
+# ⚔️ HEROES DATABASE
+# =====================================================
+
+def init_heroes_db():
+
+    try:
+
+        with db_lock:
+
+            conn = get_db_connection()
+
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS heroes(
+
+                    user_id BIGINT PRIMARY KEY,
+
+                    hero_name VARCHAR(60) DEFAULT 'Новачок',
+
+                    level INT DEFAULT 1,
+
+                    exp BIGINT DEFAULT 0,
+
+                    hp INT DEFAULT 100,
+
+                    attack INT DEFAULT 15,
+
+                    defense INT DEFAULT 5,
+
+                    coins BIGINT DEFAULT 0,
+
+                    wins INT DEFAULT 0,
+
+                    loses INT DEFAULT 0,
+
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+                );
+                """)
+
+            conn.commit()
+
+            conn.close()
+
+    except Exception as e:
+
+        print("Hero DB:",e)
+
+
+init_heroes_db()
+
+
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
