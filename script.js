@@ -1050,3 +1050,71 @@ setInterval(renderMissions, 1000);
 if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
 }
+// =====================================================
+// ⚔️ БОЇ
+// =====================================================
+
+async function startFight() {
+
+    const result = document.getElementById("fight-result");
+
+    result.innerHTML = "⚔️ Йде бій...";
+
+    try {
+
+        const response = await fetch(`${SERVER_URL}/api/fight`, {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                telegramId: userTelegramId
+            })
+
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+
+            result.innerHTML = "❌ Помилка.";
+
+            return;
+        }
+
+        if (data.win) {
+
+            result.innerHTML = `
+                <h2>🏆 Перемога!</h2>
+                <p>👹 ${data.enemy.name}</p>
+                <p>💰 +${data.reward.toLocaleString()} ₴</p>
+                <p>⭐ Рівень ${data.level}</p>
+            `;
+
+        } else {
+
+            result.innerHTML = `
+                <h2>💀 Поразка</h2>
+                <p>👹 ${data.enemy.name}</p>
+            `;
+
+        }
+
+        money = data.money;
+        playerLevel = data.level;
+        playerXP = data.xp;
+
+        updateUI();
+
+    } catch (err) {
+
+        console.error(err);
+
+        result.innerHTML = "❌ Сервер недоступний.";
+
+    }
+
+}
