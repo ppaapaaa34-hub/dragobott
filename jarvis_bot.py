@@ -7,6 +7,7 @@ import random
 import io
 import threading
 import asyncio
+import math
 import html
 import edge_tts
 import subprocess
