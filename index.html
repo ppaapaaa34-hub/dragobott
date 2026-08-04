@@ -8,6 +8,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <style>
+        .arena-vs { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .arena-fighter { flex: 1; text-align: center; }
+        .arena-avatar { font-size: 56px; line-height: 1; margin-bottom: 6px; transition: transform 0.15s ease; }
+        .arena-avatar.hit { transform: scale(0.85); }
+        .arena-name { font-weight: 800; margin-bottom: 6px; }
+        .arena-vs-label { font-weight: 900; font-size: 20px; color: #fbbf24; padding: 0 6px; }
+        .arena-hp-wrap { width: 100%; height: 10px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; }
+        .arena-hp-bar { height: 100%; width: 100%; border-radius: 6px; transition: width 0.4s ease; }
+        .hero-hp-bar { background: linear-gradient(90deg, #22d3ee, #a855f7); }
+        .enemy-hp-bar { background: linear-gradient(90deg, #f87171, #fb923c); }
+        .arena-hp-text { font-size: 12px; color: #aaa; margin-top: 4px; }
+        .fight-result-card { text-align: left; }
+        .loot-drop { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.06); }
+        .loot-icon { font-size: 30px; }
+        .no-loot { margin-top: 10px; text-align: center; color: #aaa; }
+    </style>
 </head>
 <body>
     <canvas id="particles-canvas"></canvas>
@@ -121,15 +138,29 @@
 
     <div class="profile-card">
 
-        <div style="font-size:70px;text-align:center">
-            ⚔️
+        <div class="arena-vs">
+            <div class="arena-fighter">
+                <div class="arena-avatar hero-avatar" id="hero-avatar">🧑‍🚀</div>
+                <div class="arena-name" id="hero-name">Ти</div>
+                <div class="arena-hp-wrap">
+                    <div class="arena-hp-bar hero-hp-bar" id="heroHp"></div>
+                </div>
+                <div class="arena-hp-text" id="heroHpText">HP: -- / --</div>
+            </div>
+
+            <div class="arena-vs-label">VS</div>
+
+            <div class="arena-fighter">
+                <div class="arena-avatar enemy-avatar" id="enemy-avatar">👺</div>
+                <div class="arena-name" id="enemy-name">Ворог</div>
+                <div class="arena-hp-wrap">
+                    <div class="arena-hp-bar enemy-hp-bar" id="enemyHp"></div>
+                </div>
+                <div class="arena-hp-text" id="enemyHpText">HP: -- / --</div>
+            </div>
         </div>
 
-        <h2 style="text-align:center;margin:15px 0;">
-            Автобій
-        </h2>
-
-        <p style="text-align:center;color:#aaa">
+        <p style="text-align:center;color:#aaa;margin-top:15px;">
             Натисни кнопку нижче і твій герой автоматично
             битиметься з випадковим ворогом.
         </p>
