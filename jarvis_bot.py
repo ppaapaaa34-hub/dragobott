@@ -2929,6 +2929,71 @@ def get_media_file_id(message):
         elif message.photo:
             bot.reply_to(message, f"<b>file_id вашого фото:</b>\n<code>{message.photo[-1].file_id}</code>", parse_mode="HTML")
         
+# ===================================================================
+# 📢 КОМАНДА РОЗСИЛКИ /PROMO ДЛЯ "ДАЙВІНЧИК UA"
+# ===================================================================
+
+# ⚙️ НАЛАШТУВАННЯ
+ADMIN_IDS = [5512316636]  # 👈 Заміни 123456789 на свій Telegram ID
+NEW_BOT_USERNAME = "ukr_diving_bot"  # Юзернейм твого нового бота
+
+
+@bot.message_handler(commands=["promo", "dayvinchik", "дайвінчик"])
+def send_promo_announcement(message):
+    # Перевірка на адміна
+    if message.from_user.id not in ADMIN_IDS:
+        bot.reply_to(
+            message,
+            "❌ <b>У вас немає прав для запуску цієї команди!</b>",
+            parse_mode="HTML",
+        )
+        return
+
+    chat_id = message.chat.id
+
+    # Текст анонсу
+    promo_text = (
+        "🔥 <b>Зустрічайте нашого нового бота — Дайвінчик UA!</b> 🇺🇦\n\n"
+        "Шукаєш нових друзів, цікаве спілкування або навіть другу половинку? "
+        "Ми запустили зручного бота для знайомств!\n\n"
+        "✨ <b>Що на тебе чекає:</b>\n"
+        "📍 Знайомства поруч із тобою\n"
+        "📸 Зручна анкета та простий пошук\n"
+        "💬 Приємні співрозмовники\n\n"
+        "🚀 <b>Тисни кнопку нижче, створюй анкету та знаходь нових людей вже зараз!</b>"
+    )
+
+    # Inline-кнопка з прямим посиланням на бота
+    markup = InlineKeyboardMarkup()
+    btn_start = InlineKeyboardButton(
+        text="🚀 Знайти нові знайомства",
+        url=f"https://t.me/{NEW_BOT_USERNAME}?start=from_drago",
+    )
+    markup.add(btn_start)
+
+    try:
+        # Відправка анонсу
+        sent_msg = bot.send_message(
+            chat_id, promo_text, parse_mode="HTML", reply_markup=markup
+        )
+
+        # Спроба закріпити повідомлення
+        try:
+            bot.pin_chat_message(chat_id, sent_msg.message_id)
+        except Exception:
+            pass
+
+        bot.reply_to(
+            message, "✅ <b>Анонс успішно відправлено!</b>", parse_mode="HTML"
+        )
+
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"❌ <b>Помилка відправки:</b>\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
+
 
 # ===================================================================
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
