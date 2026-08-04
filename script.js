@@ -1139,17 +1139,33 @@ async function startFight() {
         // Оновлення RPG
         await loadRpgInventory();
 
-        // HP
+        // Аватари бійців
+        const heroAvatar = document.getElementById("hero-avatar");
+        const enemyAvatar = document.getElementById("enemy-avatar");
+        const enemyName = document.getElementById("enemy-name");
+        const heroHpText = document.getElementById("heroHpText");
+        const enemyHpText = document.getElementById("enemyHpText");
+
+        if (enemyAvatar) enemyAvatar.innerText = data.enemy.icon || "👺";
+        if (enemyName) enemyName.innerText = data.enemy.name || "Ворог";
+
+        // HP-бари
         const heroHp = document.getElementById("heroHp");
         const enemyHp = document.getElementById("enemyHp");
 
-        if (heroHp)
-            heroHp.style.width =
-                (data.heroHp / data.stats.hp * 100) + "%";
+        const heroMaxHp = data.stats.hp || 1;
+        const enemyMaxHp = data.enemy.hp || 1;
 
-        if (enemyHp)
-            enemyHp.style.width =
-                (data.enemyHp / data.enemy.hp * 100) + "%";
+        if (heroHp) heroHp.style.width = Math.max(0, data.heroHp / heroMaxHp * 100) + "%";
+        if (enemyHp) enemyHp.style.width = Math.max(0, data.enemyHp / enemyMaxHp * 100) + "%";
+        if (heroHpText) heroHpText.innerText = `HP: ${Math.max(0, data.heroHp)} / ${heroMaxHp}`;
+        if (enemyHpText) enemyHpText.innerText = `HP: ${Math.max(0, data.enemyHp)} / ${enemyMaxHp}`;
+
+        [heroAvatar, enemyAvatar].forEach(el => {
+            if (!el) return;
+            el.classList.add("hit");
+            setTimeout(() => el.classList.remove("hit"), 300);
+        });
 
         // Лут
         let lootHtml = "";
