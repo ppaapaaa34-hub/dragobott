@@ -2930,26 +2930,25 @@ def get_media_file_id(message):
             bot.reply_to(message, f"<b>file_id вашого фото:</b>\n<code>{message.photo[-1].file_id}</code>", parse_mode="HTML")
         
 # ===================================================================
-# 📢 КОМАНДА РОЗСИЛКИ /PROMO ДЛЯ "ДАЙВІНЧИК UA"
+# 📢 ВІДПРАВКА АНОНСУ "ДАЙВІНЧИК UA" ПРЯМО В ГРУПУ
 # ===================================================================
 
 # ⚙️ НАЛАШТУВАННЯ
-ADMIN_IDS = [5512316636]  # 👈 Заміни 123456789 на свій Telegram ID
-NEW_BOT_USERNAME = "ukr_diving_bot"  # Юзернейм твого нового бота
+ADMIN_IDS = [5512316636]  # 👈 Заміни на свій Telegram ID
+TARGET_GROUP_ID = -1003428241218  # 👈 Заміни на ID твоєї групи (починається з -100)
+NEW_BOT_USERNAME = "ukr_diving_bot"
 
 
 @bot.message_handler(commands=["promo", "dayvinchik", "дайвінчик"])
-def send_promo_announcement(message):
+def send_promo_to_group(message):
     # Перевірка на адміна
     if message.from_user.id not in ADMIN_IDS:
         bot.reply_to(
             message,
-            "❌ <b>У вас немає прав для запуску цієї команди!</b>",
+            "❌ <b>У вас немає прав для використання цієї команди!</b>",
             parse_mode="HTML",
         )
         return
-
-    chat_id = message.chat.id
 
     # Текст анонсу
     promo_text = (
@@ -2963,7 +2962,7 @@ def send_promo_announcement(message):
         "🚀 <b>Тисни кнопку нижче, створюй анкету та знаходь нових людей вже зараз!</b>"
     )
 
-    # Inline-кнопка з прямим посиланням на бота
+    # Inline-кнопка
     markup = InlineKeyboardMarkup()
     btn_start = InlineKeyboardButton(
         text="🚀 Знайти нові знайомства",
@@ -2972,25 +2971,31 @@ def send_promo_announcement(message):
     markup.add(btn_start)
 
     try:
-        # Відправка анонсу
+        # Відправляємо анонс ПРЯМО В ТВОЮ ГРУПУ
         sent_msg = bot.send_message(
-            chat_id, promo_text, parse_mode="HTML", reply_markup=markup
+            chat_id=TARGET_GROUP_ID,
+            text=promo_text,
+            parse_mode="HTML",
+            reply_markup=markup,
         )
 
-        # Спроба закріпити повідомлення
+        # Пробуємо закріпити анонс у групі
         try:
-            bot.pin_chat_message(chat_id, sent_msg.message_id)
+            bot.pin_chat_message(TARGET_GROUP_ID, sent_msg.message_id)
         except Exception:
             pass
 
         bot.reply_to(
-            message, "✅ <b>Анонс успішно відправлено!</b>", parse_mode="HTML"
+            message,
+            "✅ <b>Анонс успішно відправлено та закріплено в групі!</b>",
+            parse_mode="HTML",
         )
 
     except Exception as e:
         bot.reply_to(
             message,
-            f"❌ <b>Помилка відправки:</b>\n<code>{e}</code>",
+            f"❌ <b>Помилка відправки в групу:</b>\n<code>{e}</code>\n\n"
+            f"<i>Переконайся, що Drago є в групі та має права адміністратора!</i>",
             parse_mode="HTML",
         )
 
