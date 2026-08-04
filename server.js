@@ -135,7 +135,7 @@ function ensureRpg(user) {
     }
 }
 async function findOrCreate(telegramId, username, firstName) {
-    if (!isDbReady()) {
+    if (!dbReady()) {
         const user = memoryUsers.get(telegramId) || defaults(telegramId, username, firstName);
         user.username = username || user.username;
         user.firstName = firstName || user.firstName;
@@ -176,7 +176,20 @@ function inventoryState(user) {ensureRpg(user);return {items: user.rpgInventory.
 function rollRarity() { const roll = Math.random() * 100; let cursor = 0; for (const [rarity, data] of Object.entries(RARITIES)) { cursor += data.chance; if (roll < cursor) return rarity; } return 'common'; }
 function rollLoot(level) { if (Math.random() > 0.72) return null; const rarity = rollRarity(); const choices = CATALOG.filter(item => item.rarity === rarity && (RARITIES[rarity].multiplier * 12 + level * 1.3 >= Math.max(item.attack, item.defense, item.vitality / 4))); return choices[Math.floor(Math.random() * choices.length)] || CATALOG[0]; }
 function combatStats(user) { ensureRpg(user); const items = EQUIP_SLOTS.map(slot => byId.get(user.equipped[slot])).filter(Boolean); return { attack: 15 + Math.floor(user.playerLevel * 2.4) + items.reduce((sum, item) => sum + item.attack, 0), defense: 4 + Math.floor(user.playerLevel * 1.1) + items.reduce((sum, item) => sum + item.defense, 0), hp: 100 + user.playerLevel * 12 + items.reduce((sum, item) => sum + item.vitality, 0) }; }
-const ENEMIES = [{ name: 'Піщаний гоблін', icon: '👺', factor: 1 }, { name: 'Нічний вовк', icon: '🐺', factor: 1.35 }, { name: 'Крижаний лицар', icon: '🧊', factor: 1.7 }, { name: 'Тіньовий маг', icon: '🧙', factor: 2.2 }, { name: 'Дракон арени', icon: '🐉', factor: 3.1 }];
+const ENEMIES = [
+  { name: 'Піщаний гоблін', icon: '👺', factor: 1 },
+  { name: 'Дикий кабан', icon: '🐗', factor: 1.15 },
+  { name: 'Нічний вовк', icon: '🐺', factor: 1.35 },
+  { name: 'Болотний тролль', icon: '🧌', factor: 1.5 },
+  { name: 'Крижаний лицар', icon: '🧊', factor: 1.7 },
+  { name: 'Кістяний воїн', icon: '💀', factor: 1.9 },
+  { name: 'Тіньовий маг', icon: '🧙', factor: 2.2 },
+  { name: 'Гірський велетень', icon: '🗿', factor: 2.5 },
+  { name: 'Демон безодні', icon: '👹', factor: 2.8 },
+  { name: 'Дракон арени', icon: '🐉', factor: 3.1 },
+  { name: 'Володар пекла', icon: '😈', factor: 3.6 },
+  { name: 'Прадавній Левіафан', icon: '🐲', factor: 4.2 }
+];
 function requireAdmin(req, res, next) { if (Number(req.params.id || req.body.adminId) !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: 'Недостатньо прав' }); next(); }
 const saveableKeys = ['money','tapPower','energy','maxEnergy','energyDrain','energyRegen','passiveIncome','totalTaps','playerLevel','playerXP','maxCombo','loginStreak','lastDailyClaim','lastSpinDate','spinsUsedToday','cards','collectionItems','heroes','selectedHero','heroSouls','upgrades','activeBoosts'];
 
