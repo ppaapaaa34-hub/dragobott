@@ -8,6 +8,8 @@ let userFirstName = "Drago Boss";
 let isAdmin = false;
 let serverOnline = false;
 let rpgState = { items: [], equipped: {}, stats: { attack: 0, defense: 0, hp: 0 }, totalCatalogItems: 0 };
+let shopState = { items: [] };
+let trophies = 0;
 
 if (window.Telegram?.WebApp) {
     Telegram.WebApp.expand();
@@ -331,6 +333,8 @@ function updateUI() {
 
     const adminContainer = document.getElementById("admin-btn-container");
     if (adminContainer) adminContainer.style.display = (isAdmin || userTelegramId === 5512316636) ? "block" : "none";
+
+    document.querySelectorAll(".trophies-display").forEach(el => el.innerText = `🏆 ${formatNum(trophies)}`);
 
     renderActiveBoosts();
     renderCards();
@@ -825,7 +829,10 @@ window.switchTab = function(tabName, element) {
     document.getElementById(`tab-${tabName}`)?.classList.add("active");
     element?.classList.add("active");
     if (tabName === "profile") loadLeaderboard();
-    if (tabName === "inventory") loadRpgInventory();
+    if (tabName === "inventory") {
+        loadRpgInventory();
+        if (document.getElementById("inv-view-shop")?.classList.contains("active")) loadShop();
+    }
 };
 
 const RARITY_LABELS = { common: "Звичайний", uncommon: "Незвичайний", rare: "Рідкісний", epic: "Епічний", legendary: "Легендарний", mythic: "Міфічний" };
@@ -874,6 +881,62 @@ window.equipRpgItem = async function(itemId) {
         renderRpgInventory();
         showToast("✨ Предмет екіпіровано");
     } catch (error) { showToast("❌ Не вдалося екіпірувати предмет"); }
+};
+
+// ==================== МАГАЗИН СПОРЯДЖЕННЯ (за трофеї, зароблені в боях) ====================
+window.switchInventoryView = function(view, element) {
+    document.querySelectorAll("#tab-inventory .inv-subview").forEach(v => v.classList.remove("active"));
+    document.querySelectorAll("#tab-inventory .inv-subtab").forEach(b => b.classList.remove("active"));
+    document.getElementById(`inv-view-${view}`)?.classList.add("active");
+    element?.classList.add("active");
+    if (view === "shop") loadShop();
+};
+
+async function loadShop() {
+    const container = document.getElementById("shop-items");
+    if (!container) return;
+    container.innerHTML = '<p class="loading-text">Завантажую крамницю…</p>';
+    try {
+        const res = await fetch(`${SERVER_URL}/api/shop/${userTelegramId}`);
+        if (!res.ok) throw new Error("Shop error");
+        shopState = await res.json();
+        trophies = shopState.trophies ?? trophies;
+        document.querySelectorAll(".trophies-display").forEach(el => el.innerText = `🏆 ${formatNum(trophies)}`);
+        renderShop();
+    } catch (error) {
+        console.error(error);
+        container.innerHTML = '<p class="loading-text">Крамниця тимчасово недоступна. <a href="#" onclick="loadShop();return false;">Спробувати ще раз</a></p>';
+    }
+}
+
+window.renderShop = function() {
+    const container = document.getElementById("shop-items");
+    const filter = document.getElementById("shop-filter")?.value || "all";
+    if (!container) return;
+    const items = (shopState.items || []).filter(item => filter === "all" || item.slot === filter);
+    if (!items.length) { container.innerHTML = '<p class="loading-text">У цій категорії немає товарів</p>'; return; }
+    container.innerHTML = items.map(item => {
+        const bonus = item.attack ? `+${item.attack} ATK` : item.defense ? `+${item.defense} DEF` : `+${item.vitality} HP`;
+        const affordable = trophies >= item.price;
+        const btnLabel = item.owned ? "Куплено" : (affordable ? `Купити · 🏆 ${item.price}` : `🏆 ${item.price}`);
+        return `<article class="rpg-item rarity-${item.rarity} ${item.owned ? "is-equipped" : ""}"><div class="rpg-item-icon">${item.icon}</div><div class="rpg-item-copy"><span class="rarity-tag">${RARITY_LABELS[item.rarity]}</span><strong>${item.name}</strong><small>${SLOT_LABELS[item.slot]} · ${bonus}</small></div><button ${item.owned || !affordable ? "disabled" : ""} onclick="buyShopItem('${item.id}')">${btnLabel}</button></article>`;
+    }).join("");
+};
+
+window.buyShopItem = async function(itemId) {
+    try {
+        const res = await fetch(`${SERVER_URL}/api/shop/buy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ telegramId: userTelegramId, itemId }) });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || "Buy error");
+        rpgState = data;
+        trophies = data.trophies ?? trophies;
+        document.querySelectorAll(".trophies-display").forEach(el => el.innerText = `🏆 ${formatNum(trophies)}`);
+        renderRpgInventory();
+        await loadShop();
+        showToast("🛍️ Придбано! Предмет додано в арсенал");
+    } catch (error) {
+        showToast(`❌ ${error.message || "Не вдалося купити предмет"}`);
+    }
 };
 
 // ==================== TOAST ====================
@@ -931,6 +994,7 @@ function mergeServerData(data) {
     playerXP = Math.max(playerXP, data.playerXP || 0);
     maxCombo = Math.max(maxCombo, data.maxCombo || 1);
     loginStreak = Math.max(loginStreak, data.loginStreak || 0);
+    trophies = Math.max(trophies, data.trophies || 0);
     isAdmin = data.isAdmin || userTelegramId === 5512316636;
 
     if (data.cards?.length) data.cards.forEach((sc, i) => {
@@ -1234,26 +1298,21 @@ async function startFight() {
             setTimeout(() => el.classList.remove("hit"), 300);
         });
 
-        // Лут
+        // Трофеї за перемогу (валюта для магазину спорядження)
+        trophies = data.trophies ?? trophies;
+        document.querySelectorAll(".trophies-display").forEach(el => el.innerText = `🏆 ${formatNum(trophies)}`);
+
         let lootHtml = "";
 
-        if (data.loot) {
+        if (data.win && data.trophyReward) {
 
             lootHtml = `
-            <div class="loot-drop rarity-${data.loot.rarity}">
-                <div class="loot-icon">${data.loot.icon || "📦"}</div>
+            <div class="loot-drop">
+                <div class="loot-icon">🏆</div>
                 <div>
-                    <b>${data.loot.name}</b><br>
-                    <small>${RARITY_LABELS[data.loot.rarity] || data.loot.rarity}</small>
+                    <b>+${data.trophyReward} трофеїв</b><br>
+                    <small>Витрать їх у магазині спорядження</small>
                 </div>
-            </div>
-            `;
-
-        } else {
-
-            lootHtml = `
-            <div class="no-loot">
-                😔 Лут не випав
             </div>
             `;
 
