@@ -170,6 +170,41 @@ RECENT_MESSAGES = []
 MAX_HISTORY_LIMIT = 30
 mafia_games = {}
 
+# ==================== ГЕНЕРАЦІЯ КАРТИНОК (Pollinations) ====================
+POLLINATIONS_TOKEN = os.environ.get('POLLINATIONS_TOKEN', '')  # безкоштовний токен: auth.pollinations.ai
+POLLINATIONS_REFERRER = "dragobott"
+
+def translate_prompt_to_english(prompt: str) -> str:
+    """Flux/пollinations розуміють англійські промпти набагато краще за українські.
+    Перекладаємо через Gemini коротким одноразовим викликом (без історії чату)."""
+    try:
+        translation_model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+        result = translation_model.generate_content(
+            f"Translate the following image-generation prompt to concise, vivid English. "
+            f"Return ONLY the translated prompt, no quotes, no explanations:\n\n{prompt}"
+        )
+        translated = (result.text or "").strip()
+        return translated if translated else prompt
+    except Exception as e:
+        print(f"⚠️ Помилка перекладу промпту: {e}")
+        return prompt
+
+def build_pollinations_url(prompt: str, width=1024, height=1024, seed=None, enhance=True) -> str:
+    """Правильний ендпоінт — /prompt/, а не /p/ (недокументований шлях).
+    Додає token/referrer, щоб вийти з анонімного тарифу (1 запит/15с, водяні знаки не знімаються)."""
+    if seed is None:
+        seed = random.randint(1, 999999)
+    encoded_prompt = requests.utils.quote(prompt)
+    params = [
+        f"width={width}", f"height={height}", f"seed={seed}",
+        "model=flux", "nologo=true", f"enhance={'true' if enhance else 'false'}",
+        f"referrer={POLLINATIONS_REFERRER}",
+    ]
+    if POLLINATIONS_TOKEN:
+        params.append(f"token={POLLINATIONS_TOKEN}")
+    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?{'&'.join(params)}"
+
+
 def get_gemini_chat(chat_id):
     if chat_id not in bot_chats:
         bot_chats[chat_id] = model.start_chat(history=[])
@@ -854,10 +889,8 @@ def generate_business_ai_image(owned_biz_codes):
     )
     
     try:
-        encoded_prompt = requests.utils.quote(prompt)
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 9999)}&model=flux&nologo=true"
-        
-        response = requests.get(image_url, timeout=30)
+        image_url = build_pollinations_url(prompt, width=1024, height=1024)
+        response = requests.get(image_url, timeout=60)
         
         if response.status_code == 200:
             if "application/json" in response.headers.get("Content-Type", ""):
@@ -1291,15 +1324,7 @@ def generate_business_purchase_image(biz):
 
         seed = random.randint(1,999999)
 
-        url = (
-            f"https://image.pollinations.ai/p/{encoded}"
-            f"?model=flux"
-            f"&width=1024"
-            f"&height=1024"
-            f"&seed={seed}"
-            f"&enhance=true"
-            f"&nologo=true"
-        )
+        url = build_pollinations_url(prompt, width=1024, height=1024, seed=seed)
 
         headers = {
             "User-Agent":"Mozilla/5.0"
@@ -1308,7 +1333,7 @@ def generate_business_purchase_image(biz):
         r = requests.get(
             url,
             headers=headers,
-            timeout=45
+            timeout=60
         )
 
         if r.status_code == 200:
@@ -2104,19 +2129,8 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
 
     try:
-        encoded_prompt = requests.utils.quote(prompt)
-
         seed = random.randint(100000,999999)
-
-        url = (
-            f"https://image.pollinations.ai/p/{encoded_prompt}"
-            "?width=1200"
-            "&height=1200"
-            "&model=flux"
-            f"&seed={seed}"
-            "&nologo=true"
-        )
-
+        url = build_pollinations_url(prompt, width=1200, height=1200, seed=seed)
 
         headers = {
             "User-Agent": "Mozilla/5.0"
@@ -2269,14 +2283,9 @@ def generate_shop_ai_image(descriptions):
               "expensive store, 8k, photorealistic"
         )
 
-        encoded_prompt = requests.utils.quote(prompt)
-
         seed = random.randint(1, 999999)
 
-        image_url = (
-            f"https://image.pollinations.ai/p/{encoded_prompt}"
-            f"?width=800&height=800&seed={seed}&nologo=true"
-        )
+        image_url = build_pollinations_url(prompt, width=800, height=800, seed=seed)
 
 
         headers = {
@@ -2287,7 +2296,7 @@ def generate_shop_ai_image(descriptions):
         response = requests.get(
             image_url,
             headers=headers,
-            timeout=15
+            timeout=45
         )
 
 
@@ -3788,8 +3797,8 @@ def generate_image_wait_and_send(message):
         return
     status_msg = bot.reply_to(message, "⏳ Драго починає малювати... Зачекай до 2 хвилин.")
     try:
-        encoded_prompt = requests.utils.quote(prompt)
-        image_url = f"https://image.pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed={random.randint(1, 999999)}&model=flux&nologo=true"
+        english_prompt = translate_prompt_to_english(prompt)
+        image_url = build_pollinations_url(english_prompt, width=1024, height=1024)
         response = requests.get(image_url, timeout=120)
         if response.status_code == 200:
             if "application/json" in response.headers.get("Content-Type", "") or len(response.content) < 10000:
