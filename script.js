@@ -919,7 +919,11 @@ async function syncWithServer() {
 function mergeServerData(data) {
     money = Math.max(money, data.money || 0);
     tapPower = Math.max(tapPower, data.tapPower || 1);
-    energy = data.energy ?? energy;
+    // energy НЕ перезаписуємо сирим серверним значенням: сервер не рахує регенерацію
+    // в часі, тому там завжди застаріле число з моменту останнього /api/user/save.
+    // Локально loadAndApplyOfflineProgress() вже коректно нарахував офлайн-відновлення —
+    // беремо максимум, як і для решти полів, інакше цей приріст стирається щоразу при вході.
+    energy = Math.max(energy, data.energy ?? 0);
     maxEnergy = Math.max(maxEnergy, data.maxEnergy || 1000);
     passiveIncome = Math.max(passiveIncome, data.passiveIncome || 0);
     totalTaps = Math.max(totalTaps, data.totalTaps || 0);
@@ -1102,6 +1106,66 @@ if (lastDailyClaim !== todayKey()) {
     setTimeout(() => showToast("🎁 Не забудь забрати щоденну нагороду!"), 2000);
 }
 // =====================================================
+// 🎨 ПЕРСОНАЖІ (SVG замість емодзі)
+// =====================================================
+
+function buildCreatureSVG(cfg) {
+    const gradId = "mg" + Math.random().toString(36).slice(2, 8);
+    const [c1, c2] = cfg.colors;
+    let inner = `<circle cx="32" cy="36" r="21" fill="url(#${gradId})"/>`;
+
+    const F = cfg.features || [];
+    if (F.includes("ears")) inner += `<path d="M12 26 L4 13 L19 21 Z" fill="${c1}"/><path d="M52 26 L60 13 L45 21 Z" fill="${c1}"/>`;
+    if (F.includes("twinHorn")) inner += `<path d="M20 15 L12 3 L23 13 Z" fill="${c2}"/><path d="M44 15 L52 3 L41 13 Z" fill="${c2}"/>`;
+    if (F.includes("singleHorn")) inner += `<path d="M32 6 L24 21 L40 21 Z" fill="${c2}"/>`;
+    if (F.includes("curledHorn")) inner += `<path d="M17 18 Q5 11 12 1 Q20 7 17 18 Z" fill="${c2}"/><path d="M47 18 Q59 11 52 1 Q44 7 47 18 Z" fill="${c2}"/>`;
+    if (F.includes("hood")) inner += `<path d="M9 30 Q32 -9 55 30 Q46 15 32 15 Q18 15 9 30 Z" fill="${c2}"/>`;
+    if (F.includes("fins")) inner += `<path d="M32 4 L25 18 L39 18 Z" fill="${c2}"/><path d="M13 19 L2 25 L15 30 Z" fill="${c2}"/><path d="M51 19 L62 25 L49 30 Z" fill="${c2}"/>`;
+
+    const eyeColor = cfg.eyeColor;
+    if (cfg.eyeStyle === "round2") inner += `<circle cx="24" cy="34" r="4" fill="${eyeColor}"/><circle cx="40" cy="34" r="4" fill="${eyeColor}"/>`;
+    if (cfg.eyeStyle === "slit2") inner += `<ellipse cx="24" cy="34" rx="4.2" ry="2" fill="${eyeColor}"/><ellipse cx="40" cy="34" rx="4.2" ry="2" fill="${eyeColor}"/>`;
+    if (cfg.eyeStyle === "glow1") inner += `<circle cx="32" cy="34" r="5.5" fill="${eyeColor}"/><circle cx="32" cy="34" r="9" fill="${eyeColor}" opacity="0.25"/>`;
+    if (cfg.eyeStyle === "sockets") inner += `<ellipse cx="24" cy="34" rx="4" ry="5" fill="#1e293b"/><ellipse cx="40" cy="34" rx="4" ry="5" fill="#1e293b"/><circle cx="24" cy="34" r="1.6" fill="${eyeColor}"/><circle cx="40" cy="34" r="1.6" fill="${eyeColor}"/>`;
+
+    if (F.includes("fangs")) inner += `<path d="M25 44 L23 51 L28 45 Z" fill="#f8fafc"/><path d="M39 44 L41 51 L36 45 Z" fill="#f8fafc"/>`;
+    if (F.includes("tusks")) inner += `<path d="M22 42 Q15 40 14 47" stroke="#f8fafc" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M42 42 Q49 40 50 47" stroke="#f8fafc" stroke-width="3" fill="none" stroke-linecap="round"/>`;
+    if (F.includes("snout")) inner += `<ellipse cx="32" cy="44" rx="7" ry="5" fill="${c1}"/><circle cx="29" cy="44" r="1.3" fill="#1e293b"/><circle cx="35" cy="44" r="1.3" fill="#1e293b"/>`;
+
+    return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient></defs>${inner}</svg>`;
+}
+
+const CREATURE_CATALOG = {
+    "Піщаний гоблін": { colors: ["#8bc34a", "#4b7a1f"], eyeColor: "#fde047", eyeStyle: "round2", features: ["ears", "fangs"] },
+    "Дикий кабан": { colors: ["#a9744f", "#6b4423"], eyeColor: "#2b1c14", eyeStyle: "round2", features: ["ears", "tusks", "snout"] },
+    "Нічний вовк": { colors: ["#4b5563", "#1f2937"], eyeColor: "#67e8f9", eyeStyle: "slit2", features: ["ears", "fangs"] },
+    "Болотний тролль": { colors: ["#556b2f", "#2f3d17"], eyeColor: "#eab308", eyeStyle: "round2", features: ["ears", "tusks"] },
+    "Крижаний лицар": { colors: ["#a5f3fc", "#0891b2"], eyeColor: "#f0f9ff", eyeStyle: "slit2", features: ["hood"] },
+    "Кістяний воїн": { colors: ["#e5e7eb", "#6b7280"], eyeColor: "#facc15", eyeStyle: "sockets", features: ["ears"] },
+    "Тіньовий маг": { colors: ["#581c87", "#1e1033"], eyeColor: "#c084fc", eyeStyle: "glow1", features: ["hood"] },
+    "Гірський велетень": { colors: ["#9ca3af", "#4b5563"], eyeColor: "#84cc16", eyeStyle: "round2", features: ["ears"] },
+    "Демон безодні": { colors: ["#dc2626", "#450a0a"], eyeColor: "#fb923c", eyeStyle: "slit2", features: ["curledHorn", "fangs"] },
+    "Дракон арени": { colors: ["#f59e0b", "#7c2d12"], eyeColor: "#fef08a", eyeStyle: "slit2", features: ["singleHorn", "fangs"] },
+    "Володар пекла": { colors: ["#7f1d1d", "#0a0a0a"], eyeColor: "#ef4444", eyeStyle: "glow1", features: ["curledHorn", "fangs"] },
+    "Прадавній Левіафан": { colors: ["#0e7490", "#083344"], eyeColor: "#22d3ee", eyeStyle: "round2", features: ["fins", "fangs"] }
+};
+
+const HERO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs><circle cx="32" cy="36" r="21" fill="url(#heroGrad)"/><path d="M17 21 Q32 4 47 21 Q38 14 32 14 Q26 14 17 21 Z" fill="#e2e8f0"/><rect x="23" y="30" width="18" height="9" rx="4" fill="#0f172a" opacity="0.55"/><circle cx="27" cy="34.5" r="2.4" fill="#67e8f9"/><circle cx="37" cy="34.5" r="2.4" fill="#67e8f9"/><path d="M20 47 Q32 55 44 47" stroke="#0f172a" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.45"/></svg>`;
+
+function creatureSVG(name) {
+    const cfg = CREATURE_CATALOG[name];
+    if (!cfg) return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="21" fill="#6366f1"/><circle cx="24" cy="32" r="4" fill="#e0e7ff"/><circle cx="40" cy="32" r="4" fill="#e0e7ff"/></svg>`;
+    return buildCreatureSVG(cfg);
+}
+
+(function initArenaAvatars() {
+    const heroEl = document.getElementById("hero-avatar");
+    const enemyEl = document.getElementById("enemy-avatar");
+    if (heroEl) heroEl.innerHTML = HERO_SVG;
+    if (enemyEl) enemyEl.innerHTML = creatureSVG("Піщаний гоблін");
+})();
+
+// =====================================================
 // ⚔️ БОЇ
 // =====================================================
 
@@ -1149,7 +1213,7 @@ async function startFight() {
         const heroHpText = document.getElementById("heroHpText");
         const enemyHpText = document.getElementById("enemyHpText");
 
-        if (enemyAvatar) enemyAvatar.innerText = data.enemy.icon || "👺";
+        if (enemyAvatar) enemyAvatar.innerHTML = creatureSVG(data.enemy.name);
         if (enemyName) enemyName.innerText = data.enemy.name || "Ворог";
 
         // HP-бари
@@ -1200,7 +1264,7 @@ async function startFight() {
 
             <div class="result-banner ${data.win ? "win" : "lose"}">${data.win ? "🏆 Перемога!" : "💀 Поразка"}</div>
 
-            <div class="result-enemy-line">${data.enemy.icon} ${data.enemy.name}</div>
+            <div class="result-enemy-line">${data.enemy.name}</div>
 
             <div class="result-stats-grid">
                 <div class="result-stat"><span class="rs-label">❤️ Ваше HP</span><span class="rs-value">${data.heroHp}</span></div>
