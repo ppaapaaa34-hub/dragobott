@@ -2781,14 +2781,8 @@ def handle_broadcast(message):
 # Якщо в масиві декілька гіфок — бот щоразу вибиратиме випадкову!
 
 ACTIONS_DB = {
+    # --- Класичні та милі дії ---
     "обняти": {
-        "text": "обійняв(ла)",
-        "media": [
-            "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
-            # "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
-        ]
-    },
-    "hug": {
         "text": "обійняв(ла)",
         "media": [
             "CgACAgIAAxkBAAIFh2pxAwbA3o9NcBD2-sFxYWdKuJlnAAKEhQACtoVJSvlGyav401PVPQQ",
@@ -2797,25 +2791,7 @@ ACTIONS_DB = {
     "вкусити": {
         "text": "укусив(ла)",
         "media": [
-             "CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ"
-        ]
-    },
-    "bite": {
-        "text": "укусив(ла)",
-        "media": [
-             "CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ"
-        ]
-    },
-    "вдарити": {
-        "text": "дав(ла) ляпаса",
-        "media": [
-            "CgACAgQAAxkBAAIFi2pxBJJ9G3d1ekXbto3XtmZww08dAAINAwACk-MMU4BAYuiTKueyPQQ"
-        ]
-    },
-    "slap": {
-        "text": "дав(ла) ляпаса",
-        "media": [
-            "CgACAgQAAxkBAAIFi2pxBJJ9G3d1ekXbto3XtmZww08dAAINAwACk-MMU4BAYuiTKueyPQQ"
+            "CgACAgQAAxkBAAIFiWpxBDvicLHQUYu1Kn_q5tWpqzR7AAIiAwAC1CQFU6mdlKNK5ZCIPQQ"
         ]
     },
     "поцілувати": {
@@ -2824,10 +2800,18 @@ ACTIONS_DB = {
             "CgACAgQAAxkBAAIFjWpxBPlPKu8xv2MG2tXzgkMhesEgAALeAwACJLO9UEiqtTpaB3CpPQQ"
         ]
     },
-    "kiss": {
-        "text": "поцілував(ла)",
+    "погладити": {
+        "text": "погладив(ла) по голові",
         "media": [
-            "CgACAgQAAxkBAAIFjWpxBPlPKu8xv2MG2tXzgkMhesEgAALeAwACJLO9UEiqtTpaB3CpPQQ"
+            "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
+        ]
+    },
+    
+    # --- Агресивні та бойові дії ---
+    "вдарити": {
+        "text": "дав(ла) ляпаса",
+        "media": [
+            "CgACAgQAAxkBAAIFi2pxBJJ9G3d1ekXbto3XtmZww08dAAINAwACk-MMU4BAYuiTKueyPQQ"
         ]
     },
     "копнути": {
@@ -2836,18 +2820,58 @@ ACTIONS_DB = {
             "CgACAgIAAyEFAATMVs9CAAEBnuJqcQeAWFZ_t0ZJD1Cg8CVnSlLLnQACt1MAAsMe2UgBiUAfPpeGvD0E"
         ]
     },
-    "погладити": {
-        "text": "погладив(ла) по голові",
+    "вистрілити": {
+        "text": "вистрілив(ла) з пістолета в",
         "media": [
-            "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
+            "CgACAgIAAxkBAAIGBGp0_QUKzrazgBW3h9l3MwYOYmxPAAKwpwACcgSoS90i-jbSbSIxPQQ"
         ]
     },
-    "pat": {
-        "text": "погладив(ла) по голові",
+    "убити": {
+        "text": "ліквідував(ла)",
         "media": [
-            "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
+            "CgACAgIAAxkBAAIGBmp0_WyQ3grW0FleQxWOp9xbPXrQAAK5pwACcgSoS9bMVDDWKeCOPQQ"
         ]
     },
+    "цеглина": {
+        "text": "скинув(ла) цеглину на голову",
+        "media": [
+            "CgACAgIAAxkBAAIGCGp0_auJpXA5KHzBr6GcTs3fnKrVAAK-pwACcgSoS2ixP4wvcTnCPQQ"
+        ]
+    },
+    "тапок": {
+        "text": "кинув(ла) тапком у",
+        "media": [
+            "CgACAgIAAxkBAAIGCmp0_fb5mUeThZwaKHW5qaE2DnugAALEpwACcgSoS_0aCzKophpKPQQ"
+        ]
+    },
+
+    # --- Жартівливі та трешові дії ---
+    "плюнути": {
+        "text": "плюнув(ла) в обличчя",
+        "media": [
+            "CgACAgIAAxkBAAIGDGp0_laJVh6Cvoy9Qla-6-G_8R7hAALLpwACcgSoS4GAE0x6yHpGPQQ"
+        ]
+    },
+    "обісцяти": {
+        "text": "жорстко помітив(ла) територію на",
+        "media": [
+            "CgACAgIAAxkBAAIGDmp0_rDrl88AAXcSJpXvSXkAAVij-usAAtCnAAJyBKhL7KzA_sBfK7c9BA"
+        ]
+    },
+    "ущипнути": {
+        "text": "ущипнув(ла) за дупу",
+        "media": [
+            "CgACAgIAAxkBAAIGEGp0_xWiDG28Q9tiZ3MmY2bQ1meJAALZpwACcgSoSzudfAsc8vyMPQQ"
+        ]
+    },
+    "святити": {
+        "text": "покропив(ла) святою водою",
+        "media": [
+            "CgACAgIAAxkBAAIGEmp0_0kOV5tB9j-gfSD41pcVFlPpAALcpwACcgSoS_Nno0vIBj2VPQQ"
+        ]
+    },
+
+    # --- 18+ / Жорсткі дії ---
     "всунуть": {
         "text": "жорстко всунув(ла)",
         "media": [
@@ -2863,7 +2887,19 @@ ACTIONS_DB = {
     "трахнути": {
         "text": "жорстко покарав(ла)",
         "media": [
-           "CgACAgIAAxkBAAIFkWpxBYhTEALJ9ttWT_7GbsT4hVxgAALDMAACVomZSkFGVQPimQeUPQQ"
+            "CgACAgIAAxkBAAIFkWpxBYhTEALJ9ttWT_7GbsT4hVxgAALDMAACVomZSkFGVQPimQeUPQQ"
+        ]
+    },
+    "відшмагати": {
+        "text": "відшмагав(ла) ременем",
+        "media": [
+            "CgACAgIAAxkBAAIGFGp0_5phQtsbknvH4tIwde2Y6lLJAALepwACcgSoS1Y9TrG9dhWuPQQ"
+        ]
+    },
+    "зв'язати": {
+        "text": "міцно зв'язав(ла) мотузкою",
+        "media": [
+            "CgACAgIAAxkBAAIGFmp0_-qwmDC7DwyvIR_ZmGWkp777AALipwACcgSoS6dXzjNf0eaBPQQ"
         ]
     }
 }
