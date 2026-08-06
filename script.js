@@ -828,6 +828,7 @@ window.switchTab = function(tabName, element) {
     document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
     document.getElementById(`tab-${tabName}`)?.classList.add("active");
     element?.classList.add("active");
+    if (tabName === "fight") loadFightScout();
     if (tabName === "profile") loadLeaderboard();
     if (tabName === "inventory") {
         loadRpgInventory();
@@ -1233,12 +1234,85 @@ function creatureSVG(name) {
 // ⚔️ БОЇ
 // =====================================================
 
+// Розвідка суперника перед боєм: показує статистику героя й ворога (HP/атака/захист)
+// та приблизний шанс на перемогу, щоб гравець міг оцінити, чи варто битися.
+let scoutLoading = false;
+async function loadFightScout() {
+    if (scoutLoading) return;
+    scoutLoading = true;
+    const scoutBox = document.getElementById("scout-stats");
+    const chanceBox = document.getElementById("scout-chance");
+    const rescoutBtn = document.getElementById("rescout-btn");
+    if (scoutBox) scoutBox.innerHTML = '<p class="loading-text">Розвідую суперника…</p>';
+    if (rescoutBtn) rescoutBtn.disabled = true;
+    try {
+        const res = await fetch(`${SERVER_URL}/api/fight/scout/${userTelegramId}`);
+        if (!res.ok) throw new Error("Scout error");
+        const data = await res.json();
+        renderFightScout(data);
+    } catch (error) {
+        console.error(error);
+        if (scoutBox) scoutBox.innerHTML = '<p class="loading-text">Не вдалося розвідати суперника. <a href="#" onclick="loadFightScout();return false;">Спробувати ще раз</a></p>';
+    } finally {
+        scoutLoading = false;
+        if (rescoutBtn) rescoutBtn.disabled = false;
+    }
+}
+
+function renderFightScout(data) {
+    const { stats, enemy, winChance } = data;
+
+    const heroAvatar = document.getElementById("hero-avatar");
+    const enemyAvatar = document.getElementById("enemy-avatar");
+    const enemyName = document.getElementById("enemy-name");
+    const heroHp = document.getElementById("heroHp");
+    const enemyHp = document.getElementById("enemyHp");
+    const heroHpText = document.getElementById("heroHpText");
+    const enemyHpText = document.getElementById("enemyHpText");
+
+    if (enemyAvatar) enemyAvatar.innerHTML = creatureSVG(enemy.name);
+    if (enemyName) enemyName.innerText = enemy.name || "Ворог";
+    if (heroHp) heroHp.style.width = "100%";
+    if (enemyHp) enemyHp.style.width = "100%";
+    if (heroHpText) heroHpText.innerText = `HP: ${stats.hp} / ${stats.hp}`;
+    if (enemyHpText) enemyHpText.innerText = `HP: ${enemy.hp} / ${enemy.hp}`;
+
+    const scoutBox = document.getElementById("scout-stats");
+    if (scoutBox) {
+        scoutBox.innerHTML = `
+            <div class="scout-col">
+                <b>🧑‍🚀 Ти</b>
+                <span>⚔️ Атака: ${stats.attack}</span>
+                <span>🛡️ Захист: ${stats.defense}</span>
+                <span>❤️ HP: ${stats.hp}</span>
+            </div>
+            <div class="scout-col">
+                <b>${enemy.icon || "👹"} ${enemy.name}</b>
+                <span>⚔️ Атака: ${enemy.attack}</span>
+                <span>🛡️ Захист: 0</span>
+                <span>❤️ HP: ${enemy.hp}</span>
+            </div>
+        `;
+    }
+
+    const chanceBox = document.getElementById("scout-chance");
+    if (chanceBox) {
+        let verdict = "🔥 Впевнена перемога", cls = "chance-good";
+        if (winChance < 35) { verdict = "☠️ Дуже ризиковано — краще прокачайся"; cls = "chance-bad"; }
+        else if (winChance < 65) { verdict = "⚠️ Шанси приблизно рівні"; cls = "chance-mid"; }
+        chanceBox.className = `scout-chance ${cls}`;
+        chanceBox.innerHTML = `<span class="chance-pct">${winChance}%</span><span class="chance-label">шанс на перемогу · ${verdict}</span>`;
+    }
+}
+
 async function startFight() {
 
     const result = document.getElementById("fight-result");
     const btn = document.getElementById("fight-btn");
+    const rescoutBtn = document.getElementById("rescout-btn");
 
     if (btn) btn.disabled = true;
+    if (rescoutBtn) rescoutBtn.disabled = true;
     result.innerHTML = '<div class="fight-loading">⚔️ Йде бій...</div>';
 
     try {
@@ -1337,6 +1411,9 @@ async function startFight() {
         </div>
         `;
 
+        // Той суперник, з яким щойно билися, більше не актуальний — одразу розвідуємо наступного.
+        loadFightScout();
+
     } catch (err) {
 
         console.error(err);
@@ -1346,6 +1423,7 @@ async function startFight() {
     } finally {
 
         if (btn) btn.disabled = false;
+        if (rescoutBtn) rescoutBtn.disabled = false;
 
     }
 
