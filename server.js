@@ -133,6 +133,8 @@ function ensureRpg(user) {
             ? (typeof found === "object" ? found.id : found)
             : null;
     }
+
+    markEquippedDirty(user);
 }
 async function findOrCreate(telegramId, username, firstName) {
     if (!dbReady()) {
@@ -171,6 +173,10 @@ async function findOrCreate(telegramId, username, firstName) {
     return user;
 }
 async function persist(user) { user.lastUpdate = new Date(); if (dbReady()) await user.save(); else memoryUsers.set(user.telegramId, user); }
+// `equipped` — це Schema.Types.Mixed, Mongoose НЕ бачить вкладені зміни (user.equipped[slot] = ...),
+// відстежується лише пряме присвоєння всього поля. Без markModified user.save() мовчки не пише
+// оновлену екіпіровку в базу — саме тому "екіпіровано" не тримається після перезаходу в сумку.
+function markEquippedDirty(user) { if (typeof user.markModified === 'function') user.markModified('equipped'); }
 function publicUser(user) { const source = user.toObject ? user.toObject() : user; return { ...source, isAdmin: Number(source.telegramId) === ADMIN_TELEGRAM_ID || Boolean(source.isAdmin) }; }
 function inventoryState(user) {ensureRpg(user);return {items: user.rpgInventory.map(item => {if(typeof item === "object") {return item;}return byId.get(item) || null;}).filter(Boolean),equipped: user.equipped || {},totalCatalogItems: CATALOG.length};}
 function rollRarity() { const roll = Math.random() * 100; let cursor = 0; for (const [rarity, data] of Object.entries(RARITIES)) { cursor += data.chance; if (roll < cursor) return rarity; } return 'common'; }
@@ -200,12 +206,12 @@ app.get('/api/leaderboard', async (_req, res, next) => { try { const users = dbR
 app.get('/api/rpg/:telegramId', async(req,res,next)=>{try{const id = Number(req.params.telegramId);if(!validId(id))return res.status(400).json({error:"Некоректний Telegram ID"});const user = await findOrCreate(id);ensureRpg(user);await persist(user);res.json({success:true,...inventoryState(user),stats:combatStats(user)});}catch(error){next(error);}});
 app.post('/api/rpg/equip', async (req, res, next) => { try { const { telegramId, itemId } = req.body || {}; if (!validId(telegramId) || !byId.has(itemId)) return res.status(400).json({ error: 'Некоректний предмет' }); const user = await findOrCreate(Number(telegramId)); ensureRpg(user); if (!user.rpgInventory.some(item => {if(typeof item==="object")return item.id===itemId;
 
-return item===itemId;})) return res.status(403).json({ error: 'Предмет відсутній в інвентарі' }); user.equipped[byId.get(itemId).slot] = itemId; await persist(user); res.json({ success: true, ...inventoryState(user), stats: combatStats(user) }); } catch (error) { next(error); } });
+return item===itemId;})) return res.status(403).json({ error: 'Предмет відсутній в інвентарі' }); user.equipped[byId.get(itemId).slot] = itemId; markEquippedDirty(user); await persist(user); res.json({ success: true, ...inventoryState(user), stats: combatStats(user) }); } catch (error) { next(error); } });
 app.post('/api/fight', async (req, res, next) => { try { const { telegramId } = req.body || {}; if (!validId(telegramId)) return res.status(400).json({ error: 'Некоректний ID' }); const user = await findOrCreate(Number(telegramId));ensureRpg(user); if (user.isBanned) return res.status(403).json({ error: 'Доступ заборонено' }); const stats = combatStats(user); const template = ENEMIES[Math.floor(Math.random() * Math.min(ENEMIES.length, 1 + Math.ceil(user.playerLevel / 6)))]; const scale = template.factor * (1 + Math.max(0, user.playerLevel - 1) * 0.16); const enemy = { ...template, hp: Math.round(72 * scale), attack: Math.round(8 * scale), reward: Math.round(120 * scale) };
   let heroHp = stats.hp, enemyHp = enemy.hp, rounds = 0; while (heroHp > 0 && enemyHp > 0 && rounds++ < 40) { enemyHp -= Math.max(1, stats.attack + Math.floor(Math.random() * 8) - 3); if (enemyHp > 0) heroHp -= Math.max(1, enemy.attack - stats.defense + Math.floor(Math.random() * 4)); }
   const win = heroHp > 0; let loot = null; if (win) { user.money += enemy.reward; user.playerXP += Math.round(enemy.reward * 0.65); while (user.playerXP >= user.playerLevel * 1000) { user.playerXP -= user.playerLevel * 1000; user.playerLevel++; } user.fightCount += 1; loot = rollLoot(user.playerLevel); if(loot){
 
-const exists = user.rpgInventory.some(item=>{if(typeof item==="object")return item.id===loot.id;return item===loot.id;});if(!exists){user.rpgInventory.push({id:loot.id,name:loot.name,rarity:loot.rarity,attack:loot.attack || 0,defense:loot.defense || 0,vitality:loot.vitality || 0,slot:loot.slot || "none"});}else{loot=null;}} await persist(user); }
+const exists = user.rpgInventory.some(item=>{if(typeof item==="object")return item.id===loot.id;return item===loot.id;});if(!exists){user.rpgInventory.push({id:loot.id,name:loot.name,rarity:loot.rarity,attack:loot.attack || 0,defense:loot.defense || 0,vitality:loot.vitality || 0,slot:loot.slot || "none"});if(typeof user.markModified === 'function') user.markModified('rpgInventory');}else{loot=null;}} await persist(user); }
   res.json({ success: true, win, heroHp: Math.max(0, heroHp), enemyHp: Math.max(0, enemyHp), rounds, reward: win ? enemy.reward : 0, enemy, level: user.playerLevel, xp: user.playerXP, money: user.money, loot, stats: combatStats(user) });} catch (error) { next(error); } });
 app.get('/api/admin/users/:id', requireAdmin, async (_req, res, next) => { try { const users = dbReady() ? await User.find().sort({ money: -1 }) : [...memoryUsers.values()].sort((a,b) => b.money - a.money); res.json(users.map(publicUser)); } catch (error) { next(error); } });
 app.post('/api/admin/add-money', requireAdmin, async (req, res, next) => { try { const targetId = Number(req.body.targetTelegramId), amount = Number(req.body.amount || 100000); if (!validId(targetId) || !Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Некоректні дані' }); const user = await findOrCreate(targetId); user.money += amount; await persist(user); res.json({ success: true, newBalance: user.money }); } catch (error) { next(error); } });
