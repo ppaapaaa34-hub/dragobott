@@ -2848,6 +2848,12 @@ ACTIONS_DB = {
             "CgACAgQAAxkBAAIFj2pxBUGbcF5v0cmJnEIIjquIi04QAALfAwACYl6NUxwvWMwgW-fgPQQ"
         ]
     },
+    "всунуть": {
+        "text": "жорстко всунув(ла)",
+        "media": [
+            "CAACAgIAAxkBAAERq_VqdPkbpw5gSCmws18GtTCXE09nlgAC7BgAAk1r-Us7v13flWv7Ez0E"
+        ]
+    },
     "виебати": {
         "text": "жорстко покарав(ла)",
         "media": [
