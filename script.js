@@ -1108,8 +1108,10 @@ if (lastDailyClaim !== todayKey()) {
 async function startFight() {
 
     const result = document.getElementById("fight-result");
+    const btn = document.getElementById("fight-btn");
 
-    result.innerHTML = "⚔️ Йде бій...";
+    if (btn) btn.disabled = true;
+    result.innerHTML = '<div class="fight-loading">⚔️ Йде бій...</div>';
 
     try {
 
@@ -1126,7 +1128,7 @@ async function startFight() {
         const data = await response.json();
 
         if (!data.success) {
-            result.innerHTML = `❌ ${data.error || "Помилка бою"}`;
+            result.innerHTML = `<div class="fight-loading">❌ ${data.error || "Помилка бою"}</div>`;
             return;
         }
 
@@ -1196,19 +1198,16 @@ async function startFight() {
         result.innerHTML = `
         <div class="fight-result-card">
 
-            <h2>${data.win ? "🏆 Перемога!" : "💀 Поразка"}</h2>
+            <div class="result-banner ${data.win ? "win" : "lose"}">${data.win ? "🏆 Перемога!" : "💀 Поразка"}</div>
 
-            <h3>${data.enemy.icon} ${data.enemy.name}</h3>
+            <div class="result-enemy-line">${data.enemy.icon} ${data.enemy.name}</div>
 
-            <p>❤️ Ваше HP: ${data.heroHp}</p>
-
-            <p>👹 HP ворога: ${data.enemyHp}</p>
-
-            <p>💰 Нагорода: ${Number(data.reward).toLocaleString()} ₴</p>
-
-            <p>⭐ Рівень: ${data.level}</p>
-
-            <p>⚔️ Раундів: ${data.rounds}</p>
+            <div class="result-stats-grid">
+                <div class="result-stat"><span class="rs-label">❤️ Ваше HP</span><span class="rs-value">${data.heroHp}</span></div>
+                <div class="result-stat"><span class="rs-label">👹 HP ворога</span><span class="rs-value">${data.enemyHp}</span></div>
+                <div class="result-stat reward"><span class="rs-label">💰 Нагорода</span><span class="rs-value">${Number(data.reward).toLocaleString()} ₴</span></div>
+                <div class="result-stat"><span class="rs-label">⭐ Рівень</span><span class="rs-value">${data.level}</span></div>
+            </div>
 
             ${lootHtml}
 
@@ -1219,7 +1218,11 @@ async function startFight() {
 
         console.error(err);
 
-        result.innerHTML = "❌ Сервер недоступний.";
+        result.innerHTML = '<div class="fight-loading">❌ Сервер недоступний.</div>';
+
+    } finally {
+
+        if (btn) btn.disabled = false;
 
     }
 
