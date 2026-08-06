@@ -833,16 +833,17 @@ const SLOT_LABELS = { weapon: "Зброя", armor: "Броня", accessory: "А�
 
 async function loadRpgInventory() {
     const container = document.getElementById("rpg-inventory");
-    if (!container || !serverOnline) return;
+    if (!container) return;
     container.innerHTML = '<p class="loading-text">Завантажую арсенал…</p>';
     try {
         const res = await fetch(`${SERVER_URL}/api/rpg/${userTelegramId}`);
         if (!res.ok) throw new Error("Inventory error");
         rpgState = await res.json();
+        serverOnline = true;
         renderRpgInventory();
     } catch (error) {
         console.error(error);
-        container.innerHTML = '<p class="loading-text">Арсенал тимчасово недоступний</p>';
+        container.innerHTML = '<p class="loading-text">Арсенал тимчасово недоступний. <a href="#" onclick="loadRpgInventory();return false;">Спробувати ще раз</a></p>';
     }
 }
 
