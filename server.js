@@ -42,6 +42,7 @@ const userSchema = new mongoose.Schema({
   equipped: { type: mongoose.Schema.Types.Mixed, default: {} },
   trophies: { type: Number, default: 0, min: 0 },
   fightCount: { type: Number, default: 0, min: 0 },
+  pendingEnemy: { type: mongoose.Schema.Types.Mixed, default: null },
   isBanned: { type: Boolean, default: false },
   isAdmin: { type: Boolean, default: false },
   lastUpdate: { type: Date, default: Date.now }
@@ -209,6 +210,13 @@ const ENEMIES = [
   { name: 'Прадавній Левіафан', icon: '🐲', factor: 4.2 }
 ];
 function requireAdmin(req, res, next) { if (Number(req.params.id || req.body.adminId) !== ADMIN_TELEGRAM_ID) return res.status(403).json({ error: 'Недостатньо прав' }); next(); }
+// Генерує ворога під поточний рівень гравця (без прив'язки до конкретного бою — використовується і для розвідки, і для самого бою).
+function rollEnemy(user) { const template = ENEMIES[Math.floor(Math.random() * Math.min(ENEMIES.length, 1 + Math.ceil(user.playerLevel / 6)))]; const scale = template.factor * (1 + Math.max(0, user.playerLevel - 1) * 0.16); return { ...template, hp: Math.round(72 * scale), attack: Math.round(8 * scale), reward: Math.round(120 * scale) }; }
+// Один прогін бою (та сама формула, що й раніше, винесена окремо, щоб її можна було
+// прогнати кілька разів наперед для оцінки шансів на перемогу).
+function simulateBattle(stats, enemy) { let heroHp = stats.hp, enemyHp = enemy.hp, rounds = 0; while (heroHp > 0 && enemyHp > 0 && rounds++ < 40) { enemyHp -= Math.max(1, stats.attack + Math.floor(Math.random() * 8) - 3); if (enemyHp > 0) heroHp -= Math.max(1, enemy.attack - stats.defense + Math.floor(Math.random() * 4)); } return { win: heroHp > 0, heroHp, enemyHp, rounds }; }
+// Приблизний шанс на перемогу для екрану розвідки — прогін бою наперед кілька разів (без впливу на реальний бій).
+function estimateWinChance(stats, enemy, trials = 30) { let wins = 0; for (let i = 0; i < trials; i++) if (simulateBattle(stats, enemy).win) wins++; return Math.round((wins / trials) * 100); }
 const saveableKeys = ['money','tapPower','energy','maxEnergy','energyDrain','energyRegen','passiveIncome','totalTaps','playerLevel','playerXP','maxCombo','loginStreak','lastDailyClaim','lastSpinDate','spinsUsedToday','cards','collectionItems','heroes','selectedHero','heroSouls','upgrades','activeBoosts'];
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, database: dbReady() ? 'connected' : 'memory-fallback', catalogItems: CATALOG.length }));
@@ -221,12 +229,18 @@ app.post('/api/shop/buy', async (req, res, next) => { try { const { telegramId, 
 app.post('/api/rpg/equip', async (req, res, next) => { try { const { telegramId, itemId } = req.body || {}; if (!validId(telegramId) || !byId.has(itemId)) return res.status(400).json({ error: 'Некоректний предмет' }); const user = await findOrCreate(Number(telegramId)); ensureRpg(user); if (!user.rpgInventory.some(item => {if(typeof item==="object")return item.id===itemId;
 
 return item===itemId;})) return res.status(403).json({ error: 'Предмет відсутній в інвентарі' }); user.equipped[byId.get(itemId).slot] = itemId; markEquippedDirty(user); await persist(user); res.json({ success: true, ...inventoryState(user), stats: combatStats(user) }); } catch (error) { next(error); } });
-app.post('/api/fight', async (req, res, next) => { try { const { telegramId } = req.body || {}; if (!validId(telegramId)) return res.status(400).json({ error: 'Некоректний ID' }); const user = await findOrCreate(Number(telegramId));ensureRpg(user); if (user.isBanned) return res.status(403).json({ error: 'Доступ заборонено' }); const stats = combatStats(user); const template = ENEMIES[Math.floor(Math.random() * Math.min(ENEMIES.length, 1 + Math.ceil(user.playerLevel / 6)))]; const scale = template.factor * (1 + Math.max(0, user.playerLevel - 1) * 0.16); const enemy = { ...template, hp: Math.round(72 * scale), attack: Math.round(8 * scale), reward: Math.round(120 * scale) };
-  let heroHp = stats.hp, enemyHp = enemy.hp, rounds = 0; while (heroHp > 0 && enemyHp > 0 && rounds++ < 40) { enemyHp -= Math.max(1, stats.attack + Math.floor(Math.random() * 8) - 3); if (enemyHp > 0) heroHp -= Math.max(1, enemy.attack - stats.defense + Math.floor(Math.random() * 4)); }
-  const win = heroHp > 0; let trophyReward = 0; if (win) { user.money += enemy.reward; user.playerXP += Math.round(enemy.reward * 0.65); while (user.playerXP >= user.playerLevel * 1000) { user.playerXP -= user.playerLevel * 1000; user.playerLevel++; } user.fightCount += 1;
+app.get('/api/fight/scout/:telegramId', async (req, res, next) => { try { const id = Number(req.params.telegramId); if (!validId(id)) return res.status(400).json({ error: 'Некоректний Telegram ID' }); const user = await findOrCreate(id); ensureRpg(user); if (user.isBanned) return res.status(403).json({ error: 'Доступ заборонено' }); const stats = combatStats(user); const enemy = rollEnemy(user); user.pendingEnemy = enemy; await persist(user); const winChance = estimateWinChance(stats, enemy); res.json({ success: true, stats, enemy, winChance }); } catch (error) { next(error); } });
+app.post('/api/fight', async (req, res, next) => { try { const { telegramId } = req.body || {}; if (!validId(telegramId)) return res.status(400).json({ error: 'Некоректний ID' }); const user = await findOrCreate(Number(telegramId));ensureRpg(user); if (user.isBanned) return res.status(403).json({ error: 'Доступ заборонено' }); const stats = combatStats(user);
+  // Якщо гравець щойно "розвідав" суперника (екран перед боєм), б'ємось саме з ним, а не з новим випадковим —
+  // інакше показана заздалегідь статистика не відповідала б реальному бою.
+  const enemy = (user.pendingEnemy && user.pendingEnemy.name) ? user.pendingEnemy : rollEnemy(user); user.pendingEnemy = null;
+  const { win, heroHp, enemyHp, rounds } = simulateBattle(stats, enemy);
+  let trophyReward = 0; if (win) { user.money += enemy.reward; user.playerXP += Math.round(enemy.reward * 0.65); while (user.playerXP >= user.playerLevel * 1000) { user.playerXP -= user.playerLevel * 1000; user.playerLevel++; } user.fightCount += 1;
   // Лут більше не випадає з боїв напряму — натомість перемога дає трофеї (валюту),
   // яку можна витратити в магазині спорядження на конкретний бажаний предмет.
-  trophyReward = Math.max(1, Math.round(3 + scale * 2.4)); user.trophies = (user.trophies || 0) + trophyReward; await persist(user); }
+  // enemy.hp / 72 відновлює той самий "scale", яким генерувався цей ворог у rollEnemy().
+  trophyReward = Math.max(1, Math.round(3 + (enemy.hp / 72) * 2.4)); user.trophies = (user.trophies || 0) + trophyReward; }
+  await persist(user);
   res.json({ success: true, win, heroHp: Math.max(0, heroHp), enemyHp: Math.max(0, enemyHp), rounds, reward: win ? enemy.reward : 0, enemy, level: user.playerLevel, xp: user.playerXP, money: user.money, trophyReward, trophies: user.trophies || 0, stats: combatStats(user) });} catch (error) { next(error); } });
 app.get('/api/admin/users/:id', requireAdmin, async (_req, res, next) => { try { const users = dbReady() ? await User.find().sort({ money: -1 }) : [...memoryUsers.values()].sort((a,b) => b.money - a.money); res.json(users.map(publicUser)); } catch (error) { next(error); } });
 app.post('/api/admin/add-money', requireAdmin, async (req, res, next) => { try { const targetId = Number(req.body.targetTelegramId), amount = Number(req.body.amount || 100000); if (!validId(targetId) || !Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Некоректні дані' }); const user = await findOrCreate(targetId); user.money += amount; await persist(user); res.json({ success: true, newBalance: user.money }); } catch (error) { next(error); } });
