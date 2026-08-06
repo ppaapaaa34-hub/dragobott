@@ -53,6 +53,37 @@
         .fight-btn:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(168,85,247,.35); }
         .fight-btn:disabled { opacity: .6; cursor: default; transform: none; }
 
+        .scout-stats {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+            position: relative; z-index: 1;
+        }
+        .scout-col {
+            background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+            border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; gap: 4px;
+            font-size: 11.5px; color: #cbd5e1; font-weight: 700;
+        }
+        .scout-col b { font-size: 12.5px; color: #fff; margin-bottom: 2px; }
+        .scout-chance {
+            margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px;
+            border-radius: 12px; padding: 10px; text-align: center; position: relative; z-index: 1;
+            border: 1px solid transparent;
+        }
+        .scout-chance .chance-pct { font-size: 20px; font-weight: 900; }
+        .scout-chance .chance-label { font-size: 11.5px; font-weight: 700; }
+        .scout-chance.chance-good { background: rgba(52,211,153,.14); border-color: rgba(52,211,153,.4); color: #6ee7b7; }
+        .scout-chance.chance-mid { background: rgba(251,191,36,.14); border-color: rgba(251,191,36,.4); color: #fcd34d; }
+        .scout-chance.chance-bad { background: rgba(248,113,113,.14); border-color: rgba(248,113,113,.4); color: #fca5a5; }
+
+        .fight-actions { display: flex; gap: 8px; align-items: stretch; position: relative; z-index: 1; }
+        .fight-actions .fight-btn { margin-top: 0; }
+        .rescout-btn {
+            margin-top: 10px; flex-shrink: 0; width: 46px; border: 1px solid rgba(255,255,255,.12);
+            border-radius: 14px; background: rgba(255,255,255,.06); color: #cbd5e1; font-size: 17px;
+            cursor: pointer; transition: transform .12s ease, background .12s ease;
+        }
+        .rescout-btn:active { transform: scale(0.9) rotate(45deg); }
+        .rescout-btn:disabled { opacity: .5; cursor: default; }
+
         #fight-result { margin-top: 12px; position: relative; z-index: 1; }
         .fight-loading { text-align: center; color: #c4b5fd; font-weight: 700; font-size: 14px; padding: 10px 0; }
         .fight-result-card { text-align: left; }
@@ -222,17 +253,32 @@
         </div>
 
         <p class="arena-hint">
-            Герой автоматично битиметься з випадковим ворогом
+            Розвідай суперника нижче, перш ніж вступати в бій
         </p>
 
-        <button
-            class="fight-btn"
-            id="fight-btn"
-            onclick="startFight()">
+        <div class="scout-stats" id="scout-stats"></div>
+        <div class="scout-chance" id="scout-chance"></div>
 
-            ⚔️ Почати бій
+        <div class="fight-actions">
+            <button
+                class="fight-btn"
+                id="fight-btn"
+                onclick="startFight()">
 
-        </button>
+                ⚔️ Почати бій
+
+            </button>
+
+            <button
+                class="rescout-btn"
+                id="rescout-btn"
+                onclick="loadFightScout()"
+                title="Шукати іншого суперника">
+
+                🔄
+
+            </button>
+        </div>
 
         <div
             id="fight-result">
