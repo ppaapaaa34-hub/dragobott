@@ -9,21 +9,70 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <style>
-        .arena-vs { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .arena-panel {
+            position: relative;
+            background: linear-gradient(160deg, rgba(168,85,247,.14), rgba(15,10,35,.85));
+            border: 1px solid rgba(168,85,247,.3);
+            box-shadow: 0 0 30px rgba(168,85,247,.12), inset 0 0 40px rgba(0,0,0,.25);
+            overflow: hidden;
+        }
+        .arena-vs { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
         .arena-fighter { flex: 1; text-align: center; }
-        .arena-avatar { font-size: 56px; line-height: 1; margin-bottom: 6px; transition: transform 0.15s ease; }
-        .arena-avatar.hit { transform: scale(0.85); }
-        .arena-name { font-weight: 800; margin-bottom: 6px; }
-        .arena-vs-label { font-weight: 900; font-size: 20px; color: #fbbf24; padding: 0 6px; }
-        .arena-hp-wrap { width: 100%; height: 10px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; }
-        .arena-hp-bar { height: 100%; width: 100%; border-radius: 6px; transition: width 0.4s ease; }
-        .hero-hp-bar { background: linear-gradient(90deg, #22d3ee, #a855f7); }
-        .enemy-hp-bar { background: linear-gradient(90deg, #f87171, #fb923c); }
-        .arena-hp-text { font-size: 12px; color: #aaa; margin-top: 4px; }
+        .arena-avatar-ring {
+            width: 84px; height: 84px; margin: 0 auto 8px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: radial-gradient(circle, rgba(255,255,255,.06), transparent 70%);
+            border: 2px solid rgba(255,255,255,.12);
+        }
+        .arena-fighter.is-hero .arena-avatar-ring { border-color: rgba(34,211,238,.45); box-shadow: 0 0 18px rgba(34,211,238,.3); }
+        .arena-fighter.is-enemy .arena-avatar-ring { border-color: rgba(248,113,113,.45); box-shadow: 0 0 18px rgba(248,113,113,.3); }
+        .arena-avatar { font-size: 42px; line-height: 1; transition: transform 0.15s ease; }
+        .arena-avatar.hit { transform: scale(0.8) rotate(-6deg); }
+        .arena-name { font-weight: 800; margin-bottom: 6px; font-size: 13px; letter-spacing: .2px; }
+        .arena-vs-label {
+            font-weight: 900; font-size: 15px; color: var(--gold); padding: 6px 10px;
+            border: 1px solid rgba(251,191,36,.4); border-radius: 999px;
+            background: rgba(251,191,36,.08); flex-shrink: 0;
+        }
+        .arena-hp-wrap { width: 100%; height: 9px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+        .arena-hp-bar { height: 100%; width: 100%; border-radius: 999px; transition: width 0.4s ease; }
+        .hero-hp-bar { background: linear-gradient(90deg, #22d3ee, #a855f7); box-shadow: 0 0 8px rgba(34,211,238,.6); }
+        .enemy-hp-bar { background: linear-gradient(90deg, #f87171, #fb923c); box-shadow: 0 0 8px rgba(248,113,113,.6); }
+        .arena-hp-text { font-size: 11px; color: #94a3b8; margin-top: 5px; font-weight: 700; }
+        .arena-hint { text-align: center; color: #9ca3af; margin-top: 16px; font-size: 12.5px; line-height: 1.5; position: relative; z-index: 1; }
+
+        .fight-btn {
+            margin-top: 18px; width: 100%; border: none; cursor: pointer; font-family: inherit;
+            padding: 15px; border-radius: 14px; font-size: 15px; font-weight: 900; color: white;
+            background: linear-gradient(135deg, var(--purple), #7c3aed);
+            box-shadow: 0 6px 18px rgba(168,85,247,.4), inset 0 1px 0 rgba(255,255,255,.15);
+            transition: transform .12s ease, box-shadow .12s ease;
+            position: relative; z-index: 1;
+        }
+        .fight-btn:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(168,85,247,.35); }
+        .fight-btn:disabled { opacity: .6; cursor: default; transform: none; }
+
+        #fight-result { margin-top: 18px; position: relative; z-index: 1; }
+        .fight-loading { text-align: center; color: #c4b5fd; font-weight: 700; font-size: 14px; padding: 10px 0; }
         .fight-result-card { text-align: left; }
+        .result-banner {
+            text-align: center; border-radius: 16px; padding: 14px 10px; margin-bottom: 12px;
+            font-weight: 900; font-size: 19px; border: 1px solid transparent;
+        }
+        .result-banner.win { background: linear-gradient(135deg, rgba(52,211,153,.16), rgba(34,211,238,.1)); border-color: rgba(52,211,153,.4); color: #6ee7b7; }
+        .result-banner.lose { background: linear-gradient(135deg, rgba(248,113,113,.16), rgba(168,85,247,.08)); border-color: rgba(248,113,113,.4); color: #fca5a5; }
+        .result-enemy-line { text-align: center; color: #cbd5e1; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+        .result-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+        .result-stat {
+            background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+            border-radius: 12px; padding: 9px 8px; text-align: center;
+        }
+        .result-stat .rs-label { display: block; font-size: 10px; color: #94a3b8; font-weight: 700; margin-bottom: 3px; }
+        .result-stat .rs-value { display: block; font-size: 14px; font-weight: 900; }
+        .result-stat.reward .rs-value { color: var(--gold); }
         .loot-drop { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.06); }
         .loot-icon { font-size: 30px; }
-        .no-loot { margin-top: 10px; text-align: center; color: #aaa; }
+        .no-loot { margin-top: 10px; text-align: center; color: #aaa; font-size: 12.5px; }
     </style>
 </head>
 <body>
@@ -136,11 +185,11 @@
         <p>Перемагай ворогів та заробляй гроші</p>
     </div>
 
-    <div class="profile-card">
+    <div class="profile-card arena-panel">
 
         <div class="arena-vs">
-            <div class="arena-fighter">
-                <div class="arena-avatar hero-avatar" id="hero-avatar">🧑‍🚀</div>
+            <div class="arena-fighter is-hero">
+                <div class="arena-avatar-ring"><div class="arena-avatar hero-avatar" id="hero-avatar">🧑‍🚀</div></div>
                 <div class="arena-name" id="hero-name">Ти</div>
                 <div class="arena-hp-wrap">
                     <div class="arena-hp-bar hero-hp-bar" id="heroHp"></div>
@@ -150,8 +199,8 @@
 
             <div class="arena-vs-label">VS</div>
 
-            <div class="arena-fighter">
-                <div class="arena-avatar enemy-avatar" id="enemy-avatar">👺</div>
+            <div class="arena-fighter is-enemy">
+                <div class="arena-avatar-ring"><div class="arena-avatar enemy-avatar" id="enemy-avatar">👺</div></div>
                 <div class="arena-name" id="enemy-name">Ворог</div>
                 <div class="arena-hp-wrap">
                     <div class="arena-hp-bar enemy-hp-bar" id="enemyHp"></div>
@@ -160,14 +209,14 @@
             </div>
         </div>
 
-        <p style="text-align:center;color:#aaa;margin-top:15px;">
+        <p class="arena-hint">
             Натисни кнопку нижче і твій герой автоматично
             битиметься з випадковим ворогом.
         </p>
 
         <button
-            class="buy-btn"
-            style="margin-top:20px;width:100%;"
+            class="fight-btn"
+            id="fight-btn"
             onclick="startFight()">
 
             ⚔️ Почати бій
@@ -175,8 +224,7 @@
         </button>
 
         <div
-            id="fight-result"
-            style="margin-top:20px;text-align:center;font-size:18px">
+            id="fight-result">
         </div>
 
     </div>
