@@ -106,6 +106,63 @@
         .loot-icon { font-size: 30px; }
         .no-loot { margin-top: 10px; text-align: center; color: #aaa; font-size: 12.5px; }
 
+        /* ==== Поле бою "вид зверху" ==== */
+        .battlefield {
+            position: relative; z-index: 1; overflow: hidden;
+            min-height: 246px; border-radius: 20px; padding: 16px 10px 12px;
+            display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            background:
+                radial-gradient(ellipse 88% 58% at 50% 50%, rgba(168,85,247,.16), transparent 72%),
+                repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0px, rgba(255,255,255,.035) 1px, transparent 1px, transparent 24px),
+                repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0px, rgba(255,255,255,.035) 1px, transparent 1px, transparent 24px),
+                linear-gradient(180deg, #1b1030 0%, #120a24 55%, #1b1030 100%);
+            border: 1px solid rgba(255,255,255,.08);
+            box-shadow: inset 0 0 44px rgba(0,0,0,.55), inset 0 0 0 6px rgba(0,0,0,.12);
+        }
+        .battlefield::before {
+            content: ""; position: absolute; inset: 18px; border-radius: 50%;
+            border: 1px dashed rgba(255,255,255,.10); pointer-events: none;
+        }
+        .battlefield::after {
+            content: ""; position: absolute; left: 50%; top: 14px; bottom: 14px; width: 1px;
+            background: linear-gradient(180deg, transparent, rgba(255,255,255,.16), transparent);
+            transform: translateX(-50%); pointer-events: none;
+        }
+        .bf-decor { position: absolute; font-size: 16px; opacity: .55; filter: drop-shadow(0 0 6px rgba(0,0,0,.6)); pointer-events: none; z-index: 0; }
+        .bf-decor-tl { top: 10px; left: 14px; }
+        .bf-decor-tr { top: 10px; right: 14px; }
+        .bf-decor-bl { bottom: 10px; left: 14px; }
+        .bf-decor-br { bottom: 10px; right: 14px; }
+        .bf-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; z-index: 1; }
+        .bf-token-wrap { position: relative; width: 68px; height: 68px; transition: opacity .25s ease, filter .25s ease, transform .25s ease; }
+        .bf-token-wrap.bf-defeated { opacity: .35; filter: grayscale(1); transform: scale(.88); }
+        .bf-token-circle {
+            position: relative; width: 68px; height: 68px; border-radius: 50%; z-index: 2;
+            display: flex; align-items: center; justify-content: center;
+            background: radial-gradient(circle at 35% 28%, rgba(255,255,255,.18), transparent 60%), rgba(255,255,255,.06);
+            border: 2px solid rgba(255,255,255,.14);
+            animation: bf-idle 2.6s ease-in-out infinite;
+        }
+        .bf-token-circle.is-hero { border-color: rgba(34,211,238,.55); box-shadow: 0 0 16px rgba(34,211,238,.35), inset 0 0 10px rgba(34,211,238,.15); }
+        .bf-token-circle.is-enemy { border-color: rgba(248,113,113,.55); box-shadow: 0 0 16px rgba(248,113,113,.35), inset 0 0 10px rgba(248,113,113,.15); animation-delay: -1.3s; }
+        @keyframes bf-idle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        .bf-shadow {
+            position: absolute; left: 50%; bottom: -6px; width: 46px; height: 12px; z-index: 1;
+            background: radial-gradient(ellipse, rgba(0,0,0,.65), transparent 72%);
+            border-radius: 50%; transform: translateX(-50%);
+        }
+        .bf-nameplate { width: 132px; text-align: center; }
+        .bf-name { font-weight: 800; font-size: 12px; letter-spacing: .2px; display: block; margin-bottom: 4px; }
+        .bf-hp-wrap { width: 100%; height: 7px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+        .bf-hp-bar { height: 100%; width: 100%; border-radius: 999px; transition: width 0.4s ease; }
+        .bf-hp-text { font-size: 9.5px; color: #94a3b8; margin-top: 3px; font-weight: 700; display: block; }
+        .bf-vs-badge {
+            font-weight: 900; font-size: 12.5px; color: var(--gold); padding: 5px 10px;
+            border: 1px solid rgba(251,191,36,.4); border-radius: 999px;
+            background: rgba(251,191,36,.10); box-shadow: 0 0 14px rgba(251,191,36,.25);
+            position: relative; z-index: 2; flex-shrink: 0;
+        }
+
         .inv-subtabs { display: flex; gap: 8px; margin-bottom: 14px; }
         .inv-subtab {
             flex: 1; padding: 10px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,.1);
@@ -230,26 +287,39 @@
 
     <div class="profile-card arena-panel">
 
-        <div class="arena-vs">
-            <div class="arena-fighter is-hero">
-                <div class="arena-avatar-ring"><div class="arena-avatar hero-avatar" id="hero-avatar">🧑‍🚀</div></div>
-                <div class="arena-name" id="hero-name">Ти</div>
-                <div class="arena-hp-wrap">
-                    <div class="arena-hp-bar hero-hp-bar" id="heroHp"></div>
+        <div class="battlefield">
+
+            <span class="bf-decor bf-decor-tl">🔥</span>
+            <span class="bf-decor bf-decor-tr">🔥</span>
+            <span class="bf-decor bf-decor-bl">🌿</span>
+            <span class="bf-decor bf-decor-br">🌿</span>
+
+            <div class="bf-slot bf-enemy-slot">
+                <div class="bf-nameplate">
+                    <span class="bf-name" id="enemy-name">Ворог</span>
+                    <div class="bf-hp-wrap"><div class="bf-hp-bar enemy-hp-bar" id="enemyHp"></div></div>
+                    <span class="bf-hp-text" id="enemyHpText">HP: -- / --</span>
                 </div>
-                <div class="arena-hp-text" id="heroHpText">HP: -- / --</div>
+                <div class="bf-token-wrap" id="enemy-token-wrap">
+                    <div class="bf-token-circle is-enemy"><div class="arena-avatar enemy-avatar" id="enemy-avatar">👺</div></div>
+                    <div class="bf-shadow"></div>
+                </div>
             </div>
 
-            <div class="arena-vs-label">VS</div>
+            <div class="bf-vs-badge">⚡ VS</div>
 
-            <div class="arena-fighter is-enemy">
-                <div class="arena-avatar-ring"><div class="arena-avatar enemy-avatar" id="enemy-avatar">👺</div></div>
-                <div class="arena-name" id="enemy-name">Ворог</div>
-                <div class="arena-hp-wrap">
-                    <div class="arena-hp-bar enemy-hp-bar" id="enemyHp"></div>
+            <div class="bf-slot bf-hero-slot">
+                <div class="bf-token-wrap" id="hero-token-wrap">
+                    <div class="bf-token-circle is-hero"><div class="arena-avatar hero-avatar" id="hero-avatar">🧑‍🚀</div></div>
+                    <div class="bf-shadow"></div>
                 </div>
-                <div class="arena-hp-text" id="enemyHpText">HP: -- / --</div>
+                <div class="bf-nameplate">
+                    <span class="bf-name" id="hero-name">Ти</span>
+                    <div class="bf-hp-wrap"><div class="bf-hp-bar hero-hp-bar" id="heroHp"></div></div>
+                    <span class="bf-hp-text" id="heroHpText">HP: -- / --</span>
+                </div>
             </div>
+
         </div>
 
         <p class="arena-hint">
