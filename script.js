@@ -1277,6 +1277,9 @@ function renderFightScout(data) {
     if (heroHpText) heroHpText.innerText = `HP: ${stats.hp} / ${stats.hp}`;
     if (enemyHpText) enemyHpText.innerText = `HP: ${enemy.hp} / ${enemy.hp}`;
 
+    document.getElementById("hero-token-wrap")?.classList.remove("bf-defeated");
+    document.getElementById("enemy-token-wrap")?.classList.remove("bf-defeated");
+
     const scoutBox = document.getElementById("scout-stats");
     if (scoutBox) {
         scoutBox.innerHTML = `
@@ -1371,6 +1374,12 @@ async function startFight() {
             el.classList.add("hit");
             setTimeout(() => el.classList.remove("hit"), 300);
         });
+
+        // Переможений боєць тьмяніє на полі бою
+        const heroTokenWrap = document.getElementById("hero-token-wrap");
+        const enemyTokenWrap = document.getElementById("enemy-token-wrap");
+        if (heroTokenWrap) heroTokenWrap.classList.toggle("bf-defeated", data.heroHp <= 0);
+        if (enemyTokenWrap) enemyTokenWrap.classList.toggle("bf-defeated", data.enemyHp <= 0);
 
         // Трофеї за перемогу (валюта для магазину спорядження)
         trophies = data.trophies ?? trophies;
