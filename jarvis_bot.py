@@ -17,6 +17,7 @@ from telebot import types
 import google.generativeai as genai
 from PIL import Image
 import psycopg2
+from psycopg2 import pool as pg_pool
 import discord
 from discord.ext import commands
 from flask import Flask, request, jsonify
@@ -27,12 +28,67 @@ from datetime import datetime, timezone
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
-# Підключаємося до БД
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL)
-
 # 🔒 ЛОК ДЛЯ БЕЗПЕКИ ПОТОКІВ
 db_lock = threading.Lock()
+
+# ===================================================================
+# 🗄️ ПУЛ З'ЄДНАНЬ ДО POSTGRES
+# Раніше кожен виклик get_db_connection() відкривав нове TCP-з'єднання
+# до Neon і більше його не перевикористовував — це повільно і швидко
+# впирається в ліміт з'єднань хмарної БД. Тепер тримаємо невеликий пул
+# готових з'єднань і роздаємо їх повторно.
+# ===================================================================
+_db_pool = None
+
+def _init_db_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = pg_pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=20,
+            dsn=DATABASE_URL,
+        )
+
+class _PooledConnection:
+    """Обгортка над з'єднанням з пулу.
+
+    Увесь інший код бота як і раніше робить:
+        conn = get_db_connection()
+        ...
+        conn.close()
+    Різниця лише в тому, що .close() тепер не рве TCP-з'єднання,
+    а повертає його назад у пул для наступного запиту."""
+
+    def __init__(self, pool_ref, conn):
+        self._pool = pool_ref
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        try:
+            if self._conn.closed:
+                # з'єднання вже зламане (наприклад, розірвалось по мережі) — не повертаємо в пул
+                self._pool.putconn(self._conn, close=True)
+            else:
+                # на випадок незакомічених змін, щоб не тягнути відкриту транзакцію в пул
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+                self._pool.putconn(self._conn)
+        except Exception:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+# Підключаємося до БД (тепер бере з'єднання з пулу замість нового щоразу)
+def get_db_connection():
+    _init_db_pool()
+    raw_conn = _db_pool.getconn()
+    return _PooledConnection(_db_pool, raw_conn)
 
 # Створення та авто-оновлення таблиць при запуску
 try:
@@ -1446,8 +1502,11 @@ def show_rich_users(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                # Отримуємо додатково first_name та username
-                cursor.execute("SELECT user_id, balance, custom_nick, first_name, username FROM stats ORDER BY balance DESC LIMIT 10")
+                # Показуємо тільки тих, хто досі в чаті (WHERE in_chat = TRUE)
+                cursor.execute(
+                    "SELECT user_id, balance, custom_nick, name FROM stats "
+                    "WHERE in_chat = TRUE ORDER BY balance DESC LIMIT 10"
+                )
                 rows = cursor.fetchall()
             conn.close()
 
@@ -1458,15 +1517,13 @@ def show_rich_users(message):
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
         for idx, row in enumerate(rows):
-            uid, bal, custom_nick, first_name, username = row
+            uid, bal, custom_nick, name = row
             
             # Визначаємо відображуване ім'я
             if custom_nick:
                 display_name = custom_nick
-            elif first_name:
-                display_name = first_name
-            elif username:
-                display_name = f"@{username}"
+            elif name:
+                display_name = name
             else:
                 display_name = f"Гравець_{uid}"
 
@@ -2021,77 +2078,6 @@ def build_shop_page(page=0):
 
     return "\n".join(text), markup, shop_descriptions
 
-# =====================================================
-# 🖼️ AI ФОТО ДЛЯ МАГАЗИНУ (POLLINATIONS FLUX)
-# =====================================================
-
-def generate_shop_ai_image(descriptions):
-
-    if not descriptions:
-        return None
-
-    try:
-        selected_items = descriptions[:3]
-
-        prompt = (
-            "Luxury showcase of "
-            + " and ".join(selected_items)
-            + ". Ultra realistic, cinematic lighting, "
-              "expensive black market store, 8k, photorealistic"
-        )
-
-        encoded_prompt = requests.utils.quote(prompt)
-        seed = random.randint(1, 999999)
-
-        image_url = (
-            f"https://image.pollinations.ai/p/{encoded_prompt}"
-            f"?width=800&height=800&seed={seed}&nologo=true"
-        )
-
-        headers = {
-            "User-Agent":
-            "Mozilla/5.0"
-        }
-
-        response = requests.get(
-            image_url,
-            headers=headers,
-            timeout=15
-        )
-
-        if response.status_code == 200:
-
-            if "image" in response.headers.get("Content-Type",""):
-
-                img = Image.open(
-                    io.BytesIO(response.content)
-                ).convert("RGB")
-
-                bio = io.BytesIO()
-                bio.name = "shop.jpg"
-
-                img.save(
-                    bio,
-                    "JPEG",
-                    quality=85
-                )
-
-                bio.seek(0)
-
-                return bio
-
-        print(
-            "⚠️ Pollinations не повернув фото",
-            response.status_code
-        )
-
-    except Exception as e:
-        print(
-            f"⚠️ Помилка AI магазину: {e}"
-        )
-
-    return None
-
 # ===================================================================
 # 🎨 AI ФОТО МАЙНА (ЯКІСНЕ)
 # ===================================================================
@@ -2285,7 +2271,7 @@ def generate_shop_ai_image(descriptions):
 
         seed = random.randint(1, 999999)
 
-        image_url = build_pollinations_url(prompt, width=800, height=800, seed=seed)
+        image_url = build_pollinations_url(prompt, width=1024, height=1024, seed=seed)
 
 
         headers = {
@@ -2296,7 +2282,7 @@ def generate_shop_ai_image(descriptions):
         response = requests.get(
             image_url,
             headers=headers,
-            timeout=45
+            timeout=60
         )
 
 
@@ -2314,7 +2300,7 @@ def generate_shop_ai_image(descriptions):
             img.save(
                 bio,
                 "JPEG",
-                quality=85
+                quality=95
             )
 
             bio.seek(0)
@@ -4051,6 +4037,7 @@ def get_users_keyboard():
         types.InlineKeyboardButton("🚫 Забанити", callback_data="admin_ban")
     )
     markup.add(types.InlineKeyboardButton("✅ Розбанити", callback_data="admin_unban"))
+    markup.add(types.InlineKeyboardButton("🗑 Видалити з бази (по ID/ніку)", callback_data="admin_delete_user"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
 
@@ -4134,6 +4121,28 @@ def handle_admin_callbacks(call):
     elif action == "admin_unban":
         msg = bot.send_message(call.message.chat.id, "✅ Надішли ID юзера для РОЗБАНУ (або `відміна`):")
         bot.register_next_step_handler(msg, process_unban_user)
+
+    elif action == "admin_delete_user":
+        msg = bot.send_message(
+            call.message.chat.id,
+            "🗑 Надішли ID або нік (частину імені) юзера, якого треба видалити з бази "
+            "(або `відміна`).\nЯкщо збіжиться кілька юзерів — покажу список на вибір."
+        )
+        bot.register_next_step_handler(msg, process_find_user_to_delete)
+
+    elif action.startswith("admin_confirmdel_"):
+        target_id = int(action.replace("admin_confirmdel_", ""))
+        deleted_name = delete_user_everywhere(target_id)
+        bot.answer_callback_query(call.id, "🗑 Видалено!")
+        bot.edit_message_text(
+            f"🗑 Юзера <b>{html.escape(deleted_name or str(target_id))}</b> "
+            f"(<code>{target_id}</code>) повністю видалено з бази.",
+            call.message.chat.id, call.message.message_id, parse_mode="HTML"
+        )
+
+    elif action == "admin_canceldel":
+        bot.answer_callback_query(call.id, "Скасовано")
+        bot.edit_message_text("🛑 Видалення скасовано.", call.message.chat.id, call.message.message_id)
 
     elif action == "admin_backup":
         bot.answer_callback_query(call.id)
@@ -4258,6 +4267,81 @@ def process_unban_user(message):
         bot.reply_to(message, f"✅ Юзера <code>{uid}</code> розбанено!", parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, f"❌ Помилка: {e}")
+
+def delete_user_everywhere(user_id):
+    """Повністю видаляє юзера з усіх таблиць бота (профіль, майно, бізнеси, шлюби, бан, памʼять, герой).
+    Повертає ім'я юзера (якщо було) для звіту адміну."""
+    name = None
+    with db_lock:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT name FROM stats WHERE user_id = %s", (user_id,))
+                row = cursor.fetchone()
+                if row:
+                    name = row[0]
+
+                cursor.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
+                cursor.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
+                cursor.execute("DELETE FROM user_businesses WHERE user_id = %s", (user_id,))
+                cursor.execute("DELETE FROM marriages WHERE user1_id = %s OR user2_id = %s", (user_id, user_id))
+                cursor.execute("DELETE FROM banned_users WHERE user_id = %s", (user_id,))
+                cursor.execute("DELETE FROM user_memory WHERE user_id = %s", (user_id,))
+                try:
+                    cursor.execute("DELETE FROM heroes WHERE user_id = %s", (user_id,))
+                except Exception:
+                    pass
+                try:
+                    cursor.execute("DELETE FROM bot_moderators WHERE user_id = %s", (user_id,))
+                except Exception:
+                    pass
+            conn.commit()
+        finally:
+            conn.close()
+    return name
+
+def process_find_user_to_delete(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
+
+    query = message.text.strip()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                if query.isdigit():
+                    cursor.execute("SELECT user_id, name FROM stats WHERE user_id = %s", (int(query),))
+                else:
+                    cursor.execute("SELECT user_id, name FROM stats WHERE name ILIKE %s LIMIT 15", (f"%{query}%",))
+                rows = cursor.fetchall()
+            conn.close()
+    except Exception as e:
+        return bot.reply_to(message, f"❌ Помилка пошуку: {e}")
+
+    if not rows:
+        return bot.reply_to(message, "🤷‍♂️ Нікого не знайдено за цим ID/ніком.")
+
+    if len(rows) == 1:
+        uid, name = rows[0]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("🗑 ТАК, ВИДАЛИТИ", callback_data=f"admin_confirmdel_{uid}"),
+            types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_canceldel")
+        )
+        bot.reply_to(
+            message,
+            f"Знайдено: <b>{html.escape(name or 'Без імені')}</b> (<code>{uid}</code>).\nВидалити повністю з бази?",
+            parse_mode="HTML", reply_markup=markup
+        )
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for uid, name in rows:
+        markup.add(types.InlineKeyboardButton(
+            f"🗑 {name or 'Без імені'} ({uid})", callback_data=f"admin_confirmdel_{uid}"
+        ))
+    markup.add(types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_canceldel"))
+    bot.reply_to(message, f"Знайдено {len(rows)} збігів. Обери, кого видалити:", reply_markup=markup)
 
 def process_raw_sql(message):
     if not is_admin(message.from_user.id): return
