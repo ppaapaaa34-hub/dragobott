@@ -4615,7 +4615,7 @@ def fetch_top_rows():
             cursor.execute("""
                 SELECT name, count, last_seen 
                 FROM stats 
-                WHERE in_chat = TRUE OR in_chat = 1 
+                WHERE in_chat = TRUE 
                 ORDER BY count DESC
             """)
             rows = cursor.fetchall()
@@ -4627,7 +4627,7 @@ def fetch_top_rows():
                 cursor.execute("""
                     SELECT name, count 
                     FROM stats 
-                    WHERE in_chat = TRUE OR in_chat = 1 
+                    WHERE in_chat = TRUE 
                     ORDER BY count DESC
                 """)
                 raw_rows = cursor.fetchall()
@@ -4637,7 +4637,7 @@ def fetch_top_rows():
                     conn.rollback()
 
                 cursor.execute(
-                    "SELECT name, count FROM stats ORDER BY count DESC"
+                    "SELECT name, count FROM stats WHERE in_chat = TRUE ORDER BY count DESC"
                 )
                 raw_rows = cursor.fetchall()
                 rows = [(r[0], r[1], None) for r in raw_rows]
