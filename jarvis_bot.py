@@ -23,7 +23,7 @@ from discord.ext import commands
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
@@ -4665,21 +4665,20 @@ def build_top_view(rows, chat_title, page=1):
 
     chat_title_clean = (chat_title or "цьому чаті").replace("<", "&lt;").replace(">", "&gt;")
 
-    response = [f"📊 <b>Топ активності в {chat_title_clean}:</b>\n"]
+    # Найбільша кількість повідомлень серед усіх — база для шкали активності
+    max_count = max((r[1] or 0) for r in rows) or 1
 
-    medals = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    bar_len = 8
 
+    lines = []
     for idx, row in enumerate(page_rows):
         global_rank = start_idx + idx
         name = row[0]
-        count = row[1]
+        count = row[1] or 0
         last_seen = row[2] if len(row) > 2 else None
 
-        icon = (
-            medals[global_rank]
-            if global_rank < len(medals)
-            else f"<code>{global_rank + 1}.</code>"
-        )
+        rank_icon = medals.get(global_rank, f"<b>{global_rank + 1}.</b>")
         clean_name = (
             str(name).replace("<", "&lt;").replace(">", "&gt;")
             if name
@@ -4687,19 +4686,21 @@ def build_top_view(rows, chat_title, page=1):
         )
         percent = (count / total_messages) * 100 if total_messages > 0 else 0
 
-        # Форматування без тегів (чистий текст)
-        line = f"{icon} <b>{clean_name}</b> — <code>{count:,}</code> пов. (<i>{percent:.1f}%</i>)"
+        filled = max(0, min(bar_len, round((count / max_count) * bar_len)))
+        bar = "▓" * filled + "░" * (bar_len - filled)
+
+        line = f"{rank_icon} <b>{clean_name}</b>\n<code>{bar}</code>  {count:,} пов. · <i>{percent:.1f}%</i>"
 
         last_time_str = format_last_seen(last_seen)
         if last_time_str:
-            line += f" | 🕒 <i>{last_time_str}</i>"
+            line += f"  ·  🕒 {last_time_str}"
 
-        response.append(line)
+        lines.append(line)
 
-    response.append(
-        f"\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>"
-    )
-    text = "\n".join(response)
+    header = f"📊 <b>Топ активності — {chat_title_clean}</b>\n━━━━━━━━━━━━━━━━━━━"
+    footer = f"━━━━━━━━━━━━━━━━━━━\n💬 Всього повідомлень у чаті: <b>{total_messages:,}</b>"
+
+    text = header + "\n\n" + "\n\n".join(lines) + "\n\n" + footer
 
     # Клавіатура
     markup = InlineKeyboardMarkup()
