@@ -4047,6 +4047,7 @@ def get_db_keyboard():
         types.InlineKeyboardButton("💾 Інфо про бекап", callback_data="admin_backup"),
         types.InlineKeyboardButton("🧹 Скинути ТОП", callback_data="admin_reset")
     )
+    markup.add(types.InlineKeyboardButton("🔎 Перевірити базу (хто вийшов)", callback_data="admin_cleanup"))
     markup.add(types.InlineKeyboardButton("🛠 Виконати SQL запит", callback_data="admin_sql"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
@@ -4062,6 +4063,85 @@ def admin_panel(message):
         reply_markup=get_main_admin_keyboard(), 
         parse_mode="HTML"
     )
+
+# ===================================================================
+# 🧹 ПЕРЕВІРКА БАЗИ: хто реально ще в групі, а кого вже нема
+# ===================================================================
+def run_db_cleanup(report_chat_id):
+    """Проходиться по всіх юзерах з in_chat=TRUE і звіряє з реальним списком групи.
+    Тих, кого в групі вже нема (вийшли/вигнані/бот їх не бачить), позначає in_chat=FALSE."""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT user_id, name FROM stats WHERE in_chat = TRUE")
+                users = cursor.fetchall()
+            conn.close()
+    except Exception as e:
+        return bot.send_message(report_chat_id, f"❌ Не вдалося прочитати базу: {e}")
+
+    if not users:
+        return bot.send_message(report_chat_id, "📭 У базі немає юзерів зі статусом in_chat=TRUE для перевірки.")
+
+    status_msg = bot.send_message(
+        report_chat_id,
+        f"⏳ Перевіряю {len(users)} юзерів на членство в групі, це може зайняти хвилину-дві..."
+    )
+
+    def worker():
+        left_ids = []
+        checked = 0
+
+        for uid, name in users:
+            checked += 1
+            try:
+                member = bot.get_chat_member(TARGET_GROUP_ID, uid)
+                if member.status in ['left', 'kicked']:
+                    left_ids.append(uid)
+            except Exception:
+                # Telegram не знайшов юзера в цій групі (вийшов, кікнутий, або бот його вже не бачить)
+                left_ids.append(uid)
+
+            time.sleep(0.06)  # щоб не впертись у ліміти Telegram API
+
+            if checked % 50 == 0:
+                try:
+                    bot.edit_message_text(
+                        f"⏳ Перевірено {checked}/{len(users)}...",
+                        report_chat_id, status_msg.message_id
+                    )
+                except Exception:
+                    pass
+
+        if left_ids:
+            try:
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = ANY(%s)", (left_ids,))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                return bot.send_message(report_chat_id, f"❌ Юзерів перевірено, але не вдалось оновити базу: {e}")
+
+        report = (
+            f"✅ <b>Перевірку завершено!</b>\n\n"
+            f"👤 Перевірено: <code>{checked}</code>\n"
+            f"🚪 Вийшли з чату (тепер in_chat=FALSE): <code>{len(left_ids)}</code>\n"
+            f"✅ Досі в чаті: <code>{checked - len(left_ids)}</code>"
+        )
+        try:
+            bot.edit_message_text(report, report_chat_id, status_msg.message_id, parse_mode="HTML")
+        except Exception:
+            bot.send_message(report_chat_id, report, parse_mode="HTML")
+
+    threading.Thread(target=worker, daemon=True).start()
+
+@bot.message_handler(commands=['check_users', 'cleanup', 'чистка'])
+def cmd_cleanup_users(message):
+    if not is_admin(message.from_user.id):
+        return bot.reply_to(message, "🛑 Ця команда тільки для адміна.")
+    run_db_cleanup(message.chat.id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
@@ -4143,6 +4223,10 @@ def handle_admin_callbacks(call):
     elif action == "admin_canceldel":
         bot.answer_callback_query(call.id, "Скасовано")
         bot.edit_message_text("🛑 Видалення скасовано.", call.message.chat.id, call.message.message_id)
+
+    elif action == "admin_cleanup":
+        bot.answer_callback_query(call.id, "🔎 Запускаю перевірку...")
+        run_db_cleanup(call.message.chat.id)
 
     elif action == "admin_backup":
         bot.answer_callback_query(call.id)
