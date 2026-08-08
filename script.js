@@ -1177,7 +1177,9 @@ if (lastDailyClaim !== todayKey()) {
 function buildCreatureSVG(cfg) {
     const gradId = "mg" + Math.random().toString(36).slice(2, 8);
     const [c1, c2] = cfg.colors;
-    let inner = `<circle cx="32" cy="36" r="21" fill="url(#${gradId})"/>`;
+    // Плечі/тулуб (вид зверху) під головою — персонаж виглядає повноціннішим, а не "головою в повітрі"
+    let inner = `<ellipse cx="32" cy="57" rx="19" ry="9" fill="${c2}"/><ellipse cx="32" cy="57" rx="19" ry="9" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1.4"/>`;
+    inner += `<circle cx="32" cy="36" r="21" fill="url(#${gradId})" stroke="rgba(0,0,0,.2)" stroke-width="1.4"/>`;
 
     const F = cfg.features || [];
     if (F.includes("ears")) inner += `<path d="M12 26 L4 13 L19 21 Z" fill="${c1}"/><path d="M52 26 L60 13 L45 21 Z" fill="${c1}"/>`;
@@ -1186,6 +1188,9 @@ function buildCreatureSVG(cfg) {
     if (F.includes("curledHorn")) inner += `<path d="M17 18 Q5 11 12 1 Q20 7 17 18 Z" fill="${c2}"/><path d="M47 18 Q59 11 52 1 Q44 7 47 18 Z" fill="${c2}"/>`;
     if (F.includes("hood")) inner += `<path d="M9 30 Q32 -9 55 30 Q46 15 32 15 Q18 15 9 30 Z" fill="${c2}"/>`;
     if (F.includes("fins")) inner += `<path d="M32 4 L25 18 L39 18 Z" fill="${c2}"/><path d="M13 19 L2 25 L15 30 Z" fill="${c2}"/><path d="M51 19 L62 25 L49 30 Z" fill="${c2}"/>`;
+
+    // глянцевий відблиск на голові — додає об'єму
+    inner += `<path d="M15 28 Q19 14 32 13" stroke="rgba(255,255,255,.3)" stroke-width="3" fill="none" stroke-linecap="round"/>`;
 
     const eyeColor = cfg.eyeColor;
     if (cfg.eyeStyle === "round2") inner += `<circle cx="24" cy="34" r="4" fill="${eyeColor}"/><circle cx="40" cy="34" r="4" fill="${eyeColor}"/>`;
@@ -1215,7 +1220,7 @@ const CREATURE_CATALOG = {
     "Прадавній Левіафан": { colors: ["#0e7490", "#083344"], eyeColor: "#22d3ee", eyeStyle: "round2", features: ["fins", "fangs"] }
 };
 
-const HERO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs><circle cx="32" cy="36" r="21" fill="url(#heroGrad)"/><path d="M17 21 Q32 4 47 21 Q38 14 32 14 Q26 14 17 21 Z" fill="#e2e8f0"/><rect x="23" y="30" width="18" height="9" rx="4" fill="#0f172a" opacity="0.55"/><circle cx="27" cy="34.5" r="2.4" fill="#67e8f9"/><circle cx="37" cy="34.5" r="2.4" fill="#67e8f9"/><path d="M20 47 Q32 55 44 47" stroke="#0f172a" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.45"/></svg>`;
+const HERO_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs><ellipse cx="32" cy="57" rx="20" ry="9" fill="#312e81"/><ellipse cx="32" cy="57" rx="20" ry="9" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="1.4"/><path d="M9 58 L4 46 L14 50 Z" fill="#7c3aed"/><path d="M55 58 L60 46 L50 50 Z" fill="#7c3aed"/><circle cx="32" cy="36" r="21" fill="url(#heroGrad)" stroke="rgba(0,0,0,.2)" stroke-width="1.4"/><path d="M17 21 Q32 4 47 21 Q38 14 32 14 Q26 14 17 21 Z" fill="#e2e8f0"/><rect x="23" y="30" width="18" height="9" rx="4" fill="#0f172a" opacity="0.55"/><circle cx="27" cy="34.5" r="2.4" fill="#67e8f9"/><circle cx="37" cy="34.5" r="2.4" fill="#67e8f9"/><path d="M20 47 Q32 55 44 47" stroke="#0f172a" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.45"/><path d="M15 27 Q19 13 32 12" stroke="rgba(255,255,255,.3)" stroke-width="3" fill="none" stroke-linecap="round"/></svg>`;
 
 function creatureSVG(name) {
     const cfg = CREATURE_CATALOG[name];
