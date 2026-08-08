@@ -14,7 +14,6 @@
             background: linear-gradient(160deg, rgba(168,85,247,.14), rgba(15,10,35,.85));
             border: 1px solid rgba(168,85,247,.3);
             box-shadow: 0 0 30px rgba(168,85,247,.12), inset 0 0 40px rgba(0,0,0,.25);
-            overflow: hidden;
         }
         .arena-vs { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
         .arena-fighter { flex: 1; text-align: center; }
@@ -26,7 +25,7 @@
         }
         .arena-fighter.is-hero .arena-avatar-ring { border-color: rgba(34,211,238,.45); box-shadow: 0 0 14px rgba(34,211,238,.3); }
         .arena-fighter.is-enemy .arena-avatar-ring { border-color: rgba(248,113,113,.45); box-shadow: 0 0 14px rgba(248,113,113,.3); }
-        .arena-avatar { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
+        .arena-avatar { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
         .arena-avatar svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,.35)); }
         .arena-avatar.hit { transform: scale(0.8) rotate(-6deg); }
         .arena-name { font-weight: 800; margin-bottom: 5px; font-size: 12px; letter-spacing: .2px; }
@@ -108,9 +107,9 @@
 
         /* ==== Поле бою "вид зверху" ==== */
         .battlefield {
-            position: relative; z-index: 1; overflow: hidden;
-            min-height: 190px; border-radius: 20px; padding: 12px 10px 10px;
-            display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            position: relative; z-index: 1;
+            min-height: 200px; border-radius: 20px; padding: 10px 10px 8px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
             gap: 6px;
             background:
                 radial-gradient(ellipse 88% 58% at 50% 50%, rgba(168,85,247,.16), transparent 72%),
@@ -135,10 +134,10 @@
         .bf-decor-bl { bottom: 10px; left: 14px; }
         .bf-decor-br { bottom: 10px; right: 14px; }
         .bf-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; z-index: 1; }
-        .bf-token-wrap { position: relative; width: 64px; height: 64px; transition: opacity .25s ease, filter .25s ease, transform .25s ease; }
+        .bf-token-wrap { position: relative; width: 52px; height: 52px; transition: opacity .25s ease, filter .25s ease, transform .25s ease; }
         .bf-token-wrap.bf-defeated { opacity: .35; filter: grayscale(1); transform: scale(.88); }
         .bf-token-circle {
-            position: relative; width: 64px; height: 64px; border-radius: 50%; z-index: 2;
+            position: relative; width: 52px; height: 52px; border-radius: 50%; z-index: 2;
             display: flex; align-items: center; justify-content: center; overflow: visible;
             background: radial-gradient(circle at 35% 28%, rgba(255,255,255,.18), transparent 60%), rgba(255,255,255,.06);
             border: 2px solid rgba(255,255,255,.14);
