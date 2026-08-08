@@ -26,7 +26,7 @@
         }
         .arena-fighter.is-hero .arena-avatar-ring { border-color: rgba(34,211,238,.45); box-shadow: 0 0 14px rgba(34,211,238,.3); }
         .arena-fighter.is-enemy .arena-avatar-ring { border-color: rgba(248,113,113,.45); box-shadow: 0 0 14px rgba(248,113,113,.3); }
-        .arena-avatar { width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
+        .arena-avatar { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
         .arena-avatar svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,.35)); }
         .arena-avatar.hit { transform: scale(0.8) rotate(-6deg); }
         .arena-name { font-weight: 800; margin-bottom: 5px; font-size: 12px; letter-spacing: .2px; }
@@ -40,7 +40,7 @@
         .hero-hp-bar { background: linear-gradient(90deg, #22d3ee, #a855f7); box-shadow: 0 0 8px rgba(34,211,238,.6); }
         .enemy-hp-bar { background: linear-gradient(90deg, #f87171, #fb923c); box-shadow: 0 0 8px rgba(248,113,113,.6); }
         .arena-hp-text { font-size: 10px; color: #94a3b8; margin-top: 4px; font-weight: 700; }
-        .arena-hint { text-align: center; color: #9ca3af; margin-top: 10px; font-size: 11.5px; line-height: 1.4; position: relative; z-index: 1; }
+        .arena-hint { text-align: center; color: #9ca3af; margin-top: 8px; font-size: 11.5px; line-height: 1.4; position: relative; z-index: 1; }
 
         .fight-btn {
             margin-top: 10px; width: 100%; border: none; cursor: pointer; font-family: inherit;
@@ -54,18 +54,18 @@
         .fight-btn:disabled { opacity: .6; cursor: default; transform: none; }
 
         .scout-stats {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;
             position: relative; z-index: 1;
         }
         .scout-col {
             background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
-            border-radius: 12px; padding: 10px 8px; display: flex; flex-direction: column; gap: 4px;
+            border-radius: 12px; padding: 8px 8px; display: flex; flex-direction: column; gap: 3px;
             font-size: 11.5px; color: #cbd5e1; font-weight: 700;
         }
-        .scout-col b { font-size: 12.5px; color: #fff; margin-bottom: 2px; }
+        .scout-col b { font-size: 12.5px; color: #fff; margin-bottom: 1px; }
         .scout-chance {
-            margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px;
-            border-radius: 12px; padding: 10px; text-align: center; position: relative; z-index: 1;
+            margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;
+            border-radius: 12px; padding: 8px; text-align: center; position: relative; z-index: 1;
             border: 1px solid transparent;
         }
         .scout-chance .chance-pct { font-size: 20px; font-weight: 900; }
@@ -74,10 +74,10 @@
         .scout-chance.chance-mid { background: rgba(251,191,36,.14); border-color: rgba(251,191,36,.4); color: #fcd34d; }
         .scout-chance.chance-bad { background: rgba(248,113,113,.14); border-color: rgba(248,113,113,.4); color: #fca5a5; }
 
-        .fight-actions { display: flex; gap: 8px; align-items: stretch; position: relative; z-index: 1; }
+        .fight-actions { display: flex; gap: 8px; align-items: stretch; position: relative; z-index: 1; margin-top: 8px; }
         .fight-actions .fight-btn { margin-top: 0; }
         .rescout-btn {
-            margin-top: 10px; flex-shrink: 0; width: 46px; border: 1px solid rgba(255,255,255,.12);
+            flex-shrink: 0; width: 46px; border: 1px solid rgba(255,255,255,.12);
             border-radius: 14px; background: rgba(255,255,255,.06); color: #cbd5e1; font-size: 17px;
             cursor: pointer; transition: transform .12s ease, background .12s ease;
         }
@@ -109,8 +109,9 @@
         /* ==== Поле бою "вид зверху" ==== */
         .battlefield {
             position: relative; z-index: 1; overflow: hidden;
-            min-height: 246px; border-radius: 20px; padding: 16px 10px 12px;
+            min-height: 190px; border-radius: 20px; padding: 12px 10px 10px;
             display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            gap: 6px;
             background:
                 radial-gradient(ellipse 88% 58% at 50% 50%, rgba(168,85,247,.16), transparent 72%),
                 repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0px, rgba(255,255,255,.035) 1px, transparent 1px, transparent 24px),
@@ -133,12 +134,12 @@
         .bf-decor-tr { top: 10px; right: 14px; }
         .bf-decor-bl { bottom: 10px; left: 14px; }
         .bf-decor-br { bottom: 10px; right: 14px; }
-        .bf-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; z-index: 1; }
-        .bf-token-wrap { position: relative; width: 68px; height: 68px; transition: opacity .25s ease, filter .25s ease, transform .25s ease; }
+        .bf-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; z-index: 1; }
+        .bf-token-wrap { position: relative; width: 64px; height: 64px; transition: opacity .25s ease, filter .25s ease, transform .25s ease; }
         .bf-token-wrap.bf-defeated { opacity: .35; filter: grayscale(1); transform: scale(.88); }
         .bf-token-circle {
-            position: relative; width: 68px; height: 68px; border-radius: 50%; z-index: 2;
-            display: flex; align-items: center; justify-content: center;
+            position: relative; width: 64px; height: 64px; border-radius: 50%; z-index: 2;
+            display: flex; align-items: center; justify-content: center; overflow: visible;
             background: radial-gradient(circle at 35% 28%, rgba(255,255,255,.18), transparent 60%), rgba(255,255,255,.06);
             border: 2px solid rgba(255,255,255,.14);
             animation: bf-idle 2.6s ease-in-out infinite;
@@ -147,15 +148,15 @@
         .bf-token-circle.is-enemy { border-color: rgba(248,113,113,.55); box-shadow: 0 0 16px rgba(248,113,113,.35), inset 0 0 10px rgba(248,113,113,.15); animation-delay: -1.3s; }
         @keyframes bf-idle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         .bf-shadow {
-            position: absolute; left: 50%; bottom: -6px; width: 46px; height: 12px; z-index: 1;
+            position: absolute; left: 50%; bottom: -5px; width: 40px; height: 10px; z-index: 1;
             background: radial-gradient(ellipse, rgba(0,0,0,.65), transparent 72%);
             border-radius: 50%; transform: translateX(-50%);
         }
         .bf-nameplate { width: 132px; text-align: center; }
-        .bf-name { font-weight: 800; font-size: 12px; letter-spacing: .2px; display: block; margin-bottom: 4px; }
-        .bf-hp-wrap { width: 100%; height: 7px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+        .bf-name { font-weight: 800; font-size: 11.5px; letter-spacing: .2px; display: block; margin-bottom: 3px; }
+        .bf-hp-wrap { width: 100%; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
         .bf-hp-bar { height: 100%; width: 100%; border-radius: 999px; transition: width 0.4s ease; }
-        .bf-hp-text { font-size: 9.5px; color: #94a3b8; margin-top: 3px; font-weight: 700; display: block; }
+        .bf-hp-text { font-size: 9px; color: #94a3b8; margin-top: 2px; font-weight: 700; display: block; }
         .bf-vs-badge {
             font-weight: 900; font-size: 12.5px; color: var(--gold); padding: 5px 10px;
             border: 1px solid rgba(251,191,36,.4); border-radius: 999px;
