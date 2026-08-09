@@ -1918,6 +1918,124 @@ def kick_user(message):
         bot.reply_to(message, f"❌ Помилка кіку: `{e}`", parse_mode="Markdown")
 
 
+# 🍆 ОТСОСБАН (реплай на повідомлення + "отсосбан")
+# Мутить порушника і дає йому вибір: відсмоктати автору (знімається мут, всі бачать)
+# або вийти самому (кік із чату). Тиснути кнопки може тільки сам порушник.
+@bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('отсосбан', 'осос', 'відсосбан')))
+def otsosban_user(message):
+    if message.chat.type == 'private':
+        return bot.reply_to(message, "⚠️ Ця команда працює лише в групах!")
+
+    if not is_chat_admin(message.chat.id, message.from_user.id):
+        return bot.reply_to(message, "❌ У тебе немає прав модератора!")
+
+    if not message.reply_to_message:
+        return bot.reply_to(message, "⚠️ Відповіж на повідомлення того, кому вішаємо отсосбан!")
+
+    target_user = message.reply_to_message.from_user
+    writer_user = message.from_user
+
+    if is_chat_admin(message.chat.id, target_user.id):
+        return bot.reply_to(message, "🛡️ Не можна вішати отсосбан на адміна/модератора!")
+
+    if target_user.id == bot.get_me().id:
+        return bot.reply_to(message, "🛑 На мене отсосбан не повісиш, я СБУ!")
+
+    try:
+        # Мутимо порушника, поки він не визначиться
+        bot.restrict_chat_member(
+            chat_id=message.chat.id,
+            user_id=target_user.id,
+            permissions=telebot.types.ChatPermissions(can_send_messages=False)
+        )
+    except Exception as e:
+        return bot.reply_to(message, f"❌ Не вдалось замутити (перевір права бота): `{e}`", parse_mode="Markdown")
+
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("😩 Відсмоктати", callback_data=f"otsos_suck_{target_user.id}_{writer_user.id}"),
+        types.InlineKeyboardButton("🚪 Вийти самому", callback_data=f"otsos_leave_{target_user.id}")
+    )
+
+    bot.reply_to(
+        message,
+        f"🍆 **ОТСОСБАН!**\n\n"
+        f"**{target_user.first_name}**, тебе замучено. У тебе є два шляхи:\n\n"
+        f"😩 Відсмоктати **{writer_user.first_name}** — і мут знімається\n"
+        f"🚪 Вийти самому з чату — і на тому все\n\n"
+        f"⏳ Обирай, поки не пізно...",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('otsos_'))
+def otsosban_callback(call):
+    parts = call.data.split('_')
+    action = parts[1]  # 'suck' або 'leave'
+    target_id = int(parts[2])
+
+    if call.from_user.id != target_id:
+        return bot.answer_callback_query(call.id, "🛑 Це не тобі вирішувати, це його вибір!", show_alert=True)
+
+    chat_id = call.message.chat.id
+
+    if action == 'suck':
+        writer_id = int(parts[3])
+        try:
+            writer_chat_member = bot.get_chat_member(chat_id, writer_id)
+            writer_name = writer_chat_member.user.first_name
+        except Exception:
+            writer_name = "того, хто написав"
+
+        try:
+            bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=target_id,
+                permissions=telebot.types.ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
+                )
+            )
+        except Exception as e:
+            return bot.answer_callback_query(call.id, f"❌ Помилка зняття муту: {e}", show_alert=True)
+
+        target_name = call.from_user.first_name
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                text=f"🍆😩 **{target_name}** відсмоктав у **{writer_name}**, аби не отримати бан! Мут знято, ганьба залишається.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.send_message(chat_id, f"🍆😩 **{target_name}** відсмоктав у **{writer_name}**, аби не отримати бан!", parse_mode="Markdown")
+
+        bot.answer_callback_query(call.id, "😩 Мут знято. На всю публіку тепер знають ціну твоєї свободи.")
+
+    elif action == 'leave':
+        target_name = call.from_user.first_name
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                text=f"🚪 **{target_name}** обрав гідність і вийшов з чату сам.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+        bot.answer_callback_query(call.id, "🚪 Йдеш сам, з гордо піднятою головою.")
+
+        try:
+            bot.ban_chat_member(chat_id, target_id)
+            bot.unban_chat_member(chat_id, target_id)
+        except Exception as e:
+            print(f"Помилка самокіку через отсосбан: {e}")
+
+
 # 🧹 ОЧИЩЕННЯ ПОВІДОМЛЕНЬ (/clear 10, очистити 10, почистити 10)
 @bot.message_handler(commands=['clear', 'purge'])
 @bot.message_handler(func=lambda m: m.text and m.text.lower().startswith(('очистити', 'почистити', 'чистка')))
