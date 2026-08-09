@@ -2249,24 +2249,81 @@ def _strip_emoji(text):
     return "".join(ch for ch in text if ord(ch) < 0x2100 or ch in "₴").strip()
 
 
-def _fetch_item_thumbnail(code, item, size=420):
-    """Генерує окрему AI-картинку для одного предмета магазину."""
+def _fit_label_lines(draw, text, font, max_width, max_lines=2):
+    """Розбиває текст на рядки по пікселях (не по символах), щоб не вилазив
+    за межі клітинки. Якщо не влазить у max_lines — обрізає з '…'."""
+    words = text.split()
+    if not words:
+        return [""]
+
+    lines = []
+    current = ""
+    for word in words:
+        trial = (current + " " + word).strip()
+        w = draw.textbbox((0, 0), trial, font=font)[2]
+        if w <= max_width or not current:
+            current = trial
+        else:
+            lines.append(current)
+            current = word
+            if len(lines) == max_lines:
+                break
+
+    if len(lines) < max_lines and current:
+        lines.append(current)
+
+    lines = lines[:max_lines]
+
+    # Якщо лишилися невикористані слова — доклеюємо "…" в останній рядок
+    used_words_count = sum(len(l.split()) for l in lines)
+    if used_words_count < len(words):
+        last = lines[-1]
+        while draw.textbbox((0, 0), last + "…", font=font)[2] > max_width and len(last) > 1:
+            last = last[:-1].rstrip()
+        lines[-1] = last + "…"
+
+    return lines if lines else [""]
+
+
+# Кеш уже згенерованих мініатюр по item_code — щоб не бити по Pollinations
+# повторно на кожен виклик /майно і не ловити рейт-ліміт.
+_ITEM_THUMB_CACHE = {}
+_ITEM_THUMB_CACHE_LOCK = threading.Lock()
+
+
+def _fetch_item_thumbnail(code, item, size=420, retries=2):
+    """Генерує (або бере з кешу) окрему AI-картинку для одного предмета магазину."""
+    with _ITEM_THUMB_CACHE_LOCK:
+        cached = _ITEM_THUMB_CACHE.get(code)
+    if cached:
+        return code, cached
+
     desc = item.get("ai_desc") or item.get("name")
     prompt = (
         f"Professional product photography, ultra realistic, single object: {desc}. "
         "Centered, studio lighting, plain neutral background, sharp focus, "
         "extremely detailed, 8K, DSLR photo, no cartoon, no painting, no blur, no text, no watermark."
     )
-    try:
-        seed = random.randint(100000, 999999)
-        url = build_pollinations_url(prompt, width=size, height=size, seed=seed)
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
-        if response.status_code == 200:
-            img = Image.open(io.BytesIO(response.content)).convert("RGB")
-            img = img.resize((size, size))
-            return code, img
-    except Exception as e:
-        print(f"❌ Помилка мініатюри майна ({code}): {e}")
+
+    for attempt in range(retries + 1):
+        try:
+            seed = random.randint(100000, 999999)
+            url = build_pollinations_url(prompt, width=size, height=size, seed=seed)
+            response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+            if response.status_code == 200:
+                img = Image.open(io.BytesIO(response.content)).convert("RGB")
+                img = img.resize((size, size))
+                with _ITEM_THUMB_CACHE_LOCK:
+                    _ITEM_THUMB_CACHE[code] = img
+                return code, img
+            else:
+                print(f"⚠️ Мініатюра майна ({code}): HTTP {response.status_code}, спроба {attempt + 1}")
+        except Exception as e:
+            print(f"❌ Помилка мініатюри майна ({code}), спроба {attempt + 1}: {e}")
+
+        if attempt < retries:
+            time.sleep(2 + attempt * 1.5)
+
     return code, None
 
 
@@ -2279,7 +2336,7 @@ def generate_inventory_collage(unique_codes, item_counts):
         return None
 
     cell_size = 420
-    label_h = 80
+    label_h = 100
     padding = 24
     cols = 4 if len(codes) > 6 else (3 if len(codes) > 2 else len(codes))
     cols = max(cols, 1)
@@ -2292,8 +2349,9 @@ def generate_inventory_collage(unique_codes, item_counts):
     draw = ImageDraw.Draw(canvas)
 
     title_font = _load_collage_font(56)
-    label_font = _load_collage_font(32)
+    label_font = _load_collage_font(30)
     badge_font = _load_collage_font(28)
+    placeholder_font = _load_collage_font(26)
 
     title_text = "★ МАЙНО ★"
     try:
@@ -2303,13 +2361,28 @@ def generate_inventory_collage(unique_codes, item_counts):
         title_w = 300
     draw.text(((canvas_w - title_w) / 2, 40), title_text, font=title_font, fill=(255, 215, 0))
 
-    # Паралельно тягнемо мініатюри по кожному предмету
+    # Розділяємо на те, що вже є в кеші (миттєво), і те, що треба донагенерувати
     thumbnails = {}
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = [executor.submit(_fetch_item_thumbnail, code, SHOP_ITEMS[code], cell_size) for code in codes]
-        for future in as_completed(futures):
-            code, img = future.result()
-            thumbnails[code] = img
+    to_fetch = []
+    for code in codes:
+        with _ITEM_THUMB_CACHE_LOCK:
+            cached = _ITEM_THUMB_CACHE.get(code)
+        if cached:
+            thumbnails[code] = cached
+        else:
+            to_fetch.append(code)
+
+    if to_fetch:
+        # Невеликий стагер між запусками + обмежена паралельність і ретраї всередині
+        # _fetch_item_thumbnail, щоб не влітати в rate-limit Pollinations разом.
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = []
+            for code in to_fetch:
+                futures.append(executor.submit(_fetch_item_thumbnail, code, SHOP_ITEMS[code], cell_size))
+                time.sleep(0.4)
+            for future in as_completed(futures):
+                code, img = future.result()
+                thumbnails[code] = img
 
     y_start = 140 + padding
     for i, code in enumerate(codes):
@@ -2324,30 +2397,47 @@ def generate_inventory_collage(unique_codes, item_counts):
         if thumb:
             canvas.paste(thumb, (x, y))
         else:
-            draw.rectangle([x, y, x + cell_size, y + cell_size], fill=(40, 40, 46))
-            draw.text((x + 20, y + cell_size // 2 - 15), "🖼", font=label_font, fill=(120, 120, 120))
+            # Заглушка без емодзі (шрифт їх не малює) — просто нейтральний фон
+            # з діагональними лініями та текстовим написом кирилицею.
+            draw.rectangle([x, y, x + cell_size, y + cell_size], fill=(35, 35, 40))
+            draw.line([x + 20, y + 20, x + cell_size - 20, y + cell_size - 20], fill=(60, 60, 68), width=4)
+            draw.line([x + cell_size - 20, y + 20, x + 20, y + cell_size - 20], fill=(60, 60, 68), width=4)
+
+            ph_lines = _fit_label_lines(draw, "фото не згенерувалось", placeholder_font, cell_size - 40, max_lines=2)
+            line_h = 34
+            ph_y = y + cell_size / 2 - (len(ph_lines) * line_h) / 2
+            for line in ph_lines:
+                bbox = draw.textbbox((0, 0), line, font=placeholder_font)
+                lw = bbox[2] - bbox[0]
+                draw.text((x + (cell_size - lw) / 2, ph_y), line, font=placeholder_font, fill=(150, 150, 155))
+                ph_y += line_h
 
         # Рамка навколо фото
         draw.rectangle([x, y, x + cell_size, y + cell_size], outline=(255, 215, 0), width=3)
 
-        # Підпис назви під фото
+        # Підпис назви під фото — по пікселях, максимум 2 рядки, не вилазить за межі клітинки
         clean_name = _strip_emoji(item.get("name", code))
-        if len(clean_name) > 26:
-            clean_name = clean_name[:24] + "…"
-        try:
-            bbox = draw.textbbox((0, 0), clean_name, font=label_font)
-            text_w = bbox[2] - bbox[0]
-        except Exception:
-            text_w = 0
-        text_x = x + (cell_size - text_w) / 2
-        draw.text((text_x, y + cell_size + 14), clean_name, font=label_font, fill=(255, 255, 255))
+        label_lines = _fit_label_lines(draw, clean_name, label_font, cell_size - 16, max_lines=2)
+        line_h = 38
+        text_y = y + cell_size + 10
+        for line in label_lines:
+            try:
+                bbox = draw.textbbox((0, 0), line, font=label_font)
+                text_w = bbox[2] - bbox[0]
+            except Exception:
+                text_w = 0
+            text_x = x + (cell_size - text_w) / 2
+            draw.text((text_x, text_y), line, font=label_font, fill=(255, 255, 255))
+            text_y += line_h
 
         # Бейдж кількості, якщо предметів більше 1
         count = item_counts.get(item.get("name", code), 1)
         if count > 1:
             badge_text = f"x{count}"
-            draw.ellipse([x + cell_size - 60, y + 10, x + cell_size - 10, y + 60], fill=(220, 30, 30))
-            draw.text((x + cell_size - 48, y + 20), badge_text, font=badge_font, fill=(255, 255, 255))
+            draw.ellipse([x + cell_size - 64, y + 10, x + cell_size - 10, y + 64], fill=(220, 30, 30))
+            bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
+            bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((x + cell_size - 37 - bw / 2, y + 37 - bh / 2 - bbox[1]), badge_text, font=badge_font, fill=(255, 255, 255))
 
     bio = io.BytesIO()
     bio.name = "inventory_collage.jpg"
