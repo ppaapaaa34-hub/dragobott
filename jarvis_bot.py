@@ -2218,7 +2218,10 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
     descriptions = []
 
-    for code in bought_codes[:3]:
+    # 🖼️ Беремо ВСІ унікальні предмети (не тільки перші 3), щоб все майно
+    # влізло на одну спільну картину. Обмеження — 12 штук, щоб промпт
+    # не розповз і AI зміг чітко намалювати кожен окремий предмет.
+    for code in bought_codes[:12]:
         code = str(code)
 
         if code in SHOP_ITEMS:
@@ -2231,22 +2234,25 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
     if not descriptions:
         return None
 
+    numbered_items = "; ".join(f"({i+1}) {d}" for i, d in enumerate(descriptions))
 
     prompt = (
-        "Professional product photography, ultra realistic. "
-        "A luxury collection display showing: "
-        + ", ".join(descriptions)
+        "Professional product photography, ultra realistic, wide panoramic composition. "
+        "A single grand luxury collection display arranged neatly side by side in one frame, "
+        "showing ALL of the following " + str(len(descriptions)) + " items together: "
+        + numbered_items
         +
         ". "
-        "Real objects, sharp focus, extremely detailed textures, "
-        "studio lighting, 8K resolution, DSLR photo, "
-        "no cartoon, no painting, no blur."
+        "Every item must be clearly visible and separated, arranged like a museum showcase or "
+        "flat-lay collection, real objects, sharp focus, extremely detailed textures, "
+        "studio lighting, 8K resolution, DSLR photo, wide-angle showroom shot, "
+        "no cartoon, no painting, no blur, nothing cropped out."
     )
 
 
     try:
         seed = random.randint(100000,999999)
-        url = build_pollinations_url(prompt, width=1200, height=1200, seed=seed)
+        url = build_pollinations_url(prompt, width=1600, height=900, seed=seed)
 
         headers = {
             "User-Agent": "Mozilla/5.0"
