@@ -1645,6 +1645,104 @@ def parse_time(time_str):
 
 
 # ===================================================================
+# 🚫 АНТИСПАМ / АНТИФЛУД
+# Слідкує за тим, як часто юзер пише в чат. Якщо флудить —
+# видає попередження. Після 3-х попереджень — автоматичний мут.
+# ===================================================================
+SPAM_LOCK = threading.Lock()
+SPAM_TRACKER = {}    # {(chat_id, user_id): [timestamps повідомлень]}
+SPAM_WARNINGS = {}   # {(chat_id, user_id): {"count": int, "last": timestamp}}
+
+FLOOD_MSG_LIMIT = 5          # скільки повідомлень поспіль вважати флудом
+FLOOD_WINDOW_SEC = 7         # ...якщо вони прийшли за стільки секунд
+FLOOD_WARN_LIMIT = 3         # скільки попереджень до автомуту
+FLOOD_MUTE_SEC = 600         # тривалість автомуту за флуд (10 хв)
+FLOOD_WARN_RESET_SEC = 300   # якщо юзер поводиться нормально стільки часу — попередження скидаються
+
+
+def check_flood(message) -> bool:
+    """
+    Перевіряє, чи юзер флудить у чаті.
+    Повертає True, якщо повідомлення визнано флудом (у цьому разі
+    подальшу обробку повідомлення варто припинити).
+    """
+    if message.chat.type == 'private':
+        return False
+
+    user = message.from_user
+    if not user:
+        return False
+
+    chat_id = message.chat.id
+    user_id = user.id
+    key = (chat_id, user_id)
+
+    # Адмінів/модераторів не чіпаємо
+    try:
+        if is_chat_admin(chat_id, user_id):
+            return False
+    except Exception:
+        pass
+
+    now = time.time()
+    warn_count = 0
+
+    with SPAM_LOCK:
+        timestamps = [t for t in SPAM_TRACKER.get(key, []) if now - t < FLOOD_WINDOW_SEC]
+        timestamps.append(now)
+
+        if len(timestamps) < FLOOD_MSG_LIMIT:
+            SPAM_TRACKER[key] = timestamps
+            return False
+
+        # Флуд виявлено — скидаємо стек таймстампів, щоб не плодити попередження щосекунди
+        SPAM_TRACKER[key] = []
+
+        warn_data = SPAM_WARNINGS.get(key, {"count": 0, "last": 0})
+        if now - warn_data.get("last", 0) > FLOOD_WARN_RESET_SEC:
+            warn_data["count"] = 0
+
+        warn_data["count"] += 1
+        warn_data["last"] = now
+        SPAM_WARNINGS[key] = warn_data
+        warn_count = warn_data["count"]
+
+    user_name = user.first_name or "Друже"
+
+    if warn_count >= FLOOD_WARN_LIMIT:
+        try:
+            until_date = int(time.time()) + FLOOD_MUTE_SEC
+            bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=user_id,
+                until_date=until_date,
+                permissions=telebot.types.ChatPermissions(can_send_messages=False)
+            )
+            with SPAM_LOCK:
+                SPAM_WARNINGS[key] = {"count": 0, "last": 0}
+            bot.send_message(
+                chat_id,
+                f"🔇 **{user_name}**, за флуд у чаті ({FLOOD_WARN_LIMIT}/{FLOOD_WARN_LIMIT} попереджень) "
+                f"тебе замучено на {FLOOD_MUTE_SEC // 60} хв.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            print(f"Помилка автомуту за флуд: {e}")
+    else:
+        try:
+            bot.send_message(
+                chat_id,
+                f"⚠️ **{user_name}**, не флуди в чаті! Попередження {warn_count}/{FLOOD_WARN_LIMIT}. "
+                f"Ще трохи — і отримаєш мут.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            print(f"Помилка попередження за флуд: {e}")
+
+    return True
+
+
+# ===================================================================
 # 3. КОМАНДИ КЕРУВАННЯ МОДЕРАТОРАМИ (ТІЛЬКИ ДЛЯ ТЕБЕ)
 # ===================================================================
 
@@ -3077,6 +3175,8 @@ def handle_rp_words(message):
 # Надішли боту в приватні повідомлення будь-яку гіфку чи фото, і він напише її file_id
 @bot.message_handler(content_types=['animation', 'photo'])
 def get_media_file_id(message):
+    if check_flood(message):
+        return
     if message.chat.type == 'private':
         if message.animation:
             bot.reply_to(message, f"<b>file_id вашої GIF:</b>\n<code>{message.animation.file_id}</code>", parse_mode="HTML")
@@ -5819,6 +5919,10 @@ def handle_text(message):
 
     # Ігноруємо команди, щоб вони оброблялися відповідними handlers вище
     if text and text.startswith('/'):
+        return
+
+    # 🚫 Перевірка на флуд/спам — якщо флуд, далі повідомлення не обробляємо
+    if check_flood(message):
         return
 
     if text:
