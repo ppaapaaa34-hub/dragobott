@@ -5531,33 +5531,34 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         except Exception as e:
             print(f"Помилка БД при поверненні юзера: {e}")
             
-       if gender == 'Дівчина':
-    greeting = f"""Вітаємо в чаті, <b>{name}</b>! 🤍
+        if gender == 'Дівчина':
+            greeting = f"""Вітаємо в чаті, <b>{name}</b>! 🤍
 Ласкаво просимо до лав «Нової Банди»! 🎩
 Правила прості: не флудити, поважати своїх і кидати якісні меми.
 Заходь, вливайся та будь як удома! 😎"""
 
-elif gender == 'Хлопець':
-    greeting = f"""Йо, <b>{name}</b>, вітаємо в чаті! 🤝
+        elif gender == 'Хлопець':
+            greeting = f"""Йо, <b>{name}</b>, вітаємо в чаті! 🤝
 Сідай до нашого вогнища, скидай зброю.
 Вливайся в колектив, спілкуйся та будь як удома! 🍕"""
 
-else:
-    greeting = f"""Вітаємо в нашій групі, <b>{name}</b>! 🤍
+        else:
+            greeting = f"""Вітаємо в нашій групі, <b>{name}</b>! 🤍
 Напиши пару слів про себе або кидай улюблений мем, щоб одразу залетіти в тему! ✨"""
             
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
     # 2. ЮЗЕР ДІЙСНО ВИЙШОВ АБО ЙОГО ВИГНАЛИ
     elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
-        name = message.old_chat_member.user.first_name
+        leaving_user = message.old_chat_member.user
+        name = leaving_user.first_name
         
         # ВИКРЕСЛЮЄМО З ТОПІВ
         try:
             with db_lock:
                 conn = get_db_connection()
                 with conn.cursor() as cursor:
-                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (user.id,))
+                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (leaving_user.id,))
                 conn.commit()
                 conn.close()
         except Exception as e:
@@ -5570,7 +5571,6 @@ else:
             f"Мінус один. <b>{name}</b>, удачі в пошуках цікавішої компанії!"
         ]
         bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
-
 # ===================================================================
 # 🧠 РОБОТА З ПЕРСОНАЛЬНОЮ ПАМ'ЯТЮ ЮЗЕРІВ В БД
 # ===================================================================
