@@ -15,8 +15,7 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServe
 import telebot
 from telebot import types
 import google.generativeai as genai
-from PIL import Image, ImageDraw, ImageFont
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import Image
 import psycopg2
 from psycopg2 import pool as pg_pool
 import discord
@@ -2210,244 +2209,9 @@ def build_shop_page(page=0):
     return "\n".join(text), markup, shop_descriptions
 
 # ===================================================================
-# 🖼️ КОЛАЖ МАЙНА — ОКРЕМЕ ФОТО НА КОЖЕН ПРЕДМЕТ, ЗІБРАНІ В ОДНУ СІТКУ
-# На відміну від generate_inventory_ai_image (одна спільна AI-сцена),
-# тут кожен предмет малюється окремою AI-картинкою (паралельно), а потім
-# усі мініатюри склеюються через PIL в один колаж з підписами назв —
-# так гарантовано видно КОЖЕН предмет чітко, без "каші" в одній сцені.
-# ===================================================================
-
-_INVENTORY_FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-    "DejaVuSans-Bold.ttf",
-    "arial.ttf",
-]
-
-def _load_collage_font(size):
-    """Шукає перший доступний TTF-шрифт з кирилицею на сервері.
-    Якщо жодного не знайдено — падає на вбудований шрифт PIL (без кирилиці,
-    але хоч не впаде з помилкою)."""
-    for path in _INVENTORY_FONT_CANDIDATES:
-        try:
-            return ImageFont.truetype(path, size)
-        except Exception:
-            continue
-    try:
-        return ImageFont.load_default(size=size)
-    except Exception:
-        return ImageFont.load_default()
-
-
-def _strip_emoji(text):
-    """Прибирає емодзі з назви предмета — шрифти зазвичай не вміють їх малювати,
-    лишаються порожні квадратики."""
-    return "".join(ch for ch in text if ord(ch) < 0x2100 or ch in "₴").strip()
-
-
-def _fit_label_lines(draw, text, font, max_width, max_lines=2):
-    """Розбиває текст на рядки по пікселях (не по символах), щоб не вилазив
-    за межі клітинки. Якщо не влазить у max_lines — обрізає з '…'."""
-    words = text.split()
-    if not words:
-        return [""]
-
-    lines = []
-    current = ""
-    for word in words:
-        trial = (current + " " + word).strip()
-        w = draw.textbbox((0, 0), trial, font=font)[2]
-        if w <= max_width or not current:
-            current = trial
-        else:
-            lines.append(current)
-            current = word
-            if len(lines) == max_lines:
-                break
-
-    if len(lines) < max_lines and current:
-        lines.append(current)
-
-    lines = lines[:max_lines]
-
-    # Якщо лишилися невикористані слова — доклеюємо "…" в останній рядок
-    used_words_count = sum(len(l.split()) for l in lines)
-    if used_words_count < len(words):
-        last = lines[-1]
-        while draw.textbbox((0, 0), last + "…", font=font)[2] > max_width and len(last) > 1:
-            last = last[:-1].rstrip()
-        lines[-1] = last + "…"
-
-    return lines if lines else [""]
-
-
-# Кеш уже згенерованих мініатюр по item_code — щоб не бити по Pollinations
-# повторно на кожен виклик /майно і не ловити рейт-ліміт.
-_ITEM_THUMB_CACHE = {}
-_ITEM_THUMB_CACHE_LOCK = threading.Lock()
-
-
-def _fetch_item_thumbnail(code, item, size=420, retries=2):
-    """Генерує (або бере з кешу) окрему AI-картинку для одного предмета магазину."""
-    with _ITEM_THUMB_CACHE_LOCK:
-        cached = _ITEM_THUMB_CACHE.get(code)
-    if cached:
-        return code, cached
-
-    desc = item.get("ai_desc") or item.get("name")
-    prompt = (
-        f"Professional product photography, ultra realistic, single object: {desc}. "
-        "Centered, studio lighting, plain neutral background, sharp focus, "
-        "extremely detailed, 8K, DSLR photo, no cartoon, no painting, no blur, no text, no watermark."
-    )
-
-    for attempt in range(retries + 1):
-        try:
-            seed = random.randint(100000, 999999)
-            url = build_pollinations_url(prompt, width=size, height=size, seed=seed)
-            response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
-            if response.status_code == 200:
-                img = Image.open(io.BytesIO(response.content)).convert("RGB")
-                img = img.resize((size, size))
-                with _ITEM_THUMB_CACHE_LOCK:
-                    _ITEM_THUMB_CACHE[code] = img
-                return code, img
-            else:
-                print(f"⚠️ Мініатюра майна ({code}): HTTP {response.status_code}, спроба {attempt + 1}")
-        except Exception as e:
-            print(f"❌ Помилка мініатюри майна ({code}), спроба {attempt + 1}: {e}")
-
-        if attempt < retries:
-            time.sleep(2 + attempt * 1.5)
-
-    return code, None
-
-
-def generate_inventory_collage(unique_codes, item_counts):
-    """Будує один колаж-зображення з окремою фоткою на кожен унікальний предмет.
-    unique_codes — список item_code (без дублів), item_counts — {item_name: кількість}."""
-
-    codes = [str(c) for c in unique_codes if str(c) in SHOP_ITEMS][:12]
-    if not codes:
-        return None
-
-    cell_size = 420
-    label_h = 100
-    padding = 24
-    cols = 4 if len(codes) > 6 else (3 if len(codes) > 2 else len(codes))
-    cols = max(cols, 1)
-    rows = math.ceil(len(codes) / cols)
-
-    canvas_w = cols * cell_size + (cols + 1) * padding
-    canvas_h = rows * (cell_size + label_h) + (rows + 1) * padding + 140
-
-    canvas = Image.new("RGB", (canvas_w, canvas_h), (18, 18, 22))
-    draw = ImageDraw.Draw(canvas)
-
-    title_font = _load_collage_font(56)
-    label_font = _load_collage_font(30)
-    badge_font = _load_collage_font(28)
-    placeholder_font = _load_collage_font(26)
-
-    title_text = "★ МАЙНО ★"
-    try:
-        bbox = draw.textbbox((0, 0), title_text, font=title_font)
-        title_w = bbox[2] - bbox[0]
-    except Exception:
-        title_w = 300
-    draw.text(((canvas_w - title_w) / 2, 40), title_text, font=title_font, fill=(255, 215, 0))
-
-    # Розділяємо на те, що вже є в кеші (миттєво), і те, що треба донагенерувати
-    thumbnails = {}
-    to_fetch = []
-    for code in codes:
-        with _ITEM_THUMB_CACHE_LOCK:
-            cached = _ITEM_THUMB_CACHE.get(code)
-        if cached:
-            thumbnails[code] = cached
-        else:
-            to_fetch.append(code)
-
-    if to_fetch:
-        # Невеликий стагер між запусками + обмежена паралельність і ретраї всередині
-        # _fetch_item_thumbnail, щоб не влітати в rate-limit Pollinations разом.
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = []
-            for code in to_fetch:
-                futures.append(executor.submit(_fetch_item_thumbnail, code, SHOP_ITEMS[code], cell_size))
-                time.sleep(0.4)
-            for future in as_completed(futures):
-                code, img = future.result()
-                thumbnails[code] = img
-
-    y_start = 140 + padding
-    for i, code in enumerate(codes):
-        row = i // cols
-        col = i % cols
-        x = padding + col * (cell_size + padding)
-        y = y_start + row * (cell_size + label_h + padding)
-
-        item = SHOP_ITEMS[code]
-        thumb = thumbnails.get(code)
-
-        if thumb:
-            canvas.paste(thumb, (x, y))
-        else:
-            # Заглушка без емодзі (шрифт їх не малює) — просто нейтральний фон
-            # з діагональними лініями та текстовим написом кирилицею.
-            draw.rectangle([x, y, x + cell_size, y + cell_size], fill=(35, 35, 40))
-            draw.line([x + 20, y + 20, x + cell_size - 20, y + cell_size - 20], fill=(60, 60, 68), width=4)
-            draw.line([x + cell_size - 20, y + 20, x + 20, y + cell_size - 20], fill=(60, 60, 68), width=4)
-
-            ph_lines = _fit_label_lines(draw, "фото не згенерувалось", placeholder_font, cell_size - 40, max_lines=2)
-            line_h = 34
-            ph_y = y + cell_size / 2 - (len(ph_lines) * line_h) / 2
-            for line in ph_lines:
-                bbox = draw.textbbox((0, 0), line, font=placeholder_font)
-                lw = bbox[2] - bbox[0]
-                draw.text((x + (cell_size - lw) / 2, ph_y), line, font=placeholder_font, fill=(150, 150, 155))
-                ph_y += line_h
-
-        # Рамка навколо фото
-        draw.rectangle([x, y, x + cell_size, y + cell_size], outline=(255, 215, 0), width=3)
-
-        # Підпис назви під фото — по пікселях, максимум 2 рядки, не вилазить за межі клітинки
-        clean_name = _strip_emoji(item.get("name", code))
-        label_lines = _fit_label_lines(draw, clean_name, label_font, cell_size - 16, max_lines=2)
-        line_h = 38
-        text_y = y + cell_size + 10
-        for line in label_lines:
-            try:
-                bbox = draw.textbbox((0, 0), line, font=label_font)
-                text_w = bbox[2] - bbox[0]
-            except Exception:
-                text_w = 0
-            text_x = x + (cell_size - text_w) / 2
-            draw.text((text_x, text_y), line, font=label_font, fill=(255, 255, 255))
-            text_y += line_h
-
-        # Бейдж кількості, якщо предметів більше 1
-        count = item_counts.get(item.get("name", code), 1)
-        if count > 1:
-            badge_text = f"x{count}"
-            draw.ellipse([x + cell_size - 64, y + 10, x + cell_size - 10, y + 64], fill=(220, 30, 30))
-            bbox = draw.textbbox((0, 0), badge_text, font=badge_font)
-            bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            draw.text((x + cell_size - 37 - bw / 2, y + 37 - bh / 2 - bbox[1]), badge_text, font=badge_font, fill=(255, 255, 255))
-
-    bio = io.BytesIO()
-    bio.name = "inventory_collage.jpg"
-    canvas.save(bio, "JPEG", quality=95, optimize=True)
-    bio.seek(0)
-    return bio
-
-
-# ===================================================================
-# 🎨 AI ФОТО МАЙНА (ЯКІСНЕ) — СТАРА ВЕРСІЯ (ОДНА СПІЛЬНА AI-СЦЕНА)
+# 🎨 AI ФОТО МАЙНА — ОДНА СПІЛЬНА СЦЕНА, ПЕРШІ 4 ПРЕДМЕТИ
+# Один запит до Pollinations (без паралельності — тому без рейт-ліміту),
+# промпт явно просить розкласти рівно 4 предмети поруч в одному кадрі.
 # ===================================================================
 def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
@@ -2456,79 +2220,61 @@ def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
     descriptions = []
 
-    # 🖼️ Беремо ВСІ унікальні предмети (не тільки перші 3), щоб все майно
-    # влізло на одну спільну картину. Обмеження — 12 штук, щоб промпт
-    # не розповз і AI зміг чітко намалювати кожен окремий предмет.
-    for code in bought_codes[:12]:
+    # Обмежуємось 4 предметами — так AI реально встигає чітко намалювати
+    # кожен окремо, без "каші" з десятка об'єктів в одній сцені.
+    for code in bought_codes[:4]:
         code = str(code)
 
         if code in SHOP_ITEMS:
             item = SHOP_ITEMS[code]
-
             desc = item.get("ai_desc") or item.get("name")
             descriptions.append(desc)
-
 
     if not descriptions:
         return None
 
-    numbered_items = "; ".join(f"({i+1}) {d}" for i, d in enumerate(descriptions))
+    numbered_items = "; ".join(f"({i + 1}) {d}" for i, d in enumerate(descriptions))
 
     prompt = (
         "Professional product photography, ultra realistic, wide panoramic composition. "
         "A single grand luxury collection display arranged neatly side by side in one frame, "
-        "showing ALL of the following " + str(len(descriptions)) + " items together: "
+        f"showing exactly {len(descriptions)} items together, each clearly separated and fully visible: "
         + numbered_items
-        +
-        ". "
-        "Every item must be clearly visible and separated, arranged like a museum showcase or "
-        "flat-lay collection, real objects, sharp focus, extremely detailed textures, "
-        "studio lighting, 8K resolution, DSLR photo, wide-angle showroom shot, "
-        "no cartoon, no painting, no blur, nothing cropped out."
+        + ". "
+        "Arranged like a museum showcase or flat-lay collection, real objects, sharp focus, "
+        "extremely detailed textures, studio lighting, 8K resolution, DSLR photo, "
+        "wide-angle showroom shot, no cartoon, no painting, no blur, nothing cropped out, "
+        "no text, no watermark."
     )
 
-
     try:
-        seed = random.randint(100000,999999)
-        url = build_pollinations_url(prompt, width=1600, height=900, seed=seed)
+        seed = random.randint(100000, 999999)
+        # enhance=False — без важкого LLM-доопрацювання промпту, стабільніше і швидше
+        url = build_pollinations_url(prompt, width=1600, height=900, seed=seed, enhance=False)
 
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
 
+        for attempt in range(3):
+            try:
+                response = requests.get(url, headers=headers, timeout=70)
+                if response.status_code == 200:
+                    img = Image.open(io.BytesIO(response.content)).convert("RGB")
 
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=60
-        )
+                    bio = io.BytesIO()
+                    bio.name = "inventory_hd.jpg"
+                    img.save(bio, "JPEG", quality=95, optimize=True)
+                    bio.seek(0)
+                    return bio
+                else:
+                    print(f"⚠️ AI фото майна: HTTP {response.status_code}, спроба {attempt + 1}")
+            except Exception as e:
+                print(f"❌ AI фото помилка, спроба {attempt + 1}: {e}")
 
-
-        if response.status_code == 200:
-
-            img = Image.open(
-                io.BytesIO(response.content)
-            ).convert("RGB")
-
-
-            bio = io.BytesIO()
-            bio.name = "inventory_hd.jpg"
-
-            img.save(
-                bio,
-                "JPEG",
-                quality=95,
-                optimize=True
-            )
-
-            bio.seek(0)
-
-            return bio
-
+            if attempt < 2:
+                time.sleep(3 + attempt * 2)
 
     except Exception as e:
         print("❌ AI фото помилка:", e)
-
 
     return None
 
@@ -2590,13 +2336,13 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
 
     status_msg = bot.send_message(
         chat_id, 
-        "🎨 <b>Драго фотографує кожен твій предмет і збирає колаж...</b>\n<i>Зачекай кілька секунд!</i>", 
+        "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай трохи!</i>", 
         parse_mode="HTML",
         reply_to_message_id=reply_to_id
     )
 
-    top_codes = unique_codes[:12]
-    photo_bio = generate_inventory_collage(top_codes, item_counts)
+    top_codes = unique_codes[:4]
+    photo_bio = generate_inventory_ai_image(top_codes, total_value=total_property_value, balance=balance)
 
     if photo_bio:
         try:
