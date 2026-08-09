@@ -294,7 +294,7 @@ def check_rate_limit(message) -> bool:
 # звичайного чату з ШІ, тригер-слів, фото і т.д. — тільки команд.
 # Винятки (не видаляються): /sleepers (сонні), /top /stats (топ), збір (@all).
 # ===================================================================
-AUTO_DELETE_SEC = 20  # через скільки секунд видаляти повідомлення команди + відповідь бота
+AUTO_DELETE_SEC = 5  # через скільки секунд видаляти повідомлення команди + відповідь бота
 
 AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
@@ -332,16 +332,11 @@ def _schedule_autodelete(cmd_chat_id, cmd_message_id, extra_ids):
     timer.start()
 
 
-# Перехоплюємо send_message/reply_to, щоб знати, які повідомлення бот
-# надіслав у відповідь на команду (щоб потім їх теж видалити).
-_original_send_message = telebot.TeleBot.send_message
+# Перехоплюємо всі методи, якими бот щось надсилає (текст, фото, войс, аудіо,
+# гіфки, reply_to), щоб знати, які повідомлення бот надіслав у відповідь на
+# команду (щоб потім їх теж видалити). send_chat_action не чіпаємо — це не
+# повідомлення, а індикатор "друкує...", видаляти нічого.
 _original_reply_to = telebot.TeleBot.reply_to
-
-
-def _autodelete_send_message(self, chat_id, *args, **kwargs):
-    msg = _original_send_message(self, chat_id, *args, **kwargs)
-    _track_sent_message(chat_id, msg)
-    return msg
 
 
 def _autodelete_reply_to(self, message, *args, **kwargs):
@@ -350,8 +345,25 @@ def _autodelete_reply_to(self, message, *args, **kwargs):
     return msg
 
 
-telebot.TeleBot.send_message = _autodelete_send_message
 telebot.TeleBot.reply_to = _autodelete_reply_to
+
+_CHAT_ID_FIRST_SEND_METHODS = [
+    'send_message', 'send_photo', 'send_voice',
+    'send_audio', 'send_animation', 'send_video', 'send_document',
+]
+
+for _method_name in _CHAT_ID_FIRST_SEND_METHODS:
+    if not hasattr(telebot.TeleBot, _method_name):
+        continue
+
+    def _make_autodelete_wrapper(_original_method):
+        def _wrapped_send(self, chat_id, *args, **kwargs):
+            msg = _original_method(self, chat_id, *args, **kwargs)
+            _track_sent_message(chat_id, msg)
+            return msg
+        return _wrapped_send
+
+    setattr(telebot.TeleBot, _method_name, _make_autodelete_wrapper(getattr(telebot.TeleBot, _method_name)))
 
 
 # 🔧 Автоматично "обгортаємо" КОЖЕН обробник повідомлень (команди, тригер-слова,
