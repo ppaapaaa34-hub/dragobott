@@ -11,7 +11,7 @@ import math
 import html
 import edge_tts
 import subprocess
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 import telebot
 from telebot import types
 import google.generativeai as genai
@@ -270,7 +270,19 @@ def get_gemini_chat(chat_id):
     return bot_chats[chat_id]
 
 def run_dummy_server():
-    return
+    """Піднімає реальний HTTP-сервер (WebAppHandler, визначений нижче) на порту,
+    який дає Render. Без цього Render (Web Service) не бачить, що застосунок
+    слухає $PORT, вважає деплой мертвим і йде на нескінченні рестарти —
+    саме через це в логах Render вилазить сторінка Cloudflare
+    "You are being rate limited": дешборд сам впирається в ліміт запитів,
+    поки нескінченно перепідключається до логів сервісу, що постійно падає."""
+    port = int(os.environ.get("PORT", 10000))
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", port), WebAppHandler)
+        print(f"🌐 HTTP-сервер (Mini App API) запущено на порту {port}")
+        server.serve_forever()
+    except Exception as e:
+        print(f"❌ Не вдалося підняти HTTP-сервер на порту {port}: {e}")
 
 def is_user_banned(user_id):
     try:
@@ -4143,6 +4155,17 @@ def cmd_cleanup_users(message):
         return bot.reply_to(message, "🛑 Ця команда тільки для адміна.")
     run_db_cleanup(message.chat.id)
 
+def auto_cleanup_scheduler():
+    """Фонова задача: раз на кілька годин сама перевіряє базу і прибирає з топів
+    тих, хто вже вийшов з чату (не треба щоразу натискати кнопку вручну).
+    Звіт летить адміну в особисті, щоб не спамити групу."""
+    while True:
+        time.sleep(6 * 60 * 60)  # раз на 6 годин
+        try:
+            run_db_cleanup(ADMIN_ID)
+        except Exception as e:
+            print(f"⚠️ Помилка авто-чистки бази: {e}")
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
 def handle_admin_callbacks(call):
     if not is_admin(call.from_user.id):
@@ -5543,6 +5566,12 @@ class WebAppHandler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self._set_headers(200)
 
+    def do_GET(self):
+        # Render б'є сюди health-check запитом (GET /), тому віддаємо просте OK,
+        # а не стандартну поведінку SimpleHTTPRequestHandler (роздача файлів з диску)
+        self._set_headers(200)
+        self.wfile.write(json.dumps({"status": "ok", "service": "jarvis-bot"}).encode())
+
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
@@ -5955,6 +5984,10 @@ if __name__ == "__main__":
 
     discord_thread = threading.Thread(target=run_discord, daemon=True)
     discord_thread.start()
+
+    cleanup_thread = threading.Thread(target=auto_cleanup_scheduler, daemon=True)
+    cleanup_thread.start()
+    print("🧹 Автоматична чистка бази запущена (раз на 6 годин).")
     
     print("🔥 Драго вийшов на полювання і готовий до роботи на Neon DB!")
     bot.infinity_polling(allowed_updates=['message', 'edited_message', 'chat_member', 'callback_query'])
