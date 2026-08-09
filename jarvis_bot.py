@@ -4004,21 +4004,22 @@ def generate_image_wait_and_send(message):
 
 # ===================================================================
 # 📣 КОМАНДА ЗАГАЛЬНОГО ЗБОРУ (@all / ЗБІР) — В СТИЛІ БОТА-ЗАЗИВАЛИ
+# Формат як у "Зазивала tag bot": одна й та сама фраза повторюється
+# окремими повідомленнями, а замість імен — рядок емодзі-тегів
+# (кожен емодзі — це прихований <a href="tg://user?id=..."> на юзера).
 # ===================================================================
 
-# Список крутих фраз для заклику
-CALL_HEADERS = [
-    "📢 <b>УВАГА, ЗАГОН! ЗАГАЛЬНА МОБІЛІЗАЦІЯ!</b> 🚨",
-    "🔔 <b>ТРИВОГА В ЧАТІ! ВСІМ ПІДНЯТИСЯ!</b> 💥",
-    "⚡ <b>ДРАГО ЗБИРАЄ БАНДУ! ХТО НЕ З НАМИ — ТОЙ МУСОР!</b> 🔥",
-    "🔊 <b>ГОЛОВНИЙ ШУМОВИК ВВІМКНЕНО! ВШЕНТ РОЗБУДИТИ ВСІХ!</b> 💣"
-]
+DEFAULT_CALL_PHRASE = "макс вільний дівки нападайте"
 
-CALL_FOOTERS = [
-    "<i>⚡ Живо кидайте свої справи і відповідайте!</i>",
-    "<i>👀 Хто проігнорить — той закриває банк.</i>",
-    "<i>👇 Відмічаємось у коментарях!</i>",
-    "<i>🫡 Явка обов'язкова, відмазки не приймаються.</i>"
+# Пул емодзі для анонімних тегів (замість імені показується емодзі)
+TAG_EMOJIS = [
+    "😀", "😎", "🤠", "🥷", "👮‍♂️", "👮‍♀️", "🕵️‍♂️", "🕵️‍♀️", "👨‍🌾", "👩‍🌾",
+    "👨‍🍳", "👩‍🍳", "🧔", "🧔‍♀️", "👳‍♂️", "👳‍♀️", "👲", "🧕", "🤵", "👰",
+    "🎅", "🤶", "🦸‍♂️", "🦸‍♀️", "🦹‍♂️", "🦹‍♀️", "🧙‍♂️", "🧙‍♀️", "🧛‍♂️", "🧛‍♀️",
+    "🧟‍♂️", "🧟‍♀️", "🧞‍♂️", "🧞‍♀️", "🥸", "😈", "👹", "👺", "🤡", "💀",
+    "👽", "🤖", "🎃", "🐵", "🐶", "🐱", "🦊", "🦁", "🐯", "🐴",
+    "🦄", "🐗", "🐺", "🦝", "🐻", "🐼", "🐨", "🐘", "🦏", "🦍",
+    "🌸", "🌺", "🌼", "🌷", "🌻", "🍄", "🌵", "🎄", "🌴", "🍀",
 ]
 
 @bot.message_handler(func=lambda m: m.text and any(m.text.strip().lower().startswith(trig) for trig in ['@all', '.all', '.збір', 'збір', '/all']))
@@ -4040,18 +4041,22 @@ def call_everyone(message):
         ensure_user_in_db(user)
 
         original_text = message.text.strip()
-        reason = ""
-        
+        phrase = DEFAULT_CALL_PHRASE
+
         for trigger in ['@all', '.all', '.збір', 'збір', '/all']:
             if original_text.lower().startswith(trigger):
-                reason = original_text[len(trigger):].strip()
+                custom_phrase = original_text[len(trigger):].strip()
+                if custom_phrase:
+                    phrase = custom_phrase
                 break
+
+        clean_phrase = phrase.replace("<", "&lt;").replace(">", "&gt;")
 
         # Беремо з БД тільки тих, хто активний у чаті
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user_id, name FROM stats WHERE in_chat = TRUE")
+                cursor.execute("SELECT user_id FROM stats WHERE in_chat = TRUE")
                 users = cursor.fetchall()
             conn.close()
 
@@ -4059,14 +4064,10 @@ def call_everyone(message):
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="❌ База даних порожня, нікого кликати.")
             return
 
-        mentions = []
-        for u_id, name in users:
-            if u_id == bot.get_me().id:
-                continue
-            clean_name = name.replace("<", "&lt;").replace(">", "&gt;") if name else "Бро"
-            mentions.append(f'<a href="tg://user?id={u_id}">{clean_name}</a>')
+        bot_id = bot.get_me().id
+        user_ids = [u_id for (u_id,) in users if u_id != bot_id]
 
-        if not mentions:
+        if not user_ids:
             bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Здається, крім тебе й мене тут нікого немає, бро.")
             return
 
@@ -4076,39 +4077,20 @@ def call_everyone(message):
         except Exception:
             pass
 
-        # Формуємо причину
-        if reason:
-            clean_reason = reason.replace("<", "&lt;").replace(">", "&gt;")
-            reason_text = f"📌 <b>Причина:</b> <i>{clean_reason}</i>\n"
-        else:
-            reason_text = "📌 <b>Причина:</b> <i>Терміновий збір без пояснень!</i>\n"
-
-        header = random.choice(CALL_HEADERS)
-        footer = random.choice(CALL_FOOTERS)
-
-        # 1. Відправляємо головну шапку-зазивалу
-        main_call = (
-            f"{header}\n\n"
-            f"{reason_text}\n"
-            f"👥 <b>Учасників до виклику:</b> <code>{len(mentions)}</code>\n"
-            f"───────────────────────\n"
-            f"{footer}"
-        )
-        
-        bot.send_message(chat_id, main_call, parse_mode="HTML")
-
-        # 2. Розбиваємо теги на акуратні блоки (по 5 осіб), щоб Telegram точно надіслав сповіщення
+        # Розбиваємо на блоки по 5 і шлемо окремими повідомленнями:
+        # текст фрази + рядок емодзі-тегів (кожен емодзі — прихований тег юзера)
         chunk_size = 5
-        for i in range(0, len(mentions), chunk_size):
-            chunk = mentions[i:i + chunk_size]
-            
-            # Гарне оформлення кожного блоку
-            mention_text = (
-                f"🎯 <b>На зв'язок:</b>\n"
-                f"└ " + ", ".join(chunk)
+        for i in range(0, len(user_ids), chunk_size):
+            chunk = user_ids[i:i + chunk_size]
+            emojis = random.choices(TAG_EMOJIS, k=len(chunk))
+
+            tag_line = "".join(
+                f'<a href="tg://user?id={uid}">{emoji}</a>'
+                for uid, emoji in zip(chunk, emojis)
             )
-            
-            bot.send_message(chat_id, mention_text, parse_mode="HTML")
+
+            text = f"{clean_phrase}\n{tag_line}"
+            bot.send_message(chat_id, text, parse_mode="HTML")
             time.sleep(0.5)  # Маленька пауза, щоб Telegram не дав флуд-бан
 
     except Exception as e:
