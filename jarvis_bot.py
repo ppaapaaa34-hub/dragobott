@@ -9,6 +9,7 @@ import threading
 import asyncio
 import math
 import html
+import functools
 import edge_tts
 import subprocess
 from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
@@ -179,6 +180,134 @@ DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN', 'ТВІЙ_ДИСКОРД_ТОК�
 TELEGRAM_CHAT_ID = -1003428241218  # ID чату для анонсів
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+# ===================================================================
+# 🐢 ГЛОБАЛЬНИЙ ЛІМІТ ЗАПИТІВ (антиспам на команди + на ШІ)
+# Захищає від того, щоб юзер закидував бота командами або
+# запитами до ШІ занадто швидко. Працює для ВСІХ обробників
+# повідомлень (команди, тригер-слова, звичайний текстовий чат із ШІ,
+# фото/гіфки тощо) — автоматично, без правок у самих обробниках.
+# ===================================================================
+RATE_LOCK = threading.Lock()
+RATE_LAST_USE = {}      # {(chat_id, user_id): timestamp останньої дозволеної дії}
+RATE_STRIKES = {}       # {(chat_id, user_id): {"count": int, "last": timestamp}}
+RATE_BLOCKED_UNTIL = {} # {(chat_id, user_id): timestamp до якого юзер в тимчасовому блоці}
+RATE_LAST_WARNED = {}   # {(chat_id, user_id): timestamp останнього попередження}
+
+RATE_COOLDOWN_SEC = 2        # мінімальний інтервал між будь-якими командами/запитами до ШІ
+RATE_STRIKE_LIMIT = 4        # скільки разів поспіль можна "влетіти" в кулдаун
+RATE_STRIKE_WINDOW_SEC = 15  # ...за який період, інакше лічильник скидається
+RATE_BLOCK_SEC = 30          # тимчасове ігнорування команд/ШІ після перевищення ліміту
+RATE_WARN_COOLDOWN_SEC = 5   # не частіше, ніж раз в стільки секунд, попереджаємо юзера
+
+
+def check_rate_limit(message) -> bool:
+    """
+    Загальний ліміт запитів (команди + ШІ + будь-яка інша дія юзера).
+    Повертає True, якщо запит потрібно заблокувати (в цьому разі
+    обробку повідомлення слід припинити).
+    """
+    user = getattr(message, "from_user", None)
+    if not user:
+        return False
+
+    chat_id = message.chat.id
+    user_id = user.id
+    key = (chat_id, user_id)
+
+    # Адмінів/модераторів у групах і суперадміна бота — не обмежуємо
+    try:
+        if message.chat.type != 'private' and is_chat_admin(chat_id, user_id):
+            return False
+        if is_admin(user_id):
+            return False
+    except Exception:
+        pass
+
+    now = time.time()
+    action = "ok"
+    remaining = 0
+
+    with RATE_LOCK:
+        blocked_until = RATE_BLOCKED_UNTIL.get(key, 0)
+
+        if now < blocked_until:
+            action = "still_blocked"
+            remaining = int(blocked_until - now)
+        else:
+            last_use = RATE_LAST_USE.get(key, 0)
+            if now - last_use < RATE_COOLDOWN_SEC:
+                strikes = RATE_STRIKES.get(key, {"count": 0, "last": 0})
+                if now - strikes.get("last", 0) > RATE_STRIKE_WINDOW_SEC:
+                    strikes["count"] = 0
+                strikes["count"] += 1
+                strikes["last"] = now
+                RATE_STRIKES[key] = strikes
+
+                if strikes["count"] >= RATE_STRIKE_LIMIT:
+                    RATE_BLOCKED_UNTIL[key] = now + RATE_BLOCK_SEC
+                    RATE_STRIKES[key] = {"count": 0, "last": 0}
+                    action = "block"
+                    remaining = RATE_BLOCK_SEC
+                else:
+                    action = "strike"
+            else:
+                RATE_LAST_USE[key] = now
+                action = "ok"
+
+        # Щоб не спамити самими попередженнями — не частіше ніж раз в RATE_WARN_COOLDOWN_SEC
+        if action in ("strike", "still_blocked"):
+            last_warn = RATE_LAST_WARNED.get(key, 0)
+            if now - last_warn < RATE_WARN_COOLDOWN_SEC:
+                action = "silent_block"
+            else:
+                RATE_LAST_WARNED[key] = now
+        elif action == "block":
+            RATE_LAST_WARNED[key] = now
+
+    if action == "ok":
+        return False
+    if action == "silent_block":
+        return True
+
+    try:
+        if action == "block":
+            bot.reply_to(
+                message,
+                f"⏳ Занадто багато запитів поспіль! Почекай {RATE_BLOCK_SEC} сек, "
+                f"перш ніж знову користуватись командами чи писати ШІ."
+            )
+        elif action == "still_blocked":
+            bot.reply_to(message, f"⏳ Зачекай ще ~{remaining} сек, перш ніж продовжити.")
+        elif action == "strike":
+            bot.reply_to(message, "🐢 Не так швидко! Зачекай трохи між командами.")
+    except Exception as e:
+        print(f"Помилка попередження rate-limit: {e}")
+
+    return True
+
+
+# 🔧 Автоматично "обгортаємо" КОЖЕН обробник повідомлень (команди, тригер-слова,
+# текстовий чат із ШІ, фото/гіфки і т.д.) перевіркою check_rate_limit,
+# щоб не треба було вручну редагувати кожен @bot.message_handler нижче по файлу.
+_original_message_handler = telebot.TeleBot.message_handler
+
+
+def _rate_limited_message_handler(self, *args, **kwargs):
+    real_decorator = _original_message_handler(self, *args, **kwargs)
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(message, *a, **kw):
+            if check_rate_limit(message):
+                return
+            return func(message, *a, **kw)
+        return real_decorator(wrapped)
+
+    return decorator
+
+
+telebot.TeleBot.message_handler = _rate_limited_message_handler
 
 generation_config = {
     "max_output_tokens": 2096,
