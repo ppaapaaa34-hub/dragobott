@@ -378,6 +378,13 @@ _handler_ctx = threading.local()  # захист від подвійної пе�
 def _rate_limited_message_handler(self, *args, **kwargs):
     real_decorator = _original_message_handler(self, *args, **kwargs)
     commands = kwargs.get('commands') or []
+    # Обробники, зареєстровані ЛИШЕ по content_types (без commands= і без func=),
+    # є "ловцями всього" — content_types=['text'] спрацьовує на КОЖНЕ повідомлення
+    # в чаті, а не тільки на команди чи звернення до ШІ. Такі обробники НЕ
+    # обгортаємо лімітом автоматично, інакше під ліміт попадає звичайне
+    # спілкування в чаті. Ліміт для ШІ підключається вручну всередині
+    # відповідного обробника (handle_text), тільки коли бота справді покликали.
+    rate_limit_applicable = bool(commands) or kwargs.get('func') is not None
 
     def decorator(func):
         auto_delete_enabled = (
@@ -385,6 +392,9 @@ def _rate_limited_message_handler(self, *args, **kwargs):
             and not (set(c.lower() for c in commands) & AUTO_DELETE_EXCLUDED_COMMANDS)
             and func.__name__ not in AUTO_DELETE_EXCLUDED_FUNCS
         )
+
+        if not rate_limit_applicable:
+            return real_decorator(func)
 
         @functools.wraps(func)
         def wrapped(message, *a, **kw):
@@ -1898,7 +1908,7 @@ SPAM_TRACKER = {}    # {(chat_id, user_id): [timestamps повідомлень]}
 SPAM_WARNINGS = {}   # {(chat_id, user_id): {"count": int, "last": timestamp}}
 
 FLOOD_MSG_LIMIT = 5          # скільки повідомлень поспіль вважати флудом
-FLOOD_WINDOW_SEC = 7         # ...якщо вони прийшли за стільки секунд
+FLOOD_WINDOW_SEC = 5         # ...якщо вони прийшли за стільки секунд
 FLOOD_WARN_LIMIT = 3         # скільки попереджень до автомуту
 FLOOD_MUTE_SEC = 600         # тривалість автомуту за флуд (10 хв)
 FLOOD_WARN_RESET_SEC = 300   # якщо юзер поводиться нормально стільки часу — попередження скидаються
@@ -5816,6 +5826,10 @@ def handle_photo(message):
     if not is_mentioned:
         return
 
+    # 🐢 Ліміт запитів до ШІ — лише коли бота справді покликали на фото.
+    if check_rate_limit(message):
+        return
+
     gender_hint = ""
     if gender == 'Дівчина':
         gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга', 'красуня' тощо] "
@@ -6238,6 +6252,11 @@ def handle_text(message):
         is_mentioned = True
 
     if not is_mentioned:
+        return
+
+    # 🐢 Ліміт запитів до ШІ — перевіряємо тільки тут, тобто лише коли бота
+    # справді покликали, а не на кожне повідомлення в чаті.
+    if check_rate_limit(message):
         return
 
     # 🧠 ФОНОВИЙ ПОШУК ТА ЗБЕРЕЖЕННЯ ФАКТІВ ПРО ЮЗЕРА
