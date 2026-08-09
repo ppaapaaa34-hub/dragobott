@@ -15,7 +15,8 @@ from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServe
 import telebot
 from telebot import types
 import google.generativeai as genai
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 from psycopg2 import pool as pg_pool
 import discord
@@ -2209,7 +2210,154 @@ def build_shop_page(page=0):
     return "\n".join(text), markup, shop_descriptions
 
 # ===================================================================
-# 🎨 AI ФОТО МАЙНА (ЯКІСНЕ)
+# 🖼️ КОЛАЖ МАЙНА — ОКРЕМЕ ФОТО НА КОЖЕН ПРЕДМЕТ, ЗІБРАНІ В ОДНУ СІТКУ
+# На відміну від generate_inventory_ai_image (одна спільна AI-сцена),
+# тут кожен предмет малюється окремою AI-картинкою (паралельно), а потім
+# усі мініатюри склеюються через PIL в один колаж з підписами назв —
+# так гарантовано видно КОЖЕН предмет чітко, без "каші" в одній сцені.
+# ===================================================================
+
+_INVENTORY_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "DejaVuSans-Bold.ttf",
+    "arial.ttf",
+]
+
+def _load_collage_font(size):
+    """Шукає перший доступний TTF-шрифт з кирилицею на сервері.
+    Якщо жодного не знайдено — падає на вбудований шрифт PIL (без кирилиці,
+    але хоч не впаде з помилкою)."""
+    for path in _INVENTORY_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default(size=size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _strip_emoji(text):
+    """Прибирає емодзі з назви предмета — шрифти зазвичай не вміють їх малювати,
+    лишаються порожні квадратики."""
+    return "".join(ch for ch in text if ord(ch) < 0x2100 or ch in "₴").strip()
+
+
+def _fetch_item_thumbnail(code, item, size=420):
+    """Генерує окрему AI-картинку для одного предмета магазину."""
+    desc = item.get("ai_desc") or item.get("name")
+    prompt = (
+        f"Professional product photography, ultra realistic, single object: {desc}. "
+        "Centered, studio lighting, plain neutral background, sharp focus, "
+        "extremely detailed, 8K, DSLR photo, no cartoon, no painting, no blur, no text, no watermark."
+    )
+    try:
+        seed = random.randint(100000, 999999)
+        url = build_pollinations_url(prompt, width=size, height=size, seed=seed)
+        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=45)
+        if response.status_code == 200:
+            img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            img = img.resize((size, size))
+            return code, img
+    except Exception as e:
+        print(f"❌ Помилка мініатюри майна ({code}): {e}")
+    return code, None
+
+
+def generate_inventory_collage(unique_codes, item_counts):
+    """Будує один колаж-зображення з окремою фоткою на кожен унікальний предмет.
+    unique_codes — список item_code (без дублів), item_counts — {item_name: кількість}."""
+
+    codes = [str(c) for c in unique_codes if str(c) in SHOP_ITEMS][:12]
+    if not codes:
+        return None
+
+    cell_size = 420
+    label_h = 80
+    padding = 24
+    cols = 4 if len(codes) > 6 else (3 if len(codes) > 2 else len(codes))
+    cols = max(cols, 1)
+    rows = math.ceil(len(codes) / cols)
+
+    canvas_w = cols * cell_size + (cols + 1) * padding
+    canvas_h = rows * (cell_size + label_h) + (rows + 1) * padding + 140
+
+    canvas = Image.new("RGB", (canvas_w, canvas_h), (18, 18, 22))
+    draw = ImageDraw.Draw(canvas)
+
+    title_font = _load_collage_font(56)
+    label_font = _load_collage_font(32)
+    badge_font = _load_collage_font(28)
+
+    title_text = "★ МАЙНО ★"
+    try:
+        bbox = draw.textbbox((0, 0), title_text, font=title_font)
+        title_w = bbox[2] - bbox[0]
+    except Exception:
+        title_w = 300
+    draw.text(((canvas_w - title_w) / 2, 40), title_text, font=title_font, fill=(255, 215, 0))
+
+    # Паралельно тягнемо мініатюри по кожному предмету
+    thumbnails = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(_fetch_item_thumbnail, code, SHOP_ITEMS[code], cell_size) for code in codes]
+        for future in as_completed(futures):
+            code, img = future.result()
+            thumbnails[code] = img
+
+    y_start = 140 + padding
+    for i, code in enumerate(codes):
+        row = i // cols
+        col = i % cols
+        x = padding + col * (cell_size + padding)
+        y = y_start + row * (cell_size + label_h + padding)
+
+        item = SHOP_ITEMS[code]
+        thumb = thumbnails.get(code)
+
+        if thumb:
+            canvas.paste(thumb, (x, y))
+        else:
+            draw.rectangle([x, y, x + cell_size, y + cell_size], fill=(40, 40, 46))
+            draw.text((x + 20, y + cell_size // 2 - 15), "🖼", font=label_font, fill=(120, 120, 120))
+
+        # Рамка навколо фото
+        draw.rectangle([x, y, x + cell_size, y + cell_size], outline=(255, 215, 0), width=3)
+
+        # Підпис назви під фото
+        clean_name = _strip_emoji(item.get("name", code))
+        if len(clean_name) > 26:
+            clean_name = clean_name[:24] + "…"
+        try:
+            bbox = draw.textbbox((0, 0), clean_name, font=label_font)
+            text_w = bbox[2] - bbox[0]
+        except Exception:
+            text_w = 0
+        text_x = x + (cell_size - text_w) / 2
+        draw.text((text_x, y + cell_size + 14), clean_name, font=label_font, fill=(255, 255, 255))
+
+        # Бейдж кількості, якщо предметів більше 1
+        count = item_counts.get(item.get("name", code), 1)
+        if count > 1:
+            badge_text = f"x{count}"
+            draw.ellipse([x + cell_size - 60, y + 10, x + cell_size - 10, y + 60], fill=(220, 30, 30))
+            draw.text((x + cell_size - 48, y + 20), badge_text, font=badge_font, fill=(255, 255, 255))
+
+    bio = io.BytesIO()
+    bio.name = "inventory_collage.jpg"
+    canvas.save(bio, "JPEG", quality=95, optimize=True)
+    bio.seek(0)
+    return bio
+
+
+# ===================================================================
+# 🎨 AI ФОТО МАЙНА (ЯКІСНЕ) — СТАРА ВЕРСІЯ (ОДНА СПІЛЬНА AI-СЦЕНА)
 # ===================================================================
 def generate_inventory_ai_image(bought_codes, total_value=0, balance=0):
 
@@ -2352,17 +2500,13 @@ def process_and_send_inventory(chat_id, user_id, user_name, reply_to_id=None, is
 
     status_msg = bot.send_message(
         chat_id, 
-        "🎨 <b>Драго малює твоє майно на єдиній картині...</b>\n<i>Зачекай пару секунд!</i>", 
+        "🎨 <b>Драго фотографує кожен твій предмет і збирає колаж...</b>\n<i>Зачекай кілька секунд!</i>", 
         parse_mode="HTML",
         reply_to_message_id=reply_to_id
     )
 
-    top_codes = unique_codes[:15]
-    photo_bio = generate_inventory_ai_image(
-    top_codes,
-    total_value=total_property_value,
-    balance=balance
-)
+    top_codes = unique_codes[:12]
+    photo_bio = generate_inventory_collage(top_codes, item_counts)
 
     if photo_bio:
         try:
