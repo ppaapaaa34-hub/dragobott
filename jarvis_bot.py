@@ -287,21 +287,124 @@ def check_rate_limit(message) -> bool:
     return True
 
 
+# ===================================================================
+# 🗑️ АВТОВИДАЛЕННЯ ПОВІДОМЛЕНЬ-КОМАНД
+# Через кілька секунд після виконання команди бот видаляє і саме
+# повідомлення з командою, і свою відповідь на неї. НЕ стосується
+# звичайного чату з ШІ, тригер-слів, фото і т.д. — тільки команд.
+# Винятки (не видаляються): /sleepers (сонні), /top /stats (топ), збір (@all).
+# ===================================================================
+AUTO_DELETE_SEC = 5  # через скільки секунд видаляти повідомлення команди + відповідь бота
+
+AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
+AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
+
+_autodelete_ctx = threading.local()
+
+
+def _track_sent_message(chat_id, msg):
+    """Запам'ятовує id повідомлень, надісланих ботом всередині команди, що підлягає автовидаленню."""
+    if getattr(_autodelete_ctx, 'enabled', False) and msg is not None:
+        try:
+            sent_ids = _autodelete_ctx.sent_ids
+        except AttributeError:
+            sent_ids = _autodelete_ctx.sent_ids = []
+        try:
+            sent_ids.append((chat_id, msg.message_id))
+        except Exception:
+            pass
+
+
+def _schedule_autodelete(cmd_chat_id, cmd_message_id, extra_ids):
+    def _do_delete():
+        try:
+            bot.delete_message(cmd_chat_id, cmd_message_id)
+        except Exception:
+            pass
+        for chat_id, msg_id in extra_ids:
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+    timer = threading.Timer(AUTO_DELETE_SEC, _do_delete)
+    timer.daemon = True
+    timer.start()
+
+
+# Перехоплюємо send_message/reply_to, щоб знати, які повідомлення бот
+# надіслав у відповідь на команду (щоб потім їх теж видалити).
+_original_send_message = telebot.TeleBot.send_message
+_original_reply_to = telebot.TeleBot.reply_to
+
+
+def _autodelete_send_message(self, chat_id, *args, **kwargs):
+    msg = _original_send_message(self, chat_id, *args, **kwargs)
+    _track_sent_message(chat_id, msg)
+    return msg
+
+
+def _autodelete_reply_to(self, message, *args, **kwargs):
+    msg = _original_reply_to(self, message, *args, **kwargs)
+    _track_sent_message(message.chat.id, msg)
+    return msg
+
+
+telebot.TeleBot.send_message = _autodelete_send_message
+telebot.TeleBot.reply_to = _autodelete_reply_to
+
+
 # 🔧 Автоматично "обгортаємо" КОЖЕН обробник повідомлень (команди, тригер-слова,
 # текстовий чат із ШІ, фото/гіфки і т.д.) перевіркою check_rate_limit,
 # щоб не треба було вручну редагувати кожен @bot.message_handler нижче по файлу.
+# Для власне команд (commands=[...]), крім винятків вище, додатково вмикається
+# автовидалення повідомлення-команди й відповіді бота через AUTO_DELETE_SEC.
 _original_message_handler = telebot.TeleBot.message_handler
+_handler_ctx = threading.local()  # захист від подвійної перевірки, коли на одну й ту саму функцію навішано кілька @bot.message_handler
 
 
 def _rate_limited_message_handler(self, *args, **kwargs):
     real_decorator = _original_message_handler(self, *args, **kwargs)
+    commands = kwargs.get('commands') or []
 
     def decorator(func):
+        auto_delete_enabled = (
+            bool(commands)
+            and not (set(c.lower() for c in commands) & AUTO_DELETE_EXCLUDED_COMMANDS)
+            and func.__name__ not in AUTO_DELETE_EXCLUDED_FUNCS
+        )
+
         @functools.wraps(func)
         def wrapped(message, *a, **kw):
+            # Якщо цей виклик уже йде зсередини іншого нашого враппера для
+            # цього ж повідомлення (стек кількох @bot.message_handler на
+            # одній функції, напр. commands=[...] + func=...) — не робимо
+            # перевірку і автовидалення вдруге.
+            if getattr(_handler_ctx, 'in_progress', False):
+                return func(message, *a, **kw)
+
             if check_rate_limit(message):
                 return
-            return func(message, *a, **kw)
+
+            if not auto_delete_enabled:
+                _handler_ctx.in_progress = True
+                try:
+                    return func(message, *a, **kw)
+                finally:
+                    _handler_ctx.in_progress = False
+
+            _handler_ctx.in_progress = True
+            _autodelete_ctx.enabled = True
+            _autodelete_ctx.sent_ids = []
+            try:
+                result = func(message, *a, **kw)
+            finally:
+                _handler_ctx.in_progress = False
+                _autodelete_ctx.enabled = False
+                sent_ids = list(getattr(_autodelete_ctx, 'sent_ids', []))
+                _schedule_autodelete(message.chat.id, message.message_id, sent_ids)
+            return result
+
         return real_decorator(wrapped)
 
     return decorator
