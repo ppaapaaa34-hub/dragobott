@@ -294,7 +294,7 @@ def check_rate_limit(message) -> bool:
 # звичайного чату з ШІ, тригер-слів, фото і т.д. — тільки команд.
 # Винятки (не видаляються): /sleepers (сонні), /top /stats (топ), збір (@all).
 # ===================================================================
-AUTO_DELETE_SEC = 5  # через скільки секунд видаляти повідомлення команди + відповідь бота
+AUTO_DELETE_SEC = 20  # через скільки секунд видаляти повідомлення команди + відповідь бота
 
 AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
