@@ -699,23 +699,39 @@ def send_voice_reply(chat_id, text_to_speak, reply_to_id=None):
 def safe_get_rank(msg_count):
     """Визначає ранг користувача за кількістю повідомлень"""
     if msg_count < 10:
-        return "Новачок"
-    elif msg_count < 50:
-        return "Шкет"
+        return "🌱 Заблукавший"
+    elif msg_count < 30:
+        return "👶 Новачок"
+    elif msg_count < 70:
+        return "👟 Шкет"
     elif msg_count < 150:
-        return "Базіка"
+        return "💬 Базіка"
+    elif msg_count < 250:
+        return "🧢 Місцевий"
     elif msg_count < 400:
-        return "Пацан"
-    elif msg_count < 800:
-        return "Братан"
-    elif msg_count < 1500:
-        return "Авторитет"
-    elif msg_count < 3000:
-        return "Бригадир"
+        return "⚔️ Боєць"
+    elif msg_count < 600:
+        return "🤝 Братан"
+    elif msg_count < 900:
+        return "🛡️ Перевірений"
+    elif msg_count < 1300:
+        return "⚙️ Старший"
+    elif msg_count < 1800:
+        return "🔥 Авторитет"
+    elif msg_count < 2500:
+        return "💼 Смотрящий"
+    elif msg_count < 3500:
+        return "🏛️ Бригадир"
     elif msg_count < 5000:
-        return "Хрещений батько"
+        return "🕶️ Блатний"
+    elif msg_count < 7000:
+        return "🔱 Хрещений батько"
+    elif msg_count < 10000:
+        return "👑 Легенда району"
+    elif msg_count < 15000:
+        return "💎 Тіньовий бос"
     else:
-        return "Легенда району"
+        return "⚡ Володар чату"
 
 
 # ===================================================================
