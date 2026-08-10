@@ -207,8 +207,8 @@ CHAT_CMD_TRACKER = {}        # {chat_id: [timestamps команд від буд�
 CHAT_CMD_BLOCKED_UNTIL = {}  # {chat_id: timestamp до якого команди в чаті на паузі}
 CHAT_CMD_LAST_WARNED = {}    # {chat_id: timestamp останнього попередження в чаті}
 
-CHAT_CMD_LIMIT = 6          # скільки команд загалом (від будь-кого) вважати флудом чату
-CHAT_CMD_WINDOW_SEC = 8     # ...якщо вони прийшли за стільки секунд
+CHAT_CMD_LIMIT = 4          # скільки команд загалом (від будь-кого) вважати флудом чату
+CHAT_CMD_WINDOW_SEC = 5     # ...якщо вони прийшли за стільки секунд
 CHAT_CMD_BLOCK_SEC = 20     # на скільки "заморожуємо" команди в чаті після цього
 CHAT_CMD_WARN_COOLDOWN_SEC = 5
 
@@ -344,7 +344,7 @@ def check_rate_limit(message) -> bool:
 # звичайного чату з ШІ, тригер-слів, фото і т.д. — тільки команд.
 # Винятки (не видаляються): /sleepers (сонні), /top /stats (топ), збір (@all).
 # ===================================================================
-AUTO_DELETE_SEC = 5  # через скільки секунд видаляти повідомлення команди + відповідь бота
+AUTO_DELETE_SEC = 60  # через скільки секунд видаляти повідомлення команди + відповідь бота
 
 AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
@@ -1958,7 +1958,7 @@ SPAM_TRACKER = {}    # {(chat_id, user_id): [timestamps повідомлень]}
 SPAM_WARNINGS = {}   # {(chat_id, user_id): {"count": int, "last": timestamp}}
 
 FLOOD_MSG_LIMIT = 5          # скільки повідомлень поспіль вважати флудом
-FLOOD_WINDOW_SEC = 7         # ...якщо вони прийшли за стільки секунд
+FLOOD_WINDOW_SEC = 5         # ...якщо вони прийшли за стільки секунд
 FLOOD_WARN_LIMIT = 3         # скільки попереджень до автомуту
 FLOOD_MUTE_SEC = 600         # тривалість автомуту за флуд (10 хв)
 FLOOD_WARN_RESET_SEC = 300   # якщо юзер поводиться нормально стільки часу — попередження скидаються
