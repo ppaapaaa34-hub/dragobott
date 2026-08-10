@@ -1132,81 +1132,229 @@ def process_photo_change(message):
         bot.reply_to(message, f"❌ Помилка завантаження фото: {e}")
 
 # ===================================================================
-# 💼 КАТАЛОГ БІЗНЕСІВ (12 різноманітних об'єктів)
+# 💼 КАТАЛОГ БІЗНЕСІВ (25 різноманітних об'єктів)
 # ===================================================================
 BUSINESSES = {
+    # ☕ Малий бізнес та Фастфуд
     "coffee": {
-        "name": "☕ Кав'ярня «Кава на майно»", 
-        "price": 25000, 
-        "income": 900, 
-        "ai_desc": "cozy small coffee shop exterior, warm lighting, wooden decoration, realistic"
+        "name": "☕ Кав'ярня «Кава на майно»",
+        "price": 25000,
+        "income": 900,
+        "ai_desc": (
+            "cozy small coffee shop exterior, warm lighting, wooden"
+            " decoration, realistic"
+        ),
     },
     "kebab": {
-        "name": "🌯 I Love Kebab", 
-        "price": 60000, 
-        "income": 2200, 
-        "ai_desc": "cozy small fast food kebab restaurant, bright street light, realistic"
+        "name": "🌯 I Love Kebab",
+        "price": 60000,
+        "income": 2200,
+        "ai_desc": (
+            "cozy small fast food kebab restaurant, bright street light,"
+            " realistic"
+        ),
     },
     "barbershop": {
-        "name": "💈 Барбершоп «Barba»", 
-        "price": 150000, 
-        "income": 5500, 
-        "ai_desc": "modern stylish barbershop exterior, neon barber pole, big windows, stylish"
+        "name": "💈 Барбершоп «Barba»",
+        "price": 150000,
+        "cat": "Сервіс",
+        "income": 5500,
+        "ai_desc": (
+            "modern stylish barbershop exterior, neon barber pole, big"
+            " windows, stylish"
+        ),
     },
+    "vape_shop": {
+        "name": "💨 Вейпшоп «Haze Zone»",
+        "price": 220000,
+        "income": 8000,
+        "ai_desc": (
+            "neon lit vape shop interior with colorful smoke and liquid bottles"
+        ),
+    },
+    "pizzeria": {
+        "name": "🍕 Мережа Піцерій",
+        "price": 300000,
+        "income": 11000,
+        "ai_desc": "cozy Italian pizzeria with wood fired oven outside view",
+    },
+    # 🚬 Тіньовий бізнес та Сервіси
     "cigars": {
-        "name": "🚬 Контрабанда цигарок", 
-        "price": 350000, 
-        "income": 12500, 
-        "ai_desc": "secret cargo truck, cardboard boxes, custom control border crossing, dark night"
+        "name": "🚬 Контрабанда цигарок",
+        "price": 350000,
+        "income": 12500,
+        "ai_desc": (
+            "secret cargo truck, cardboard boxes, custom control border"
+            " crossing, dark night"
+        ),
+    },
+    "pawnshop": {
+        "name": "💍 Мережа Ломбардів «Скарбниця»",
+        "price": 550000,
+        "income": 20000,
+        "ai_desc": (
+            "neon illuminated pawn shop store front with gold and tech icons"
+        ),
     },
     "carwash": {
-        "name": "🚗 Автомийка самообслуговування", 
-        "price": 800000, 
-        "income": 28000, 
-        "ai_desc": "modern self-service car wash bay with glowing LED lights, clean sports car"
+        "name": "🚗 Автомийка самообслуговування",
+        "price": 800000,
+        "income": 28000,
+        "ai_desc": (
+            "modern self-service car wash bay with glowing LED lights, clean"
+            " sports car"
+        ),
     },
+    "call_center": {
+        "name": "📞 Дніпровський Кол-центр",
+        "price": 1200000,
+        "income": 42000,
+        "ai_desc": (
+            "office room full of computer desks with headphoness and computers,"
+            " dim light"
+        ),
+    },
+    # 🛒 Торгівля та Промисловість
     "atb": {
-        "name": "🛒 Мережа АТБ", 
-        "price": 1800000, 
-        "income": 60000, 
-        "ai_desc": "huge modern green and red ATB supermarket store building, parking lot"
+        "name": "🛒 Мережа АТБ",
+        "price": 1800000,
+        "income": 60000,
+        "ai_desc": (
+            "huge modern green and red ATB supermarket store building, parking"
+            " lot"
+        ),
+    },
+    "gas_station": {
+        "name": "⛽ Мережа АЗС ОККО/WOG",
+        "price": 2800000,
+        "income": 95000,
+        "ai_desc": (
+            "bright glowing gas station at night with coffee shop attached"
+        ),
     },
     "crypto": {
-        "name": "⛏️ Майнінг-ферма", 
-        "price": 4000000, 
-        "income": 135000, 
-        "ai_desc": "industrial warehouse filled with dark blue glowing crypto mining rigs and ASIC servers"
+        "name": "⛏️ Майнінг-ферма",
+        "price": 4000000,
+        "income": 135000,
+        "ai_desc": (
+            "industrial warehouse filled with dark blue glowing crypto mining"
+            " rigs and ASIC servers"
+        ),
     },
     "split": {
-        "name": "🌃 Нічний Клуб Split", 
-        "price": 7500000, 
-        "income": 230000, 
-        "ai_desc": "luxurious VIP Split night club exterior, golden lighting, lasers, realistic"
+        "name": "🌃 Нічний Клуб Split",
+        "price": 7500000,
+        "income": 230000,
+        "ai_desc": (
+            "luxurious VIP Split night club exterior, golden lighting, lasers,"
+            " realistic"
+        ),
     },
+    "construction": {
+        "name": "🏗️ Девелопер «Житлобуд»",
+        "price": 11000000,
+        "income": 350000,
+        "ai_desc": (
+            "construction site of huge modern skyscraper with giant cranes"
+        ),
+    },
+    # 🚚 Логістика та Заводи
     "logistics": {
-        "name": "🚚 Логістична компанія «Нова Пошта»", 
-        "price": 15000000, 
-        "income": 480000, 
-        "ai_desc": "huge modern logistics warehouse center with red delivery trucks, bright day"
+        "name": "🚚 Логістична компанія «Нова Пошта»",
+        "price": 15000000,
+        "income": 480000,
+        "ai_desc": (
+            "huge modern logistics warehouse center with red delivery trucks,"
+            " bright day"
+        ),
+    },
+    "steel_factory": {
+        "name": "🏭 Металургійний комбінат",
+        "price": 22000000,
+        "income": 700000,
+        "ai_desc": (
+            "heavy industrial steel mill plant with glowing hot molten metal"
+            " and smokestacks"
+        ),
     },
     "nvidia": {
-        "name": "🤖 Компанія NVIDIA", 
-        "price": 35000000, 
-        "income": 1100000, 
-        "ai_desc": "futuristic neon green NVIDIA headquarters building, high-tech server room"
+        "name": "🤖 Компанія NVIDIA",
+        "price": 35000000,
+        "income": 1100000,
+        "ai_desc": (
+            "futuristic neon green NVIDIA headquarters building, high-tech"
+            " server room"
+        ),
     },
+    "pmc": {
+        "name": "⚔️ Приватна Військова Компанія (ПВК)",
+        "price": 50000000,
+        "income": 1600000,
+        "ai_desc": (
+            "tactical military base with armored vehicles, helicopters and"
+            " training grounds"
+        ),
+    },
+    # 🏦 Гіганти ринку та Космос
     "bank": {
-        "name": "🏦 Privat/Monobank Хмарочос", 
-        "price": 85000000, 
-        "income": 2700000, 
-        "ai_desc": "massive skyscraper financial bank headquarters building, glass and steel exterior, sunset"
+        "name": "🏦 Privat/Monobank Хмарочос",
+        "price": 85000000,
+        "income": 2700000,
+        "ai_desc": (
+            "massive skyscraper financial bank headquarters building, glass and"
+            " steel exterior, sunset"
+        ),
+    },
+    "oil_company": {
+        "name": "🛢️ Нафтова корпорація",
+        "price": 130000000,
+        "income": 4200000,
+        "ai_desc": "offshore oil rig in the ocean during sunset with helicopter platform",
     },
     "space": {
-        "name": "🚀 Космічна компанія SpaceX", 
-        "price": 200000000, 
-        "income": 6500000, 
-        "ai_desc": "sci-fi futuristic space rocket launchpad facility, glowing launch platform, epic photography"
-    }
+        "name": "🚀 Космічна компанія SpaceX",
+        "price": 200000000,
+        "income": 6500000,
+        "ai_desc": (
+            "sci-fi futuristic space rocket launchpad facility, glowing launch"
+            " platform, epic photography"
+        ),
+    },
+    "metaverse": {
+        "name": "🌐 Соцмережа Meta / AI Network",
+        "price": 350000000,
+        "income": 11500000,
+        "ai_desc": (
+            "futuristic AI data center with thousands of glowing blue server"
+            " racks"
+        ),
+    },
+    "arms_corp": {
+        "name": "🛡️ Оборонний концерн «Rheinmetall»",
+        "price": 600000000,
+        "income": 19000000,
+        "ai_desc": (
+            "high-tech defense factory producing futuristic tanks and drone"
+            " systems"
+        ),
+    },
+    "orbital_station": {
+        "name": "🛰️ Орбітальний видобуток корисних копалин",
+        "price": 1000000000,
+        "income": 32000000,
+        "ai_desc": (
+            "space mining station attached to an asteroid near Earth orbit"
+        ),
+    },
+    "ai_singularity": {
+        "name": "🧠 Штучний Інтелект «Skynet / SuperAI»",
+        "price": 2500000000,
+        "income": 85000000,
+        "ai_desc": (
+            "giant futuristic quantum computer core glowing with golden and"
+            " cyan light"
+        ),
+    },
 }
 
 ITEMS_PER_PAGE = 4
@@ -2476,50 +2624,338 @@ def clear_messages(message):
 # 💰 СИСТЕМА «ПАЦАНСЬКА МОНОПОЛІЯ» (Базар, Купівля, Майно, Перекази)
 # ===================================================================
 
-# Оновлений та розширений асортимент ринку (30 предметів)
+# Оновлений та розширений асортимент ринку (понад 50 предметів)
 SHOP_ITEMS = {
     # 💎 Аксесуари та Гаджети
-    "rolex": {"name": "⌚ Золотий Rolex Daytona", "price": 85000, "cat": "Аксесуари", "ai_desc": "luxurious golden Rolex watch on a velvet pillow"},
-    "iphone": {"name": "📱 iPhone 16 Pro Max", "price": 65000, "cat": "Аксесуари", "ai_desc": "latest titanium iPhone 16 Pro Max, futuristic backdrop"},
-    "chain": {"name": "⛓️ Масивна золота цеп", "price": 120000, "cat": "Аксесуари", "ai_desc": "heavy thick solid gold chain on dark background"},
-    
+    "rolex": {
+        "name": "⌚ Золотий Rolex Daytona",
+        "price": 85000,
+        "cat": "Аксесуари",
+        "ai_desc": "luxurious golden Rolex watch on a velvet pillow",
+    },
+    "iphone": {
+        "name": "📱 iPhone 16 Pro Max",
+        "price": 65000,
+        "cat": "Аксесуари",
+        "ai_desc": "latest titanium iPhone 16 Pro Max, futuristic backdrop",
+    },
+    "chain": {
+        "name": "⛓️ Масивна золота цеп",
+        "price": 120000,
+        "cat": "Аксесуари",
+        "ai_desc": "heavy thick solid gold chain on dark background",
+    },
+    "airpods_max": {
+        "name": "🎧 AirPods Max Gold Edition",
+        "price": 45000,
+        "cat": "Аксесуари",
+        "ai_desc": "custom gold luxury over-ear headphones",
+    },
+    "ring": {
+        "name": "💍 Перстень з чорним діамантом",
+        "price": 320000,
+        "cat": "Аксесуари",
+        "ai_desc": "rare black diamond ring on silk background",
+    },
     # 🐾 Тварини
-    "capybara": {"name": "🦦 Домашня Капібара", "price": 25000, "cat": "Тварини", "ai_desc": "cute relaxed capybara wearing a small gold chain"},
-    "tiger": {"name": "🐅 Ручний Тигр", "price": 350000, "cat": "Тварини", "ai_desc": "majestic big pet tiger sitting on velvet carpet"},
-    "bear": {"name": "🐻 Дресирований Ведмідь", "price": 600000, "cat": "Тварини", "ai_desc": "huge friendly brown bear wearing leather harness"},
-    
+    "capybara": {
+        "name": "🦦 Домашня Капібара",
+        "price": 25000,
+        "cat": "Тварини",
+        "ai_desc": "cute relaxed capybara wearing a small gold chain",
+    },
+    "tiger": {
+        "name": "🐅 Ручний Тигр",
+        "price": 350000,
+        "cat": "Тварини",
+        "ai_desc": "majestic big pet tiger sitting on velvet carpet",
+    },
+    "bear": {
+        "name": "🐻 Дресирований Ведмідь",
+        "price": 600000,
+        "cat": "Тварини",
+        "ai_desc": "huge friendly brown bear wearing leather harness",
+    },
+    "pigeon": {
+        "name": "🕊️ Поштовий Голуб-Шпигун",
+        "price": 5000,
+        "cat": "Тварини",
+        "ai_desc": "carrier pigeon with mini tactical camera attachment",
+    },
+    "panther": {
+        "name": "🐆 Чорна Пантера",
+        "price": 500000,
+        "cat": "Тварини",
+        "ai_desc": "sleek dangerous black panther crouching in grass",
+    },
     # 🔫 Зброя та Екіп
-    "ak47": {"name": "🔫 Золотий АК-47", "price": 200000, "cat": "Зброя", "ai_desc": "glowing pure gold AK-47 assault rifle"},
-    "deagle": {"name": "💥 Desert Eagle .50 AE", "price": 90000, "cat": "Зброя", "ai_desc": "chrome Desert Eagle pistol on wooden table"},
-    
+    "ak47": {
+        "name": "🔫 Золотий АК-47",
+        "price": 200000,
+        "cat": "Зброя",
+        "ai_desc": "glowing pure gold AK-47 assault rifle",
+    },
+    "deagle": {
+        "name": "💥 Desert Eagle .50 AE",
+        "price": 90000,
+        "cat": "Зброя",
+        "ai_desc": "chrome Desert Eagle pistol on wooden table",
+    },
+    "sniper": {
+        "name": "🎯 Снайперська гвинтівка Barrett M82",
+        "price": 450000,
+        "cat": "Зброя",
+        "ai_desc": "heavy 50 cal sniper rifle with big scope",
+    },
+    "katana": {
+        "name": "⚔️ Клеймована Самурайська Катана",
+        "price": 180000,
+        "cat": "Зброя",
+        "ai_desc": "sharp authentic katana with golden engravings",
+    },
+    # 🛸 Техніка та Спецгаджети
+    "dji": {
+        "name": "🛸 Дрон DJI Mavic 3 Enterprise",
+        "price": 140000,
+        "cat": "Техніка",
+        "ai_desc": "modern black quadcopter drone with thermal camera",
+    },
+    "starlink": {
+        "name": "🛰️ Термінал Starlink V4",
+        "price": 35000,
+        "cat": "Техніка",
+        "ai_desc": "futuristic white satellite dish terminal setup",
+    },
+    "rig": {
+        "name": "🖥️ Майнінг-ферма на 8x RTX 4090",
+        "price": 850000,
+        "cat": "Техніка",
+        "ai_desc": "glowing RGB crypto mining rig full of GPU cards",
+    },
     # 🚗 Тачки та Автопарк
-    "jiga": {"name": "🚗 ВАЗ 2107 (Жига)", "price": 15000, "cat": "Тачки", "ai_desc": "tuned classic VAZ 2107 car"},
-    "passat": {"name": "🚘 Volkswagen Passat B6 1.9 TDI", "price": 220000, "cat": "Тачки", "ai_desc": "black Volkswagen Passat car parked near garage"},
-    "gelik": {"name": "⬛ Mercedes G63 AMG (Ґелік)", "price": 7500000, "cat": "Тачки", "ai_desc": "black aggressive Mercedes G-Wagon G63 AMG"},
-    "bmw": {"name": "🏎️ BMW M5 F90", "price": 3800000, "cat": "Тачки", "ai_desc": "black aggressive sports car BMW M5 F90"},
-    "porsche": {"name": "🚀 Porsche 911 GT3 RS", "price": 8500000, "cat": "Тачки", "ai_desc": "racing lime Porsche 911 GT3 RS"},
-    "ferrari": {"name": "🔴 Ferrari SF90 Stradale", "price": 22000000, "cat": "Тачки", "ai_desc": "red Italian hypercar Ferrari SF90"},
-    "bugatti": {"name": "⚡ Bugatti Chiron", "price": 45000000, "cat": "Тачки", "ai_desc": "hypercar Bugatti Chiron"},
-    
+    "jiga": {
+        "name": "🚗 ВАЗ 2107 (Жига)",
+        "price": 15000,
+        "cat": "Тачки",
+        "ai_desc": "tuned classic VAZ 2107 car",
+    },
+    "lanos": {
+        "name": "🚖 Daewoo Lanos на Газу",
+        "price": 60000,
+        "cat": "Тачки",
+        "ai_desc": "classic silver Daewoo Lanos taxi car",
+    },
+    "passat": {
+        "name": "🚘 Volkswagen Passat B6 1.9 TDI",
+        "price": 220000,
+        "cat": "Тачки",
+        "ai_desc": "black Volkswagen Passat car parked near garage",
+    },
+    "bmw_e30": {
+        "name": "🛞 Дрифтова BMW E30 Корч",
+        "price": 350000,
+        "cat": "Тачки",
+        "ai_desc": "tuned drift BMW E30 burning tires in smoke",
+    },
+    "camry": {
+        "name": "🚘 Toyota Camry 70 3.5 V6",
+        "price": 850000,
+        "cat": "Тачки",
+        "ai_desc": "black aggressive Toyota Camry 70",
+    },
+    "bmw_e60": {
+        "name": "🖤 BMW M5 E60 V10",
+        "price": 1100000,
+        "cat": "Тачки",
+        "ai_desc": "black aggressive BMW M5 E60 loud exhaust",
+    },
+    "skyline": {
+        "name": "🏎️ Nissan Skyline GT-R R34",
+        "price": 2500000,
+        "cat": "Тачки",
+        "ai_desc": "legendary blue Nissan Skyline GT-R R34",
+    },
+    "bmw": {
+        "name": "🏎️ BMW M5 F90 CS",
+        "price": 3800000,
+        "cat": "Тачки",
+        "ai_desc": "black aggressive sports car BMW M5 F90",
+    },
+    "supra": {
+        "name": "🔥 Toyota Supra MK4 (1000 к.с.)",
+        "price": 4200000,
+        "cat": "Тачки",
+        "ai_desc": "tuned orange Toyota Supra MK4 sports car",
+    },
+    "audi_rs6": {
+        "name": "🚀 Audi RS6 Avant C8",
+        "price": 5500000,
+        "cat": "Тачки",
+        "ai_desc": "aggressive black Audi RS6 station wagon",
+    },
+    "cybertruck": {
+        "name": "📐 Tesla Cybertruck Cyberbeast",
+        "price": 6000000,
+        "cat": "Тачки",
+        "ai_desc": "futuristic stainless steel Tesla Cybertruck",
+    },
+    "gelik": {
+        "name": "⬛ Mercedes G63 AMG (Ґелік)",
+        "price": 7500000,
+        "cat": "Тачки",
+        "ai_desc": "black aggressive Mercedes G-Wagon G63 AMG",
+    },
+    "porsche": {
+        "name": "🚀 Porsche 911 GT3 RS",
+        "price": 8500000,
+        "cat": "Тачки",
+        "ai_desc": "racing lime Porsche 911 GT3 RS",
+    },
+    "urus": {
+        "name": "🐂 Lamborghini Urus Performante",
+        "price": 11000000,
+        "cat": "Тачки",
+        "ai_desc": "yellow aggressive SUV Lamborghini Urus",
+    },
+    "rolls": {
+        "name": "👑 Rolls-Royce Cullinan Mansory",
+        "price": 18000000,
+        "cat": "Тачки",
+        "ai_desc": "luxurious black custom Rolls-Royce Cullinan",
+    },
+    "ferrari": {
+        "name": "🔴 Ferrari SF90 Stradale",
+        "price": 22000000,
+        "cat": "Тачки",
+        "ai_desc": "red Italian hypercar Ferrari SF90",
+    },
+    "lambo_revuelto": {
+        "name": "⚡ Lamborghini Revuelto",
+        "price": 28000000,
+        "cat": "Тачки",
+        "ai_desc": "futuristic orange Lamborghini Revuelto hypercar",
+    },
+    "bugatti": {
+        "name": "⚡ Bugatti Chiron Super Sport",
+        "price": 45000000,
+        "cat": "Тачки",
+        "ai_desc": "hypercar Bugatti Chiron",
+    },
+    "tourbillon": {
+        "name": "💎 Bugatti Tourbillon",
+        "price": 95000000,
+        "cat": "Тачки",
+        "ai_desc": "ultimate futuristic luxury hypercar Bugatti Tourbillon",
+    },
     # 🚚 Важка техніка та Спецтранспорт
-    "truck": {"name": "🚚 Тягач MAN TGX", "price": 4000000, "cat": "Транспорт", "ai_desc": "heavy industrial MAN truck on highway"},
-    "copier": {"name": "🚁 Вертоліт Eurocopter", "price": 18000000, "cat": "Транспорт", "ai_desc": "private luxury black helicopter"},
-    "tank": {"name": "🪖 Танк T-80", "price": 80000000, "cat": "Транспорт", "ai_desc": "powerful military combat tank T-80"},
-    "jet": {"name": "🛩️ Бизнес-джет Gulfstream G650", "price": 250000000, "cat": "Транспорт", "ai_desc": "private white Gulfstream jet on airfield"},
-
+    "truck": {
+        "name": "🚚 Тягач MAN TGX",
+        "price": 4000000,
+        "cat": "Транспорт",
+        "ai_desc": "heavy industrial MAN truck on highway",
+    },
+    "copier": {
+        "name": "🚁 Вертоліт Eurocopter",
+        "price": 18000000,
+        "cat": "Транспорт",
+        "ai_desc": "private luxury black helicopter",
+    },
+    "tank": {
+        "name": "🪖 Танк T-80",
+        "price": 80000000,
+        "cat": "Транспорт",
+        "ai_desc": "powerful military combat tank T-80",
+    },
+    "jet": {
+        "name": "🛩️ Бизнес-джет Gulfstream G650",
+        "price": 250000000,
+        "cat": "Транспорт",
+        "ai_desc": "private white Gulfstream jet on airfield",
+    },
     # 🏢 Нерухомість
-    "garage": {"name": "🏚️ Ґараж на Макулатурі", "price": 80000, "cat": "Нерухомість", "ai_desc": "old brick garage with metal doors"},
-    "flat": {"name": "🏢 Хрущовка в Кривбасі", "price": 450000, "cat": "Нерухомість", "ai_desc": "Soviet-style apartment building"},
-    "penthouse": {"name": "🏙️ Пентхаус у Києві", "price": 12000000, "cat": "Нерухомість", "ai_desc": "luxury modern glass penthouse view of modern city skyline"},
-    "villa": {"name": "🏰 Вілла в Конча-Заспі", "price": 30000000, "cat": "Нерухомість", "ai_desc": "luxury modern mansion with pool"},
-    "castle": {"name": "🏰 Середньовічний замок", "price": 150000000, "cat": "Нерухомість", "ai_desc": "epic majestic ancient stone castle in countryside"},
-
-    # 💎 Люкс та Олігархія
-    "gold_bar": {"name": "🥇 Золотий зливок (10 кг)", "price": 30000000, "cat": "Люкс", "ai_desc": "heavy sparkling pure gold bar bullion"},
-    "yacht": {"name": "🚢 Олігарх-Яхта", "price": 95000000, "cat": "Люкс", "ai_desc": "giant luxury superyacht floating in water"},
-    "sub": {"name": " подводний човен (Субмарина)", "price": 180000000, "cat": "Люкс", "ai_desc": "black stealth submarine in ocean surface"},
-    "island": {"name": "🏝️ Приватний острів на Карибах", "price": 500000000, "cat": "Люкс", "ai_desc": "exotic tropical private island with white beaches and palm trees"},
-    "stadium": {"name": "🏟️ Футбольный стадіон", "price": 1000000000, "cat": "Люкс", "ai_desc": "huge crowded illuminated football sports stadium at night"}
+    "garage": {
+        "name": "🏚️ Ґараж на Макулатурі",
+        "price": 80000,
+        "cat": "Нерухомість",
+        "ai_desc": "old brick garage with metal doors",
+    },
+    "flat": {
+        "name": "🏢 Хрущовка в Кривбасі",
+        "price": 450000,
+        "cat": "Нерухомість",
+        "ai_desc": "Soviet-style apartment building",
+    },
+    "penthouse": {
+        "name": "🏙️ Пентхаус у Києві",
+        "price": 12000000,
+        "cat": "Нерухомість",
+        "ai_desc": (
+            "luxury modern glass penthouse view of modern city skyline"
+        ),
+    },
+    "villa": {
+        "name": "🏰 Вілла в Конча-Заспі",
+        "price": 30000000,
+        "cat": "Нерухомість",
+        "ai_desc": "luxury modern mansion with pool",
+    },
+    "bunker": {
+        "name": "🛡️ Підземний бункер вищого захисту",
+        "price": 65000000,
+        "cat": "Нерухомість",
+        "ai_desc": "hi-tech underground bunker interior with monitors",
+    },
+    "castle": {
+        "name": "🏰 Середньовічний замок",
+        "price": 150000000,
+        "cat": "Нерухомість",
+        "ai_desc": "epic majestic ancient stone castle in countryside",
+    },
+    # 💎 Люкс, Олігархія та Космос
+    "gold_bar": {
+        "name": "🥇 Золотий зливок (10 кг)",
+        "price": 30000000,
+        "cat": "Люкс",
+        "ai_desc": "heavy sparkling pure gold bar bullion",
+    },
+    "yacht": {
+        "name": "🚢 Олігарх-Яхта",
+        "price": 95000000,
+        "cat": "Люкс",
+        "ai_desc": "giant luxury superyacht floating in water",
+    },
+    "sub": {
+        "name": "⚓ Підводний човен (Субмарина)",
+        "price": 180000000,
+        "cat": "Люкс",
+        "ai_desc": "black stealth submarine in ocean surface",
+    },
+    "island": {
+        "name": "🏝️ Приватний острів на Карибах",
+        "price": 500000000,
+        "cat": "Люкс",
+        "ai_desc": (
+            "exotic tropical private island with white beaches and palm trees"
+        ),
+    },
+    "stadium": {
+        "name": "🏟️ Футбольний стадіон",
+        "price": 1000000000,
+        "cat": "Люкс",
+        "ai_desc": "huge crowded illuminated football sports stadium at night",
+    },
+    "starship": {
+        "name": "🚀 Ракета SpaceX Starship",
+        "price": 2500000000,
+        "cat": "Люкс",
+        "ai_desc": "massive silver SpaceX Starship rocket on launchpad",
+    },
+    "space_station": {
+        "name": "🛰️ Приватна Орбітальна Станція",
+        "price": 10000000000,
+        "cat": "Люкс",
+        "ai_desc": "futuristic space station orbiting Earth",
+    },
 }
 
 SHOP_ITEMS_PER_PAGE = 4
