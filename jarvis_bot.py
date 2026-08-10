@@ -194,16 +194,32 @@ RATE_STRIKES = {}       # {(chat_id, user_id): {"count": int, "last": timestamp}
 RATE_BLOCKED_UNTIL = {} # {(chat_id, user_id): timestamp до якого юзер в тимчасовому блоці}
 RATE_LAST_WARNED = {}   # {(chat_id, user_id): timestamp останнього попередження}
 
-RATE_COOLDOWN_SEC = 2        # мінімальний інтервал між будь-якими командами/запитами до ШІ
+RATE_COOLDOWN_SEC = 2        # мінімальний інтервал між будь-якими командами/запитами до ШІ (для одного юзера)
 RATE_STRIKE_LIMIT = 4        # скільки разів поспіль можна "влетіти" в кулдаун
 RATE_STRIKE_WINDOW_SEC = 15  # ...за який період, інакше лічильник скидається
 RATE_BLOCK_SEC = 30          # тимчасове ігнорування команд/ШІ після перевищення ліміту
 RATE_WARN_COOLDOWN_SEC = 5   # не частіше, ніж раз в стільки секунд, попереджаємо юзера
 
+# 🏘️ Груповий ліміт НА ВЕСЬ ЧАТ (щоб не спамили командами по черзі кілька
+# РІЗНИХ людей — кожен окремо може вкладатись у свій особистий ліміт, але
+# разом закидувати чат командами). Рахує команди від УСІХ юзерів чату разом.
+CHAT_CMD_TRACKER = {}        # {chat_id: [timestamps команд від будь-кого]}
+CHAT_CMD_BLOCKED_UNTIL = {}  # {chat_id: timestamp до якого команди в чаті на паузі}
+CHAT_CMD_LAST_WARNED = {}    # {chat_id: timestamp останнього попередження в чаті}
+
+CHAT_CMD_LIMIT = 6          # скільки команд загалом (від будь-кого) вважати флудом чату
+CHAT_CMD_WINDOW_SEC = 8     # ...якщо вони прийшли за стільки секунд
+CHAT_CMD_BLOCK_SEC = 20     # на скільки "заморожуємо" команди в чаті після цього
+CHAT_CMD_WARN_COOLDOWN_SEC = 5
+
 
 def check_rate_limit(message) -> bool:
     """
     Загальний ліміт запитів (команди + ШІ + будь-яка інша дія юзера).
+    Складається з двох рівнів:
+      1. Особистий ліміт юзера (як і раніше).
+      2. Груповий ліміт на весь чат — щоб команди не спамили по черзі
+         кілька різних людей одночасно.
     Повертає True, якщо запит потрібно заблокувати (в цьому разі
     обробку повідомлення слід припинити).
     """
@@ -214,10 +230,11 @@ def check_rate_limit(message) -> bool:
     chat_id = message.chat.id
     user_id = user.id
     key = (chat_id, user_id)
+    is_group = message.chat.type != 'private'
 
     # Адмінів/модераторів у групах і суперадміна бота — не обмежуємо
     try:
-        if message.chat.type != 'private' and is_chat_admin(chat_id, user_id):
+        if is_group and is_chat_admin(chat_id, user_id):
             return False
         if is_admin(user_id):
             return False
@@ -255,7 +272,24 @@ def check_rate_limit(message) -> bool:
                 RATE_LAST_USE[key] = now
                 action = "ok"
 
-        # Щоб не спамити самими попередженнями — не частіше ніж раз в RATE_WARN_COOLDOWN_SEC
+        # Якщо юзер особисто в порядку — перевіряємо груповий ліміт на чат
+        if action == "ok" and is_group:
+            chat_blocked_until = CHAT_CMD_BLOCKED_UNTIL.get(chat_id, 0)
+            if now < chat_blocked_until:
+                action = "chat_blocked"
+                remaining = int(chat_blocked_until - now)
+            else:
+                chat_hits = [t for t in CHAT_CMD_TRACKER.get(chat_id, []) if now - t < CHAT_CMD_WINDOW_SEC]
+                chat_hits.append(now)
+                CHAT_CMD_TRACKER[chat_id] = chat_hits
+
+                if len(chat_hits) >= CHAT_CMD_LIMIT:
+                    CHAT_CMD_BLOCKED_UNTIL[chat_id] = now + CHAT_CMD_BLOCK_SEC
+                    CHAT_CMD_TRACKER[chat_id] = []
+                    action = "chat_block"
+                    remaining = CHAT_CMD_BLOCK_SEC
+
+        # Щоб не спамити самими попередженнями — не частіше ніж раз в WARN_COOLDOWN
         if action in ("strike", "still_blocked"):
             last_warn = RATE_LAST_WARNED.get(key, 0)
             if now - last_warn < RATE_WARN_COOLDOWN_SEC:
@@ -264,6 +298,14 @@ def check_rate_limit(message) -> bool:
                 RATE_LAST_WARNED[key] = now
         elif action == "block":
             RATE_LAST_WARNED[key] = now
+        elif action in ("chat_blocked",):
+            last_warn = CHAT_CMD_LAST_WARNED.get(chat_id, 0)
+            if now - last_warn < CHAT_CMD_WARN_COOLDOWN_SEC:
+                action = "silent_block"
+            else:
+                CHAT_CMD_LAST_WARNED[chat_id] = now
+        elif action == "chat_block":
+            CHAT_CMD_LAST_WARNED[chat_id] = now
 
     if action == "ok":
         return False
@@ -281,6 +323,14 @@ def check_rate_limit(message) -> bool:
             bot.reply_to(message, f"⏳ Зачекай ще ~{remaining} сек, перш ніж продовжити.")
         elif action == "strike":
             bot.reply_to(message, "🐢 Не так швидко! Зачекай трохи між командами.")
+        elif action == "chat_block":
+            bot.send_message(
+                chat_id,
+                f"⏳ Забагато команд у чаті поспіль (від кількох людей)! "
+                f"Пауза на командах {CHAT_CMD_BLOCK_SEC} сек для всього чату."
+            )
+        elif action == "chat_blocked":
+            bot.send_message(chat_id, f"⏳ Команди в чаті на паузі ще ~{remaining} сек.")
     except Exception as e:
         print(f"Помилка попередження rate-limit: {e}")
 
@@ -294,7 +344,7 @@ def check_rate_limit(message) -> bool:
 # звичайного чату з ШІ, тригер-слів, фото і т.д. — тільки команд.
 # Винятки (не видаляються): /sleepers (сонні), /top /stats (топ), збір (@all).
 # ===================================================================
-AUTO_DELETE_SEC = 60  # через скільки секунд видаляти повідомлення команди + відповідь бота
+AUTO_DELETE_SEC = 5  # через скільки секунд видаляти повідомлення команди + відповідь бота
 
 AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
@@ -1908,7 +1958,7 @@ SPAM_TRACKER = {}    # {(chat_id, user_id): [timestamps повідомлень]}
 SPAM_WARNINGS = {}   # {(chat_id, user_id): {"count": int, "last": timestamp}}
 
 FLOOD_MSG_LIMIT = 5          # скільки повідомлень поспіль вважати флудом
-FLOOD_WINDOW_SEC = 5         # ...якщо вони прийшли за стільки секунд
+FLOOD_WINDOW_SEC = 7         # ...якщо вони прийшли за стільки секунд
 FLOOD_WARN_LIMIT = 3         # скільки попереджень до автомуту
 FLOOD_MUTE_SEC = 600         # тривалість автомуту за флуд (10 хв)
 FLOOD_WARN_RESET_SEC = 300   # якщо юзер поводиться нормально стільки часу — попередження скидаються
