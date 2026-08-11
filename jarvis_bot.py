@@ -346,7 +346,10 @@ def check_rate_limit(message) -> bool:
 # ===================================================================
 AUTO_DELETE_SEC = 60  # через скільки секунд видаляти повідомлення команди + відповідь бота
 
-AUTO_DELETE_EXCLUDED_COMMANDS = {'sleepers', 'сонні', 'top', 'stats', 'топ'}
+AUTO_DELETE_EXCLUDED_COMMANDS = {
+    'sleepers', 'сонні', 'top', 'stats', 'топ',
+    'promo', 'dayvinchik', 'дайвінчик', 'broadcast',
+}
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
 
 _autodelete_ctx = threading.local()
@@ -3989,15 +3992,9 @@ def send_promo_to_group(message):
             reply_markup=markup,
         )
 
-        # Пробуємо закріпити анонс у групі
-        try:
-            bot.pin_chat_message(TARGET_GROUP_ID, sent_msg.message_id)
-        except Exception:
-            pass
-
         bot.reply_to(
             message,
-            "✅ <b>Анонс успішно відправлено та закріплено в групі!</b>",
+            "✅ <b>Анонс успішно відправлено в групу!</b>",
             parse_mode="HTML",
         )
 
