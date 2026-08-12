@@ -4011,8 +4011,9 @@ def send_promo_to_group(message):
 # 🎮 DISCORD ІНТЕГРАЦІЯ (Стежимо за трансляціями)
 # ===================================================================
 intents = discord.Intents.default()
-intents.voice_states = True  # Щоб бачити, хто заходить в голос і вмикає стрім
-intents.members = True       # Щоб бачити нікнейми
+intents.voice_states = True     # Щоб бачити, хто заходить в голос і вмикає стрім
+intents.members = True          # Щоб бачити нікнейми
+intents.message_content = True  # Щоб читати текст повідомлень (потрібно для гри "Крокодил")
 
 discord_client = discord.Client(intents=intents)
 
@@ -4048,12 +4049,137 @@ async def on_voice_state_update(member, before, after):
         except Exception as e:
             print(f"Помилка відправки анонсу стріму в ТГ: {e}")
 
+# ===================================================================
+# 🐊 ГРА "КРОКОДИЛ" (Discord, текстовий чат)
+# Один гравець отримує слово в особисті повідомлення і пояснює його
+# (без прямого називання) у голосовому/текстовому каналі, інші пишуть
+# свої варіанти прямо в чат. Хто вгадає — стає новим ведучим.
+# ===================================================================
+CROCODILE_WORDS = [
+    "банан", "жираф", "телефон", "футбол", "космонавт", "піца", "динозавр",
+    "гітара", "парасолька", "черепаха", "вертоліт", "сніговик", "русалка",
+    "будильник", "акула", "вампір", "холодильник", "піратський корабель",
+    "світлофор", "кенгуру", "мавпа", "робот", "принцеса", "зомбі",
+    "олівець", "лижі", "верблюд", "пінгвін", "торт", "дракон", "фотоапарат",
+    "скейтборд", "равлик", "ліхтарик", "цирк", "єдиноріг", "вулкан",
+    "сова", "кактус", "весілля", "будинок на дереві", "квиток на потяг",
+    "чарівна паличка", "супергерой", "їжак", "аквалангіст", "ковбой",
+]
+
+# {channel_id: {"word": str, "host_id": int}}
+CROCODILE_GAMES = {}
+
+@discord_client.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    content = message.content.strip()
+    lower = content.lower()
+
+    # --- КОМАНДА !крокодил ---
+    if lower.startswith("!крокодил"):
+        parts = content.split(maxsplit=1)
+        arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+        # Зупинити гру
+        if arg in ("стоп", "stop", "завершити"):
+            game = CROCODILE_GAMES.pop(message.channel.id, None)
+            if game:
+                await message.channel.send(f"🐊 Гру зупинено! Слово було: **{game['word']}**")
+            else:
+                await message.channel.send("🐊 Зараз немає активної гри в цьому каналі.")
+            return
+
+        # Вже є гра в цьому каналі
+        if message.channel.id in CROCODILE_GAMES:
+            await message.channel.send(
+                "🐊 В цьому каналі вже йде гра! Спочатку завершіть її командою `!крокодил стоп`."
+            )
+            return
+
+        word = random.choice(CROCODILE_WORDS)
+        CROCODILE_GAMES[message.channel.id] = {"word": word, "host_id": message.author.id}
+
+        try:
+            await message.author.send(
+                f"🐊 Твоє слово для пояснення: **{word}**\n"
+                f"Поясни його жестами, синонімами чи описом (але не називай прямо!) "
+                f"у каналі «{message.channel.name}» 🎭"
+            )
+        except discord.Forbidden:
+            CROCODILE_GAMES.pop(message.channel.id, None)
+            await message.channel.send(
+                f"⚠️ {message.author.mention}, я не можу написати тобі в особисті повідомлення. "
+                f"Дозволь ЛС від учасників сервера (Налаштування → Приватність) і спробуй ще раз."
+            )
+            return
+
+        await message.channel.send(
+            f"🐊 **Гра «Крокодил» почалася!**\n"
+            f"{message.author.mention} отримав(-ла) слово в особисті повідомлення і зараз буде його пояснювати.\n"
+            f"Пишіть свої варіанти прямо сюди в чат — хто вгадає, стає новим ведучим! 🏆\n"
+            f"Щоб завершити гру: `!крокодил стоп`"
+        )
+        return
+
+    # --- ПЕРЕВІРКА ВІДПОВІДЕЙ НА АКТИВНУ ГРУ ---
+    game = CROCODILE_GAMES.get(message.channel.id)
+    if game and message.author.id != game["host_id"] and lower == game["word"].lower():
+        CROCODILE_GAMES.pop(message.channel.id, None)
+        await message.channel.send(
+            f"🎉 {message.author.mention} **вгадав(-ла)!** Слово було: **{game['word']}**\n"
+            f"Напиши `!крокодил`, щоб почати новий раунд і стати ведучим!"
+        )
+
+def _build_discord_client():
+    """Створює НОВИЙ екземпляр discord.Client і навішує на нього вже
+    визначені обробники подій. Discord.py не дозволяє повторно
+    запускати .run() на клієнті, який вже був закритий (після падіння
+    чи 429) — тож при кожній спробі підключення робимо свіжий клієнт."""
+    client = discord.Client(intents=intents)
+    client.event(on_ready)
+    client.event(on_voice_state_update)
+    client.event(on_message)
+    return client
+
 # Функція для запуску ДС бота в окремому потоці
 def run_discord():
-    if DISCORD_TOKEN and DISCORD_TOKEN != 'ТВІЙ_ДИСКОРД_ТОКЕН':
-        discord_client.run(DISCORD_TOKEN)
-    else:
+    global discord_client
+
+    if not DISCORD_TOKEN or DISCORD_TOKEN == 'ТВІЙ_ДИСКОРД_ТОКЕН':
         print("⚠️ DISCORD_TOKEN не налаштовано. Модуль Discord спить.")
+        return
+
+    # 🔁 Ретрай з експоненційною затримкою: якщо Discord відповідає 429
+    # (Too Many Requests) при логіні — наприклад, через часті рестарти
+    # сервісу на Render — ми більше НЕ вбиваємо потік назавжди, а чекаємо
+    # і пробуємо підключитися знову, поки не вийде.
+    delay = 30
+    max_delay = 900  # 15 хв — стеля затримки
+
+    while True:
+        discord_client = _build_discord_client()
+        try:
+            discord_client.run(DISCORD_TOKEN)
+            # Якщо run() завершився без винятку (наприклад, клієнт коректно
+            # закрили) — не намагаємось перезапускати нескінченно.
+            print("ℹ️ Discord-клієнт зупинився штатно.")
+            break
+        except discord.errors.HTTPException as e:
+            if getattr(e, "status", None) == 429:
+                print(f"⛔ Discord заблокував логін (429 Too Many Requests). "
+                      f"Чекаю {delay}с і пробую знову...")
+            else:
+                print(f"⚠️ Discord HTTPException: {e}. Чекаю {delay}с і пробую знову...")
+        except discord.errors.LoginFailure as e:
+            print(f"❌ Невірний DISCORD_TOKEN, зупиняю спроби: {e}")
+            break
+        except Exception as e:
+            print(f"⚠️ Discord-клієнт впав з помилкою: {e}. Чекаю {delay}с і пробую знову...")
+
+        time.sleep(delay)
+        delay = min(delay * 2, max_delay)
 
 # ===================================================================
 # 📋 ІНТЕРАКТИВНЕ МЕНЮ /help З КНОПКАМИ ТА СТОРІНКАМИ
