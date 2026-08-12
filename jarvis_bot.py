@@ -6715,7 +6715,7 @@ def handle_web_app_data(message):
 # ===================================================================
 # 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
 # ===================================================================
-@bot.message_handler(content_types=['text'])
+@bot.message_handler(func=lambda m: not (m.text and m.text.startswith('/')), content_types=['text'])
 def handle_text(message):
     if is_user_banned(message.from_user.id):
         return
@@ -6724,10 +6724,6 @@ def handle_text(message):
     chat_id = message.chat.id
     user = message.from_user
     chat_type = message.chat.type
-
-    # Ігноруємо команди, щоб вони оброблялися відповідними handlers вище
-    if text and text.startswith('/'):
-        return
 
     # 🚫 Перевірка на флуд/спам — якщо флуд, далі повідомлення не обробляємо
     if check_flood(message):
