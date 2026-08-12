@@ -1,4 +1,5 @@
 import os
+import re
 import base64
 import requests
 import time
@@ -4050,24 +4051,203 @@ async def on_voice_state_update(member, before, after):
             print(f"Помилка відправки анонсу стріму в ТГ: {e}")
 
 # ===================================================================
-# 🐊 ГРА "КРОКОДИЛ" (Discord, текстовий чат)
-# Один гравець отримує слово в особисті повідомлення і пояснює його
-# (без прямого називання) у голосовому/текстовому каналі, інші пишуть
-# свої варіанти прямо в чат. Хто вгадає — стає новим ведучим.
+# 🐊 ГРА "КРОКОДИЛ" (Discord, текстовий чат) — розширена версія
+# Ведучий отримує слово (з категорією і складністю) в особисті
+# повідомлення і пояснює його (без прямого називання), інші пишуть
+# свої варіанти прямо в чат. Є підказки, тайм-аут раунду, скіп слова
+# та рейтинг гравців по серверу.
 # ===================================================================
-CROCODILE_WORDS = [
-    "банан", "жираф", "телефон", "футбол", "космонавт", "піца", "динозавр",
-    "гітара", "парасолька", "черепаха", "вертоліт", "сніговик", "русалка",
-    "будильник", "акула", "вампір", "холодильник", "піратський корабель",
-    "світлофор", "кенгуру", "мавпа", "робот", "принцеса", "зомбі",
-    "олівець", "лижі", "верблюд", "пінгвін", "торт", "дракон", "фотоапарат",
-    "скейтборд", "равлик", "ліхтарик", "цирк", "єдиноріг", "вулкан",
-    "сова", "кактус", "весілля", "будинок на дереві", "квиток на потяг",
-    "чарівна паличка", "супергерой", "їжак", "аквалангіст", "ковбой",
-]
+CROCODILE_WORDS = {
+    "тварини": {
+        "легко": ["кіт", "собака", "риба", "качка", "корова", "кінь", "заєць", "ведмідь", "миша", "коза"],
+        "середньо": ["жираф", "кенгуру", "їжак", "черепаха", "мавпа", "пінгвін", "верблюд", "равлик", "видра", "тхір"],
+        "важко": ["єхидна", "ігуана", "бабуїн", "капібара", "тукан", "нарвал", "ласка", "вомбат", "гризлі", "ондатра"],
+    },
+    "їжа": {
+        "легко": ["банан", "піца", "яблуко", "хліб", "морозиво", "торт", "яйце", "молоко", "мед", "суп"],
+        "середньо": ["суші", "борщ", "вареники", "млинці", "шаурма", "омлет", "печиво", "лимонад", "плов", "хумус"],
+        "важко": ["тірамісу", "фондю", "гаспачо", "цукати", "тартар", "равіолі", "паштет", "бланманже", "рататуй", "заливне"],
+    },
+    "професії": {
+        "легко": ["лікар", "вчитель", "кухар", "поліцейський", "пожежник", "водій", "продавець", "фермер", "маляр"],
+        "середньо": ["архітектор", "стоматолог", "бухгалтер", "перекладач", "фотограф", "юрист", "пілот", "садівник"],
+        "важко": ["нотаріус", "дегустатор", "археолог", "кінолог", "сомельє", "ветеринар", "картограф", "реставратор"],
+    },
+    "кіно": {
+        "легко": ["супергерой", "принцеса", "піратський корабель", "вампір", "робот", "динозавр", "зомбі", "русалка"],
+        "середньо": ["єдиноріг", "дракон", "чарівна паличка", "космічний корабель", "привид", "чаклунка", "оборотень"],
+        "важко": ["телепортація", "паралельний всесвіт", "машина часу", "штучний інтелект", "лабіринт мінотавра"],
+    },
+    "предмети": {
+        "легко": ["телефон", "гітара", "парасолька", "олівець", "фотоапарат", "ліхтарик", "будильник", "окуляри"],
+        "середньо": ["вертоліт", "скейтборд", "холодильник", "світлофор", "мікроскоп", "телескоп", "глобус"],
+        "важко": ["стетоскоп", "флюгер", "секундомір", "діапроектор", "гончарний круг", "астролябія", "камертон"],
+    },
+    "місця": {
+        "легко": ["школа", "лікарня", "цирк", "зоопарк", "пляж", "гора", "ліс", "острів", "місто"],
+        "середньо": ["маяк", "вулкан", "печера", "оранжерея", "консерваторія", "обсерваторія", "порт", "фортеця"],
+        "важко": ["катакомби", "стародавні руїни", "тропічні джунглі", "підводний вулкан", "покинута шахта"],
+    },
+    "дії_та_спорт": {
+        "легко": ["футбол", "плавання", "танець", "стрибок", "біг", "лижі", "бокс", "їзда на велосипеді"],
+        "середньо": ["акваланг", "серфінг", "фехтування", "альпінізм", "фігурне катання", "стрільба з лука"],
+        "важко": ["бейсджампінг", "спелеологія", "керлінг", "триатлон", "парапланеризм", "кайтсерфінг"],
+    },
+}
+DIFFICULTIES = ("легко", "середньо", "важко")
 
-# {channel_id: {"word": str, "host_id": int}}
+DIFFICULTY_META = {
+    "легко":   {"color": 0x57F287, "emoji": "🟢", "seconds": 120},
+    "середньо": {"color": 0xFEE75C, "emoji": "🟡", "seconds": 150},
+    "важко":   {"color": 0xED4245, "emoji": "🔴", "seconds": 200},
+}
+
+# {channel_id: {"word", "category", "difficulty", "host_id", "hints_used",
+#                "started_at", "timer_task", "round_no"}}
 CROCODILE_GAMES = {}
+# {(guild_id, user_id): points}
+CROCODILE_SCORES = {}
+
+def _crocodile_score_add(guild_id, user_id, points):
+    key = (guild_id, user_id)
+    CROCODILE_SCORES[key] = CROCODILE_SCORES.get(key, 0) + points
+
+def _pick_word(category_key=None, difficulty=None):
+    if category_key is None:
+        category_key = random.choice(list(CROCODILE_WORDS.keys()))
+    if difficulty is None:
+        difficulty = random.choice(DIFFICULTIES)
+    word = random.choice(CROCODILE_WORDS[category_key][difficulty])
+    return word, category_key, difficulty
+
+def _resolve_category(arg):
+    """Знаходить категорію за частковим/неточним вводом користувача.
+    Працює як для однослівних назв ("тварини"), так і для складених
+    ("дії_та_спорт" — впізнає і "дії", і "спорт")."""
+    arg = arg.lower().strip()
+    if not arg:
+        return None
+    for key in CROCODILE_WORDS:
+        display = key.replace("_", " ")
+        if arg == key or arg == display or display.startswith(arg) or key.startswith(arg):
+            return key
+        if any(word.startswith(arg) for word in display.split() if word != "та"):
+            return key
+    return None
+
+def _resolve_difficulty(arg):
+    arg = arg.lower().strip()
+    for d in DIFFICULTIES:
+        if d.startswith(arg):
+            return d
+    return None
+
+def _category_list_str():
+    return ", ".join(k.replace("_", " ") for k in CROCODILE_WORDS)
+
+async def _end_round(channel, game, *, reason, guesser=None):
+    """Завершує раунд: скасовує таймер, прибирає гру з реєстру, шле embed."""
+    CROCODILE_GAMES.pop(channel.id, None)
+    task = game.get("timer_task")
+    if task and not task.done():
+        task.cancel()
+
+    meta = DIFFICULTY_META[game["difficulty"]]
+    embed = discord.Embed(color=meta["color"])
+
+    if reason == "guessed":
+        embed.title = "🎉 Вгадано!"
+        embed.description = (
+            f"{guesser.mention} вгадав(-ла) слово!\n\n"
+            f"**Слово:** {game['word']}\n"
+            f"**Категорія:** {game['category'].replace('_', ' ')} {meta['emoji']} {game['difficulty']}"
+        )
+        embed.set_footer(text="Напиши !крокодил, щоб почати новий раунд 🐊")
+    elif reason == "timeout":
+        embed.title = "⌛ Час вийшов!"
+        embed.description = (
+            f"Ніхто не встиг вгадати.\n\n**Слово було:** {game['word']}\n"
+            f"**Категорія:** {game['category'].replace('_', ' ')} {meta['emoji']} {game['difficulty']}"
+        )
+        embed.set_footer(text="Напиши !крокодил, щоб спробувати ще раз 🐊")
+    elif reason == "skip":
+        embed.title = "⏭️ Слово пропущено"
+        embed.description = f"**Слово було:** {game['word']}"
+        embed.set_footer(text="Напиши !крокодил, щоб почати новий раунд 🐊")
+    elif reason == "stop":
+        embed.title = "🛑 Гру зупинено"
+        embed.description = f"**Слово було:** {game['word']}"
+
+    await channel.send(embed=embed)
+
+async def _round_timeout(channel_id, word):
+    meta = DIFFICULTY_META[CROCODILE_GAMES[channel_id]["difficulty"]] \
+        if channel_id in CROCODILE_GAMES else None
+    seconds = meta["seconds"] if meta else 150
+    try:
+        await asyncio.sleep(seconds)
+    except asyncio.CancelledError:
+        return
+    game = CROCODILE_GAMES.get(channel_id)
+    if game and game["word"] == word:
+        channel = discord_client.get_channel(channel_id)
+        if channel:
+            await _end_round(channel, game, reason="timeout")
+        else:
+            CROCODILE_GAMES.pop(channel_id, None)
+
+async def _start_round(message, category_key, difficulty):
+    word, category_key, difficulty = _pick_word(category_key, difficulty)
+    meta = DIFFICULTY_META[difficulty]
+
+    game = {
+        "word": word,
+        "category": category_key,
+        "difficulty": difficulty,
+        "host_id": message.author.id,
+        "hints_used": 0,
+        "started_at": time.time(),
+        "round_no": CROCODILE_GAMES.get(message.channel.id, {}).get("round_no", 0) + 1,
+    }
+
+    try:
+        dm_embed = discord.Embed(
+            title="🐊 Твоє слово для пояснення",
+            description=(
+                f"## {word}\n\n"
+                f"**Категорія:** {category_key.replace('_', ' ')}\n"
+                f"**Складність:** {meta['emoji']} {difficulty}\n\n"
+                f"Пояснюй жестами, синонімами чи описом — але не називай слово прямо! 🎭\n"
+                f"У вас є **{meta['seconds']} секунд**."
+            ),
+            color=meta["color"],
+        )
+        await message.author.send(embed=dm_embed)
+    except discord.Forbidden:
+        await message.channel.send(
+            f"⚠️ {message.author.mention}, я не можу написати тобі в особисті повідомлення. "
+            f"Дозволь ЛС від учасників сервера (Налаштування → Приватність) і спробуй ще раз."
+        )
+        return
+
+    CROCODILE_GAMES[message.channel.id] = game
+    game["timer_task"] = asyncio.create_task(_round_timeout(message.channel.id, word))
+
+    start_embed = discord.Embed(
+        title=f"🐊 Раунд #{game['round_no']} — «Крокодил» почався!",
+        description=(
+            f"{message.author.mention} отримав(-ла) слово в особисті повідомлення 🤫\n\n"
+            f"**Категорія:** {category_key.replace('_', ' ')}\n"
+            f"**Складність:** {meta['emoji']} {difficulty}\n"
+            f"**Час на раунд:** {meta['seconds']} сек ⏱️\n\n"
+            f"Пишіть варіанти прямо в чат — хто вгадає, стає новим ведучим і отримує очки! 🏆"
+        ),
+        color=meta["color"],
+    )
+    start_embed.set_footer(
+        text="!підказка — підказка · !крокодил скіп — пропустити · !крокодил стоп — завершити"
+    )
+    await message.channel.send(embed=start_embed)
 
 @discord_client.event
 async def on_message(message):
@@ -4076,61 +4256,149 @@ async def on_message(message):
 
     content = message.content.strip()
     lower = content.lower()
+    is_dm = message.guild is None
 
-    # --- КОМАНДА !крокодил ---
+    # --- КОМАНДА !крокодил [категорія] [складність|стоп|скіп|топ|допомога] ---
     if lower.startswith("!крокодил"):
-        parts = content.split(maxsplit=1)
-        arg = parts[1].strip().lower() if len(parts) > 1 else ""
+        if is_dm:
+            await message.channel.send("🐊 Гру можна почати тільки на сервері, в текстовому каналі.")
+            return
+
+        parts = content.split()[1:]
+        args = [p.lower() for p in parts]
+
+        # Довідка
+        if args[:1] in (["допомога"], ["help"]):
+            help_embed = discord.Embed(
+                title="🐊 Крокодил — команди",
+                color=0x5865F2,
+                description=(
+                    "`!крокодил` — почати раунд (випадкова категорія й складність)\n"
+                    "`!крокодил [категорія] [складність]` — почати з вибором, напр. "
+                    "`!крокодил тварини важко`\n"
+                    "`!підказка` — отримати підказку у поточному раунді\n"
+                    "`!крокодил скіп` — ведучий пропускає слово\n"
+                    "`!крокодил стоп` — завершити поточний раунд\n"
+                    "`!крокодил топ` — рейтинг гравців сервера\n\n"
+                    f"**Категорії:** {_category_list_str()}\n"
+                    f"**Складність:** {', '.join(DIFFICULTIES)}"
+                ),
+            )
+            await message.channel.send(embed=help_embed)
+            return
+
+        # Рейтинг
+        if args[:1] in (["топ"], ["top"]):
+            entries = [
+                (uid, pts) for (gid, uid), pts in CROCODILE_SCORES.items()
+                if gid == message.guild.id and pts > 0
+            ]
+            entries.sort(key=lambda x: x[1], reverse=True)
+            if not entries:
+                await message.channel.send("🐊 Поки що ніхто не заробив очок. Зіграйте раунд!")
+                return
+            medals = ["🥇", "🥈", "🥉"]
+            lines = []
+            for i, (uid, pts) in enumerate(entries[:10]):
+                prefix = medals[i] if i < 3 else f"{i + 1}."
+                lines.append(f"{prefix} <@{uid}> — **{pts}** очок")
+            top_embed = discord.Embed(
+                title="🏆 Рейтинг гравців у «Крокодил»",
+                description="\n".join(lines),
+                color=0xF1C40F,
+            )
+            await message.channel.send(embed=top_embed)
+            return
 
         # Зупинити гру
-        if arg in ("стоп", "stop", "завершити"):
-            game = CROCODILE_GAMES.pop(message.channel.id, None)
+        if args[:1] in (["стоп"], ["stop"], ["завершити"]):
+            game = CROCODILE_GAMES.get(message.channel.id)
             if game:
-                await message.channel.send(f"🐊 Гру зупинено! Слово було: **{game['word']}**")
+                await _end_round(message.channel, game, reason="stop")
             else:
                 await message.channel.send("🐊 Зараз немає активної гри в цьому каналі.")
+            return
+
+        # Пропустити слово (тільки ведучий)
+        if args[:1] in (["скіп"], ["скип"], ["skip"]):
+            game = CROCODILE_GAMES.get(message.channel.id)
+            if not game:
+                await message.channel.send("🐊 Зараз немає активної гри в цьому каналі.")
+                return
+            if message.author.id != game["host_id"]:
+                await message.channel.send("⚠️ Пропустити слово може лише поточний ведучий.")
+                return
+            await _end_round(message.channel, game, reason="skip")
             return
 
         # Вже є гра в цьому каналі
         if message.channel.id in CROCODILE_GAMES:
             await message.channel.send(
-                "🐊 В цьому каналі вже йде гра! Спочатку завершіть її командою `!крокодил стоп`."
+                "🐊 В цьому каналі вже йде гра! Завершіть її командою `!крокодил стоп` "
+                "або пропустіть слово `!крокодил скіп`."
             )
             return
 
-        word = random.choice(CROCODILE_WORDS)
-        CROCODILE_GAMES[message.channel.id] = {"word": word, "host_id": message.author.id}
+        # Розбір необов'язкових аргументів категорії/складності (в будь-якому порядку)
+        category_key = None
+        difficulty = None
+        for a in args:
+            if category_key is None:
+                found = _resolve_category(a)
+                if found:
+                    category_key = found
+                    continue
+            if difficulty is None:
+                found_d = _resolve_difficulty(a)
+                if found_d:
+                    difficulty = found_d
 
-        try:
-            await message.author.send(
-                f"🐊 Твоє слово для пояснення: **{word}**\n"
-                f"Поясни його жестами, синонімами чи описом (але не називай прямо!) "
-                f"у каналі «{message.channel.name}» 🎭"
-            )
-        except discord.Forbidden:
-            CROCODILE_GAMES.pop(message.channel.id, None)
+        if args and category_key is None and difficulty is None:
             await message.channel.send(
-                f"⚠️ {message.author.mention}, я не можу написати тобі в особисті повідомлення. "
-                f"Дозволь ЛС від учасників сервера (Налаштування → Приватність) і спробуй ще раз."
+                f"⚠️ Не впізнав категорію чи складність. "
+                f"Категорії: {_category_list_str()}. Складність: {', '.join(DIFFICULTIES)}."
             )
             return
 
-        await message.channel.send(
-            f"🐊 **Гра «Крокодил» почалася!**\n"
-            f"{message.author.mention} отримав(-ла) слово в особисті повідомлення і зараз буде його пояснювати.\n"
-            f"Пишіть свої варіанти прямо сюди в чат — хто вгадає, стає новим ведучим! 🏆\n"
-            f"Щоб завершити гру: `!крокодил стоп`"
-        )
+        await _start_round(message, category_key, difficulty)
+        return
+
+    # --- КОМАНДА !підказка ---
+    if lower in ("!підказка", "!hint", "!підкажи"):
+        if is_dm:
+            return
+        game = CROCODILE_GAMES.get(message.channel.id)
+        if not game:
+            await message.channel.send("🐊 Зараз немає активної гри в цьому каналі.")
+            return
+        if message.author.id == game["host_id"]:
+            await message.channel.send("🙈 Ведучий не може сам собі підказувати!")
+            return
+        if game["hints_used"] >= 2:
+            await message.channel.send("🐊 Підказки на цей раунд закінчилися. Думайте головою! 🧠")
+            return
+
+        game["hints_used"] += 1
+        word = game["word"]
+        if game["hints_used"] == 1:
+            hint_text = f"Категорія: **{game['category'].replace('_', ' ')}**, довжина слова: **{len(word)}** літер."
+        else:
+            hint_text = f"Слово починається на літеру **«{word[0].upper()}»**."
+        await message.channel.send(f"💡 Підказка №{game['hints_used']}: {hint_text}")
         return
 
     # --- ПЕРЕВІРКА ВІДПОВІДЕЙ НА АКТИВНУ ГРУ ---
+    if is_dm:
+        return
     game = CROCODILE_GAMES.get(message.channel.id)
-    if game and message.author.id != game["host_id"] and lower == game["word"].lower():
-        CROCODILE_GAMES.pop(message.channel.id, None)
-        await message.channel.send(
-            f"🎉 {message.author.mention} **вгадав(-ла)!** Слово було: **{game['word']}**\n"
-            f"Напиши `!крокодил`, щоб почати новий раунд і стати ведучим!"
-        )
+    if not game or message.author.id == game["host_id"]:
+        return
+
+    word_pattern = r"\b" + re.escape(game["word"].lower()) + r"\b"
+    if re.search(word_pattern, lower):
+        _crocodile_score_add(message.guild.id, message.author.id, 3)
+        _crocodile_score_add(message.guild.id, game["host_id"], 1)
+        await _end_round(message.channel, game, reason="guessed", guesser=message.author)
 
 def _build_discord_client():
     """Створює НОВИЙ екземпляр discord.Client і навішує на нього вже
