@@ -4175,7 +4175,7 @@ HELP_PAGES = {
         "• /kick — вигнати користувача з чату.\n"
         "• /clear [число] — очистити вказану кількість повідомлень.\n"
         "• /addmod / /delmod / /modlist — керування модераторами бота.\n"
-        "• /admin або /адмін — головна панель керування ботом.\n"
+        "• /admin або /адмін — головна панель керування ботом (там же: 🔕 Ігнор тегів (@all/збір) — по ID або ніку).\n"
         "• /check_users, /cleanup або /чистка — прибрати з бази тих, хто вийшов з чату.\n"
         "• /broadcast — розсилка повідомлення від імені бота.\n"
         "• /promo, /dayvinchik або /дайвінчик — надіслати промо-анонс у чат."
@@ -4958,7 +4958,10 @@ def call_everyone(message):
         with db_lock:
             conn = get_db_connection()
             with conn.cursor() as cursor:
-                cursor.execute("SELECT user_id FROM stats WHERE in_chat = TRUE")
+                cursor.execute(
+                    "SELECT user_id FROM stats WHERE in_chat = TRUE "
+                    "AND user_id NOT IN (SELECT user_id FROM tag_ignore_users)"
+                )
                 users = cursor.fetchall()
             conn.close()
 
@@ -5014,6 +5017,14 @@ def init_admin_db():
             conn = get_db_connection()
             with conn.cursor() as cursor:
                 cursor.execute("CREATE TABLE IF NOT EXISTS banned_users (user_id BIGINT PRIMARY KEY)")
+                # Юзери, яких бот НІКОЛИ не тегає в /all, /збір і подібних розсилках-тегах
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tag_ignore_users (
+                        user_id BIGINT PRIMARY KEY,
+                        name TEXT,
+                        added_at TIMESTAMP DEFAULT NOW()
+                    )
+                """)
             conn.commit()
             conn.close()
     except Exception as e:
@@ -5052,7 +5063,18 @@ def get_users_keyboard():
     )
     markup.add(types.InlineKeyboardButton("✅ Розбанити", callback_data="admin_unban"))
     markup.add(types.InlineKeyboardButton("🗑 Видалити з бази (по ID/ніку)", callback_data="admin_delete_user"))
+    markup.add(types.InlineKeyboardButton("🔕 Ігнор тегів (@all/збір)", callback_data="admin_menu_tagignore"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
+    return markup
+
+def get_tagignore_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("➕ Додати (по ID/ніку)", callback_data="admin_tagignore_add"),
+        types.InlineKeyboardButton("➖ Прибрати", callback_data="admin_tagignore_remove")
+    )
+    markup.add(types.InlineKeyboardButton("📋 Список ігнору", callback_data="admin_tagignore_list"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_users"))
     return markup
 
 def get_db_keyboard():
@@ -5183,6 +5205,83 @@ def handle_admin_callbacks(call):
         bot.edit_message_text("👥 <b>Управління користувачами:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_users_keyboard(), parse_mode="HTML")
     elif action == "admin_menu_db":
         bot.edit_message_text("💾 <b>Управління базою даних:</b>", call.message.chat.id, call.message.message_id, reply_markup=get_db_keyboard(), parse_mode="HTML")
+    elif action == "admin_menu_tagignore":
+        bot.edit_message_text(
+            "🔕 <b>Ігнор тегів у /all, /збір:</b>\n"
+            "Юзери з цього списку більше ніколи не отримають тег-пінг у загальному зборі.",
+            call.message.chat.id, call.message.message_id, reply_markup=get_tagignore_keyboard(), parse_mode="HTML"
+        )
+
+    elif action == "admin_tagignore_add":
+        msg = bot.send_message(call.message.chat.id, "➕ Надішли ID або нік (частину імені) юзера, якого треба ДОДАТИ в ігнор (або `відміна`):")
+        bot.register_next_step_handler(msg, process_find_user_tagignore_add)
+    elif action == "admin_tagignore_remove":
+        msg = bot.send_message(call.message.chat.id, "➖ Надішли ID або нік (частину імені) юзера, якого треба ПРИБРАТИ з ігнору (або `відміна`):")
+        bot.register_next_step_handler(msg, process_find_user_tagignore_remove)
+    elif action == "admin_tagignore_list":
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT user_id, name FROM tag_ignore_users ORDER BY added_at DESC")
+                    rows = cursor.fetchall()
+                conn.close()
+            bot.answer_callback_query(call.id)
+            if not rows:
+                bot.send_message(call.message.chat.id, "📭 Список ігнору порожній — усіх активних тегає як завжди.")
+            else:
+                lines = "\n".join(f"• {html.escape(name or 'Без імені')} (<code>{uid}</code>)" for uid, name in rows)
+                bot.send_message(call.message.chat.id, f"🔕 <b>Не тегаються в /all, /збір ({len(rows)}):</b>\n{lines}", parse_mode="HTML")
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
+
+    elif action.startswith("admin_tagignore_confirmadd_"):
+        target_id = int(action.replace("admin_tagignore_confirmadd_", ""))
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT name FROM stats WHERE user_id = %s", (target_id,))
+                    row = cursor.fetchone()
+                    target_name = row[0] if row else None
+                    cursor.execute(
+                        "INSERT INTO tag_ignore_users (user_id, name) VALUES (%s, %s) "
+                        "ON CONFLICT (user_id) DO UPDATE SET name = EXCLUDED.name",
+                        (target_id, target_name)
+                    )
+                conn.commit()
+                conn.close()
+            bot.answer_callback_query(call.id, "🔕 Додано в ігнор!")
+            bot.edit_message_text(
+                f"🔕 <b>{html.escape(target_name or 'Юзер')}</b> (<code>{target_id}</code>) більше не буде отримувати теги в /all, /збір.",
+                call.message.chat.id, call.message.message_id, parse_mode="HTML"
+            )
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
+
+    elif action.startswith("admin_tagignore_confirmrm_"):
+        target_id = int(action.replace("admin_tagignore_confirmrm_", ""))
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT name FROM tag_ignore_users WHERE user_id = %s", (target_id,))
+                    row = cursor.fetchone()
+                    target_name = row[0] if row else None
+                    cursor.execute("DELETE FROM tag_ignore_users WHERE user_id = %s", (target_id,))
+                conn.commit()
+                conn.close()
+            bot.answer_callback_query(call.id, "✅ Прибрано з ігнору!")
+            bot.edit_message_text(
+                f"✅ <b>{html.escape(target_name or 'Юзер')}</b> (<code>{target_id}</code>) знову буде отримувати теги в /all, /збір.",
+                call.message.chat.id, call.message.message_id, parse_mode="HTML"
+            )
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ Помилка БД: {e}")
+
+    elif action == "admin_tagignore_cancel":
+        bot.answer_callback_query(call.id, "Скасовано")
+        bot.edit_message_text("🛑 Скасовано.", call.message.chat.id, call.message.message_id, reply_markup=get_tagignore_keyboard())
 
     elif action == "admin_stats":
         try:
@@ -5451,6 +5550,92 @@ def process_find_user_to_delete(message):
         ))
     markup.add(types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_canceldel"))
     bot.reply_to(message, f"Знайдено {len(rows)} збігів. Обери, кого видалити:", reply_markup=markup)
+
+def process_find_user_tagignore_add(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
+
+    query = message.text.strip()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                if query.isdigit():
+                    cursor.execute("SELECT user_id, name FROM stats WHERE user_id = %s", (int(query),))
+                else:
+                    cursor.execute("SELECT user_id, name FROM stats WHERE name ILIKE %s LIMIT 15", (f"%{query}%",))
+                rows = cursor.fetchall()
+            conn.close()
+    except Exception as e:
+        return bot.reply_to(message, f"❌ Помилка пошуку: {e}")
+
+    if not rows:
+        return bot.reply_to(message, "🤷‍♂️ Нікого не знайдено за цим ID/ніком у базі. Якщо юзера там ще немає — попроси його написати щось у чат, тоді бот його побачить.")
+
+    if len(rows) == 1:
+        uid, name = rows[0]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("🔕 ТАК, ДОДАТИ В ІГНОР", callback_data=f"admin_tagignore_confirmadd_{uid}"),
+            types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_tagignore_cancel")
+        )
+        bot.reply_to(
+            message,
+            f"Знайдено: <b>{html.escape(name or 'Без імені')}</b> (<code>{uid}</code>).\nБільше ніколи не тегати його в /all, /збір?",
+            parse_mode="HTML", reply_markup=markup
+        )
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for uid, name in rows:
+        markup.add(types.InlineKeyboardButton(
+            f"🔕 {name or 'Без імені'} ({uid})", callback_data=f"admin_tagignore_confirmadd_{uid}"
+        ))
+    markup.add(types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_tagignore_cancel"))
+    bot.reply_to(message, f"Знайдено {len(rows)} збігів. Обери, кого додати в ігнор:", reply_markup=markup)
+
+def process_find_user_tagignore_remove(message):
+    if not is_admin(message.from_user.id): return
+    if message.text.lower() in ['скасування', 'відміна', 'cancel']: return bot.reply_to(message, "🛑 Скасовано.")
+
+    query = message.text.strip()
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                if query.isdigit():
+                    cursor.execute("SELECT user_id, name FROM tag_ignore_users WHERE user_id = %s", (int(query),))
+                else:
+                    cursor.execute("SELECT user_id, name FROM tag_ignore_users WHERE name ILIKE %s LIMIT 15", (f"%{query}%",))
+                rows = cursor.fetchall()
+            conn.close()
+    except Exception as e:
+        return bot.reply_to(message, f"❌ Помилка пошуку: {e}")
+
+    if not rows:
+        return bot.reply_to(message, "🤷‍♂️ Такого юзера немає в списку ігнору.")
+
+    if len(rows) == 1:
+        uid, name = rows[0]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("✅ ТАК, ПРИБРАТИ З ІГНОРУ", callback_data=f"admin_tagignore_confirmrm_{uid}"),
+            types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_tagignore_cancel")
+        )
+        bot.reply_to(
+            message,
+            f"Знайдено: <b>{html.escape(name or 'Без імені')}</b> (<code>{uid}</code>) в ігнорі.\nЗнову тегати його в /all, /збір?",
+            parse_mode="HTML", reply_markup=markup
+        )
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for uid, name in rows:
+        markup.add(types.InlineKeyboardButton(
+            f"✅ {name or 'Без імені'} ({uid})", callback_data=f"admin_tagignore_confirmrm_{uid}"
+        ))
+    markup.add(types.InlineKeyboardButton("❌ Скасувати", callback_data="admin_tagignore_cancel"))
+    bot.reply_to(message, f"Знайдено {len(rows)} збігів. Обери, кого прибрати з ігнору:", reply_markup=markup)
 
 def process_raw_sql(message):
     if not is_admin(message.from_user.id): return
