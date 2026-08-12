@@ -160,6 +160,14 @@ try:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )""")
 
+            # 🐊 7. РЕЙТИНГ ГРИ "КРОКОДИЛ" (очки по чатах)
+            cursor.execute("""CREATE TABLE IF NOT EXISTS crocodile_scores (
+                chat_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                points BIGINT DEFAULT 0,
+                PRIMARY KEY (chat_id, user_id)
+            )""")
+
         conn.commit()
         conn.close()
     print("✅ База даних успішно оновлена та готова до роботи!")
@@ -7027,13 +7035,43 @@ CROCODILE_DIFFICULTY_META = {
 
 CROCODILE_LOCK = threading.Lock()
 CROCODILE_GAMES = {}   # {chat_id: {"word","category","difficulty","host_id","host_name","hints_used","round_no","timer"}}
-CROCODILE_SCORES = {}  # {(chat_id, user_id): points}
 
 
 def _crocodile_score_add(chat_id, user_id, points):
-    with CROCODILE_LOCK:
-        key = (chat_id, user_id)
-        CROCODILE_SCORES[key] = CROCODILE_SCORES.get(key, 0) + points
+    """Додає очки гравцю в БД (крокодил рейтинг зберігається постійно, не в пам'яті)."""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO crocodile_scores (chat_id, user_id, points) VALUES (%s, %s, %s)
+                    ON CONFLICT (chat_id, user_id) DO UPDATE
+                        SET points = crocodile_scores.points + EXCLUDED.points;
+                """, (chat_id, user_id, points))
+                conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Крокодил: помилка _crocodile_score_add: {e}")
+
+
+def _crocodile_top(chat_id, limit=10):
+    """Повертає [(user_id, points), ...] відсортовано за очками, тільки points > 0."""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT user_id, points FROM crocodile_scores
+                    WHERE chat_id = %s AND points > 0
+                    ORDER BY points DESC
+                    LIMIT %s;
+                """, (chat_id, limit))
+                rows = cursor.fetchall()
+            conn.close()
+        return [(row[0], row[1]) for row in rows]
+    except Exception as e:
+        print(f"Крокодил: помилка _crocodile_top: {e}")
+        return []
 
 
 def _crocodile_pick_word(category_key=None, difficulty=None):
@@ -7149,14 +7187,12 @@ def crocodile_command(message):
 
     # --- Рейтинг ---
     if args[:1] in (["топ"], ["top"]):
-        with CROCODILE_LOCK:
-            entries = [(uid, pts) for (cid, uid), pts in CROCODILE_SCORES.items() if cid == chat_id and pts > 0]
-        entries.sort(key=lambda x: x[1], reverse=True)
+        entries = _crocodile_top(chat_id, limit=10)
         if not entries:
             return bot.reply_to(message, "🐊 Поки що ніхто не заробив очок. Зіграйте раунд!")
         medals = ["🥇", "🥈", "🥉"]
         lines = []
-        for i, (uid, pts) in enumerate(entries[:10]):
+        for i, (uid, pts) in enumerate(entries):
             try:
                 name = bot.get_chat_member(chat_id, uid).user.first_name
             except Exception:
