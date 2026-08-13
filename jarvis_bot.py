@@ -6909,162 +6909,6 @@ def handle_web_app_data(message):
     except Exception:
         bot.send_message(message.chat.id, "Отримано дані з вашої гри!")
 
-# ===================================================================
-# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
-# ===================================================================
-@bot.message_handler(func=lambda m: not (m.text and m.text.startswith('/')), content_types=['text'])
-def handle_text(message):
-    if is_user_banned(message.from_user.id):
-        return
-
-    text = message.text
-    chat_id = message.chat.id
-    user = message.from_user
-    chat_type = message.chat.type
-
-    # 🚫 Перевірка на флуд/спам — якщо флуд, далі повідомлення не обробляємо
-    if check_flood(message):
-        return
-
-    if text:
-        user_name = user.first_name or "Анонім"
-        RECENT_MESSAGES.append({
-            "user": user_name,
-            "text": text
-        })
-        if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
-            RECENT_MESSAGES.pop(0)
-
-    ensure_user_in_db(user)
-    gender = get_user_gender(user.id)
-
-    # 1. Оновлення статі, якщо вона невідома
-    if gender in ['Never', 'Невідомо']:
-        guessed = analyze_gender_from_text(text)
-        if guessed in ['Хлопець', 'Дівчина']:
-            try:
-                with db_lock:
-                    conn = get_db_connection()
-                    with conn.cursor() as cursor:
-                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
-                    conn.commit()
-                    conn.close()
-            except Exception as e:
-                print(f"Помилка оновлення статі: {e}")
-
-    # 2. Нарахування грошей, оновлення лічильника повідомлень ТА ЧАСУ АКТИВНОСТІ
-    try:
-        earned_money = random.randint(5, 15)  # 💰 Генеруємо випадковий заробіток
-        with db_lock:
-            conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE stats 
-                    SET count = count + 1, 
-                        balance = COALESCE(balance, 0) + %s, 
-                        name = %s, 
-                        last_seen = NOW() 
-                    WHERE user_id = %s
-                    """,
-                    (earned_money, user.first_name, user.id)
-                )
-            conn.commit()
-            conn.close()
-    except Exception as e:
-        print(f"Помилка оновлення лічильника, балансу та last_seen: {e}")
-
-    is_mentioned = False
-
-    if chat_type in ['group', 'supergroup']:
-        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
-        first_word = text.split()[0].lower() if text.split() else ""
-        
-        bot_username = bot.get_me().username
-        
-        if (first_word in trigger_words
-                or f"@{bot_username}" in text
-                or (message.reply_to_message
-                    and message.reply_to_message.from_user.id == bot.get_me().id)):
-            is_mentioned = True
-            for word in trigger_words:
-                if text.lower().startswith(word):
-                    text = text[len(word):].strip()
-                    break
-    else:
-        is_mentioned = True
-
-    if not is_mentioned:
-        return
-
-    # 🐢 Ліміт запитів до ШІ — перевіряємо тільки тут, тобто лише коли бота
-    # справді покликали, а не на кожне повідомлення в чаті.
-    if check_rate_limit(message):
-        return
-
-    # 🧠 ФОНОВИЙ ПОШУК ТА ЗБЕРЕЖЕННЯ ФАКТІВ ПРО ЮЗЕРА
-    user_display_name = user.first_name or "Друже"
-    threading.Thread(
-        target=extract_and_save_facts, 
-        args=(user.id, user_display_name, text), 
-        daemon=True
-    ).start()
-
-    # 🧠 ЗЧИТУЄМО НАПРАЦЬОВАНУ ПАМ'ЯТЬ ЮЗЕРА
-    user_mem = get_user_memory(user.id)
-    known_facts = user_mem.get("facts", []) if user_mem else []
-    facts_context = ""
-    if known_facts:
-        facts_context = f"\n[ПАМ'ЯТЬ ПРО ЮЗЕРА: {', '.join(known_facts)}]"
-
-    voice_triggers = ['скажи', 'голосове', 'гс', 'озвуч', 'запиши', 'скажии']
-    wants_voice = any(trigger in text.lower() for trigger in voice_triggers)
-
-    gender_hint = ""
-    if gender == 'Дівчина':
-        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга' тощо] "
-    elif gender == 'Хлопець':
-        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
-
-    status_msg = None
-    try:
-        if wants_voice:
-            bot.send_chat_action(chat_id, 'record_voice')
-            status_msg = bot.reply_to(message, "Дід Драго прокашлюється і записує голосове... 🎤👴")
-            
-            # 👴 Використовуємо grandfather_model для генерації старечої відповіді!
-            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
-            response = grandfather_model.generate_content(full_prompt)
-            reply_text = response.text
-        else:
-            bot.send_chat_action(chat_id, 'typing')
-            status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
-            
-            chat = get_gemini_chat(chat_id)
-            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
-            response = chat.send_message(full_prompt)
-            reply_text = response.text
-
-        if wants_voice:
-            try:
-                bot.delete_message(chat_id, status_msg.message_id)
-            except Exception:
-                pass
-            send_voice_reply(chat_id, reply_text, reply_to_id=message.message_id)
-        else:
-            try:
-                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text, parse_mode="Markdown")
-            except Exception:
-                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text)
-        
-    except Exception as e:
-        print(f"Помилка Gemini в handle_text: {e}")
-        if status_msg:
-            try:
-                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Бля, щось у мене мізки на секунду заклинило. Спробуй ще раз, бро!")
-            except Exception:
-                pass
-
 # =====================================================
 # ⚔️ HEROES DATABASE
 # =====================================================
@@ -7569,6 +7413,163 @@ def crocodile_guess_handler(message):
 # ===================================================================
 # 🚀 ЗАПУСК БОТА ТА ВЕБ-СЕРВЕРА
 # ===================================================================
+# ===================================================================
+# 💬 ГОЛОВНИЙ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ
+# ===================================================================
+@bot.message_handler(content_types=['text'])
+def handle_text(message):
+    if is_user_banned(message.from_user.id):
+        return
+
+    text = message.text
+    chat_id = message.chat.id
+    user = message.from_user
+    chat_type = message.chat.type
+
+    # 🚫 Перевірка на флуд/спам — якщо флуд, далі повідомлення не обробляємо
+    if check_flood(message):
+        return
+
+    if text:
+        user_name = user.first_name or "Анонім"
+        RECENT_MESSAGES.append({
+            "user": user_name,
+            "text": text
+        })
+        if len(RECENT_MESSAGES) > MAX_HISTORY_LIMIT:
+            RECENT_MESSAGES.pop(0)
+
+    ensure_user_in_db(user)
+    gender = get_user_gender(user.id)
+
+    # 1. Оновлення статі, якщо вона невідома
+    if gender in ['Never', 'Невідомо']:
+        guessed = analyze_gender_from_text(text)
+        if guessed in ['Хлопець', 'Дівчина']:
+            try:
+                with db_lock:
+                    conn = get_db_connection()
+                    with conn.cursor() as cursor:
+                        cursor.execute("UPDATE stats SET gender = %s WHERE user_id = %s", (guessed, user.id))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                print(f"Помилка оновлення статі: {e}")
+
+    # 2. Нарахування грошей, оновлення лічильника повідомлень ТА ЧАСУ АКТИВНОСТІ
+    try:
+        earned_money = random.randint(5, 15)  # 💰 Генеруємо випадковий заробіток
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE stats 
+                    SET count = count + 1, 
+                        balance = COALESCE(balance, 0) + %s, 
+                        name = %s, 
+                        last_seen = NOW() 
+                    WHERE user_id = %s
+                    """,
+                    (earned_money, user.first_name, user.id)
+                )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка оновлення лічильника, балансу та last_seen: {e}")
+
+    is_mentioned = False
+
+    if chat_type in ['group', 'supergroup']:
+        trigger_words = ['драго', 'драго,', 'джарвіс', 'джарвіс,']
+        first_word = text.split()[0].lower() if text.split() else ""
+        
+        bot_username = bot.get_me().username
+        
+        if (first_word in trigger_words
+                or f"@{bot_username}" in text
+                or (message.reply_to_message
+                    and message.reply_to_message.from_user.id == bot.get_me().id)):
+            is_mentioned = True
+            for word in trigger_words:
+                if text.lower().startswith(word):
+                    text = text[len(word):].strip()
+                    break
+    else:
+        is_mentioned = True
+
+    if not is_mentioned:
+        return
+
+    # 🐢 Ліміт запитів до ШІ — перевіряємо тільки тут, тобто лише коли бота
+    # справді покликали, а не на кожне повідомлення в чаті.
+    if check_rate_limit(message):
+        return
+
+    # 🧠 ФОНОВИЙ ПОШУК ТА ЗБЕРЕЖЕННЯ ФАКТІВ ПРО ЮЗЕРА
+    user_display_name = user.first_name or "Друже"
+    threading.Thread(
+        target=extract_and_save_facts, 
+        args=(user.id, user_display_name, text), 
+        daemon=True
+    ).start()
+
+    # 🧠 ЗЧИТУЄМО НАПРАЦЬОВАНУ ПАМ'ЯТЬ ЮЗЕРА
+    user_mem = get_user_memory(user.id)
+    known_facts = user_mem.get("facts", []) if user_mem else []
+    facts_context = ""
+    if known_facts:
+        facts_context = f"\n[ПАМ'ЯТЬ ПРО ЮЗЕРА: {', '.join(known_facts)}]"
+
+    voice_triggers = ['скажи', 'голосове', 'гс', 'озвуч', 'запиши', 'скажии']
+    wants_voice = any(trigger in text.lower() for trigger in voice_triggers)
+
+    gender_hint = ""
+    if gender == 'Дівчина':
+        gender_hint = "[КОНТЕКСТ: Це дівчина. Звертайся до неї відповідно — 'ти', 'подруга' тощо] "
+    elif gender == 'Хлопець':
+        gender_hint = "[КОНТЕКСТ: Це хлопець. Звертайся відповідно — 'бро', 'чувак' тощо] "
+
+    status_msg = None
+    try:
+        if wants_voice:
+            bot.send_chat_action(chat_id, 'record_voice')
+            status_msg = bot.reply_to(message, "Дід Драго прокашлюється і записує голосове... 🎤👴")
+            
+            # 👴 Використовуємо grandfather_model для генерації старечої відповіді!
+            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
+            response = grandfather_model.generate_content(full_prompt)
+            reply_text = response.text
+        else:
+            bot.send_chat_action(chat_id, 'typing')
+            status_msg = bot.reply_to(message, "Йде відправка даних в СБУ... 👮‍♂️")
+            
+            chat = get_gemini_chat(chat_id)
+            full_prompt = f"[КОРИСТУВАЧ: {user_display_name}]{gender_hint}{facts_context}\nПОВІДОМЛЕННЯ: {text}"
+            response = chat.send_message(full_prompt)
+            reply_text = response.text
+
+        if wants_voice:
+            try:
+                bot.delete_message(chat_id, status_msg.message_id)
+            except Exception:
+                pass
+            send_voice_reply(chat_id, reply_text, reply_to_id=message.message_id)
+        else:
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text, parse_mode="Markdown")
+            except Exception:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=reply_text)
+        
+    except Exception as e:
+        print(f"Помилка Gemini в handle_text: {e}")
+        if status_msg:
+            try:
+                bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text="Бля, щось у мене мізки на секунду заклинило. Спробуй ще раз, бро!")
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
     bot.enable_save_next_step_handlers(delay=2)
     bot.load_next_step_handlers()
