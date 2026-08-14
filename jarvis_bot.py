@@ -362,6 +362,45 @@ AUTO_DELETE_EXCLUDED_COMMANDS = {
 }
 AUTO_DELETE_EXCLUDED_FUNCS = {'call_everyone', 'show_chat_activity', 'tag_inactive_users'}
 
+# ===================================================================
+# 🔒 РЕЖИМ АДМІНІСТРАТОРА (LOCKDOWN)
+# Коли увімкнено — бот виконує ТІЛЬКИ команди адміністрування/модерації.
+# Антиспам і перевірка бану працюють завжди, незалежно від режиму — вони
+# не проходять через цей список команд, а перевіряються напряму всередині
+# handle_text / handle_photo. Все інше (ШІ-чат, ігри, економіка, розваги)
+# ігнорується, поки режим увімкнено.
+# Функції is_lockdown_active() / set_lockdown_active() визначені нижче,
+# у секції адмін-панелі (поруч із ADMIN_ID/is_admin) — тут вони лише
+# викликаються в момент обробки повідомлення, коли бот вже повністю
+# завантажений і всі функції модуля визначені.
+# ===================================================================
+LOCKDOWN_ALLOWED_COMMANDS = {
+    'admin', 'адмін',
+    'addmod', 'delmod', 'rmmod', 'modlist', 'mods',
+    'mute', 'unmute', 'ban', 'unban', 'kick',
+    'clear', 'purge',
+    'check_users', 'cleanup', 'чистка',
+}
+LOCKDOWN_ALLOWED_FUNCS = {
+    'admin_panel',
+    'add_moderator', 'remove_moderator', 'list_moderators',
+    'mute_user', 'unmute_user',
+    'ban_user', 'unban_user', 'kick_user',
+    'clear_messages',
+    'cmd_cleanup_users',
+}
+# Callback-кнопки, дозволені в режимі адміністратора (за префіксом call.data)
+LOCKDOWN_ALLOWED_CALLBACK_PREFIXES = ('admin_',)
+
+
+def _is_allowed_in_lockdown(commands, func_name) -> bool:
+    if commands and (set(c.lower() for c in commands) & LOCKDOWN_ALLOWED_COMMANDS):
+        return True
+    if func_name in LOCKDOWN_ALLOWED_FUNCS:
+        return True
+    return False
+
+
 _autodelete_ctx = threading.local()
 
 
@@ -468,6 +507,15 @@ def _rate_limited_message_handler(self, *args, **kwargs):
             if getattr(_handler_ctx, 'in_progress', False):
                 return func(message, *a, **kw)
 
+            # 🔒 РЕЖИМ АДМІНІСТРАТОРА: пропускаємо тільки адмін/модераційні команди
+            try:
+                if is_lockdown_active() and not _is_allowed_in_lockdown(commands, func.__name__):
+                    return
+            except NameError:
+                # is_lockdown_active ще не визначена (теоретично неможливо на момент
+                # обробки повідомлень, лишаємо про всяк випадок, щоб бот не падав)
+                pass
+
             if check_rate_limit(message):
                 return
 
@@ -496,6 +544,40 @@ def _rate_limited_message_handler(self, *args, **kwargs):
 
 
 telebot.TeleBot.message_handler = _rate_limited_message_handler
+
+
+# 🔒 Так само обгортаємо callback_query_handler (кнопки під повідомленнями),
+# щоб у режимі адміністратора працювали лише кнопки адмін-панелі
+# (call.data, що починається з "admin_"), а решта інлайн-кнопок (ігри,
+# профіль, магазин і т.д.) ігнорувалась.
+_original_callback_query_handler = telebot.TeleBot.callback_query_handler
+
+
+def _lockdown_aware_callback_query_handler(self, *args, **kwargs):
+    real_decorator = _original_callback_query_handler(self, *args, **kwargs)
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(call, *a, **kw):
+            try:
+                if is_lockdown_active():
+                    data = getattr(call, 'data', '') or ''
+                    if not data.startswith(LOCKDOWN_ALLOWED_CALLBACK_PREFIXES):
+                        try:
+                            bot.answer_callback_query(call.id, "🔒 Бот у режимі адміністратора. Спробуй пізніше.", show_alert=True)
+                        except Exception:
+                            pass
+                        return
+            except NameError:
+                pass
+            return func(call, *a, **kw)
+
+        return real_decorator(wrapped)
+
+    return decorator
+
+
+telebot.TeleBot.callback_query_handler = _lockdown_aware_callback_query_handler
 
 generation_config = {
     "max_output_tokens": 2096,
@@ -5035,6 +5117,100 @@ init_admin_db()
 def is_admin(user_id):
     return int(user_id) == int(ADMIN_ID)
 
+# ===================================================================
+# 🔒 ЗБЕРЕЖЕННЯ РЕЖИМУ АДМІНІСТРАТОРА (LOCKDOWN) В БД + КЕШ У ПАМ'ЯТІ
+# ===================================================================
+def init_lockdown_db():
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS bot_mode (
+                        id INTEGER PRIMARY KEY DEFAULT 1,
+                        lockdown BOOLEAN DEFAULT FALSE,
+                        CHECK (id = 1)
+                    )
+                """)
+                cursor.execute("INSERT INTO bot_mode (id, lockdown) VALUES (1, FALSE) ON CONFLICT (id) DO NOTHING")
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка ініціалізації bot_mode: {e}")
+
+init_lockdown_db()
+
+_lockdown_lock = threading.Lock()
+_LOCKDOWN_CACHE = {"value": False, "loaded": False}
+
+
+def is_lockdown_active() -> bool:
+    """Швидка перевірка (кешована в пам'яті), чи увімкнено режим адміністратора."""
+    with _lockdown_lock:
+        if _LOCKDOWN_CACHE["loaded"]:
+            return _LOCKDOWN_CACHE["value"]
+
+    value = False
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT lockdown FROM bot_mode WHERE id = 1")
+                row = cursor.fetchone()
+            conn.close()
+        value = bool(row[0]) if row else False
+    except Exception as e:
+        print(f"Помилка читання режиму бота: {e}")
+
+    with _lockdown_lock:
+        _LOCKDOWN_CACHE["value"] = value
+        _LOCKDOWN_CACHE["loaded"] = True
+    return value
+
+
+def set_lockdown_active(value: bool):
+    """Перемикає режим адміністратора та одразу зберігає в БД."""
+    with _lockdown_lock:
+        _LOCKDOWN_CACHE["value"] = value
+        _LOCKDOWN_CACHE["loaded"] = True
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE bot_mode SET lockdown = %s WHERE id = 1", (value,))
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка запису режиму бота: {e}")
+
+
+LOCKDOWN_ON_TEXT = (
+    "🔒 <b>УВАГА: бот переходить у РЕЖИМ АДМІНІСТРАТОРА.</b>\n\n"
+    "Усі функції ШІ, ігри, економіка та розваги тимчасово вимкнено.\n"
+    "Продовжують працювати ТІЛЬКИ адмін-команди та модерація:\n\n"
+    "🛡 /admin, /адмін — панель керування\n"
+    "🔇 /mute, /unmute — мут / зняти мут\n"
+    "🚫 /ban, /unban, /kick — бан / розбан / кік\n"
+    "🧹 /clear, /purge — очистити повідомлення\n"
+    "👮 /addmod, /delmod, /modlist — керування модераторами\n"
+    "🔎 /check_users, /cleanup, /чистка — перевірка бази\n\n"
+    "Антиспам і бан-фільтр працюють як завжди.\n"
+    "⚠️ Користуватись ботом можуть тільки адміністратори/модератори."
+)
+LOCKDOWN_OFF_TEXT = (
+    "🔓 <b>Режим адміністратора вимкнено.</b>\n"
+    "Бот знову працює у звичайному режимі — ШІ-чат, ігри та всі команди доступні всім."
+)
+
+
+def _broadcast_lockdown_notice(text: str):
+    """Сповіщає групу (TELEGRAM_CHAT_ID) про зміну режиму бота."""
+    try:
+        bot.send_message(TELEGRAM_CHAT_ID, text, parse_mode="HTML")
+    except Exception as e:
+        print(f"Помилка сповіщення групи про зміну режиму бота: {e}")
+
+
 # --- ГЕНЕРАТОРИ МЕНЮ ---
 def get_main_admin_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -5044,6 +5220,8 @@ def get_main_admin_keyboard():
     )
     markup.add(types.InlineKeyboardButton("👥 Користувачі та Модерація", callback_data="admin_menu_users"))
     markup.add(types.InlineKeyboardButton("💾 Управління БД", callback_data="admin_menu_db"))
+    lockdown_label = "🔓 Вимкнути режим адміністратора" if is_lockdown_active() else "🔒 Режим адміністратора"
+    markup.add(types.InlineKeyboardButton(lockdown_label, callback_data="admin_toggle_lockdown"))
     return markup
 
 def get_mail_keyboard():
@@ -5371,6 +5549,24 @@ def handle_admin_callbacks(call):
             types.InlineKeyboardButton("❌ СКАСУВАТИ", callback_data="admin_menu_db")
         )
         bot.edit_message_text("⚠️ Впевнений, що хочеш скинути лічильник повідомлень?", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    elif action == "admin_toggle_lockdown":
+        new_value = not is_lockdown_active()
+        set_lockdown_active(new_value)
+        actor_name = call.from_user.first_name or "Адміністратор"
+
+        if new_value:
+            bot.answer_callback_query(call.id, "🔒 Режим адміністратора увімкнено!")
+            _broadcast_lockdown_notice(LOCKDOWN_ON_TEXT)
+        else:
+            bot.answer_callback_query(call.id, "🔓 Режим адміністратора вимкнено!")
+            _broadcast_lockdown_notice(LOCKDOWN_OFF_TEXT)
+
+        bot.edit_message_text(
+            "👑 <b>Головне меню управління:</b>\nОбери потрібний розділ:",
+            call.message.chat.id, call.message.message_id,
+            reply_markup=get_main_admin_keyboard(), parse_mode="HTML"
+        )
+
     elif action == "admin_confirm_reset":
         try:
             with db_lock:
@@ -6534,6 +6730,10 @@ def handle_photo(message):
     if is_user_banned(message.from_user.id):
         return
 
+    # 🔒 РЕЖИМ АДМІНІСТРАТОРА: реакції ШІ на фото вимкнені
+    if is_lockdown_active():
+        return
+
     chat_id = message.chat.id
     chat_type = message.chat.type
     user = message.from_user
@@ -7428,6 +7628,11 @@ def handle_text(message):
 
     # 🚫 Перевірка на флуд/спам — якщо флуд, далі повідомлення не обробляємо
     if check_flood(message):
+        return
+
+    # 🔒 РЕЖИМ АДМІНІСТРАТОРА: антиспам/бан вище вже відпрацювали як завжди,
+    # а от ШІ-чат, нарахування грошей і т.д. в цьому режимі вимкнені.
+    if is_lockdown_active():
         return
 
     if text:
