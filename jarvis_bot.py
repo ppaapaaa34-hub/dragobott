@@ -116,6 +116,8 @@ try:
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS biz_order TEXT DEFAULT NULL;")
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS show_full_inventory BOOLEAN DEFAULT TRUE;")
             cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS gender VARCHAR(20) DEFAULT 'Невідомо';")
+            # 👻 Дата першої появи юзера в базі — потрібна для /lurkers з порогом у днях
+            cursor.execute("ALTER TABLE stats ADD COLUMN IF NOT EXISTS first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
             
             # 2. Таблиця майна (Монополія)
             cursor.execute("""CREATE TABLE IF NOT EXISTS inventory (
@@ -6366,6 +6368,219 @@ def handle_sleepers_page(call):
 @bot.callback_query_handler(func=lambda call: call.data == "noop")
 def handle_noop(call):
     bot.answer_callback_query(call.id)
+
+
+# ===================================================================
+# 👻 МОВЧУНИ / ЛУРКЕРИ — ті, хто в чаті, але ЖОДНОГО разу не писав
+# (count = 0). На відміну від /sleepers (які просто давно мовчать),
+# тут показані саме ті, хто читає, але ніколи не написав жодного
+# повідомлення — і кожного можна кікнути прямо з клавіатури.
+# ===================================================================
+LURKERS_PAGE_SIZE = 8
+
+
+def _fetch_lurkers(min_days=0):
+    """min_days=0 -> всі мовчуни без обмежень.
+    min_days>0 -> тільки ті, хто в базі (тобто помічений ботом) вже
+    щонайменше стільки днів і досі жодного разу не написав."""
+    query = """
+        SELECT user_id, name, count, last_seen 
+        FROM stats 
+        WHERE in_chat = TRUE 
+          AND COALESCE(count, 0) = 0
+    """
+    params = ()
+    if min_days > 0:
+        query += " AND first_seen <= NOW() - INTERVAL '%s days'"
+        params = (min_days,)
+    query += " ORDER BY first_seen ASC NULLS FIRST LIMIT 100"
+
+    with db_lock:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        conn.close()
+
+    bot_id = bot.get_me().id
+    return [row for row in rows if row[0] != bot_id]
+
+
+def build_lurkers_page(rows, page=0, min_days=0):
+    total_users = len(rows)
+    total_pages = (total_users + LURKERS_PAGE_SIZE - 1) // LURKERS_PAGE_SIZE if total_users > 0 else 1
+
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * LURKERS_PAGE_SIZE
+    end_idx = start_idx + LURKERS_PAGE_SIZE
+    page_rows = rows[start_idx:end_idx]
+
+    lines = []
+    for idx, (user_id, name, count, last_seen) in enumerate(page_rows, start=start_idx + 1):
+        clean_name = html.escape(str(name)) if name else "Хтось"
+        seen_str = format_time_ago(last_seen) if last_seen else "ще жодного разу не заходив у поле зору бота"
+        lines.append(
+            f"{idx}. <a href=\"tg://user?id={user_id}\">{clean_name}</a> "
+            f"— 👀 у чаті, 0 повідомлень, останнє «поява» — {seen_str}"
+        )
+
+    threshold_line = (
+        f"<i>Поріг: у чаті щонайменше {min_days} дн. і 0 повідомлень.</i>\n\n"
+        if min_days > 0 else
+        "<i>Ці зайшли, читають, можливо навіть лайкають — але жодного разу не написали.</i>\n\n"
+    )
+
+    response_text = (
+        f"👻 <b>МОВЧУНИ ЦЬОГО ЧАТУ</b>\n"
+        + threshold_line +
+        f"⚠️ <b>Список (Стор. {page + 1}/{total_pages}), всього знайдено: {total_users}</b>\n\n"
+        + "\n".join(lines) +
+        "\n\n👆 Тисни кнопку під іменем, щоб кікнути когось із них."
+    )
+
+    markup = InlineKeyboardMarkup()
+    for user_id, name, count, last_seen in page_rows:
+        short_name = html.unescape(str(name))[:20] if name else "Хтось"
+        markup.row(InlineKeyboardButton(
+            f"👞 Кікнути: {short_name}",
+            callback_data=f"lurker_kick:{user_id}:{page}:{min_days}"
+        ))
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"lurkers_page:{page - 1}:{min_days}"))
+    nav_buttons.append(InlineKeyboardButton(f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"lurkers_page:{page + 1}:{min_days}"))
+    if nav_buttons:
+        markup.row(*nav_buttons)
+
+    return response_text, markup
+
+
+def _parse_lurkers_days_arg(message):
+    """Дістає необов'язковий аргумент з кількістю днів: /lurkers 7"""
+    parts = message.text.split()
+    if len(parts) > 1:
+        try:
+            return max(0, int(parts[1]))
+        except ValueError:
+            pass
+    return 0
+
+
+@bot.message_handler(commands=['lurkers', 'мовчуни', 'невидимки', 'молчуны'])
+def find_lurkers(message):
+    chat_id = message.chat.id
+    if message.chat.type not in ['group', 'supergroup']:
+        bot.reply_to(message, "Ей, бро, тут тільки ти і я — мовчунів шукати нема кого. 👁️")
+        return
+
+    if not is_chat_admin(chat_id, message.from_user.id):
+        return bot.reply_to(message, "❌ Ця команда тільки для адмінів/модераторів!")
+
+    min_days = _parse_lurkers_days_arg(message)
+
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        rows = _fetch_lurkers(min_days=min_days)
+
+        if not rows:
+            msg = (
+                f"🎉 Мовчунів з порогом {min_days}+ дн. не знайдено!"
+                if min_days > 0 else
+                "🎉 Мовчунів не знайдено — всі в чаті хоч раз та й написали щось!"
+            )
+            bot.reply_to(message, msg)
+            return
+
+        text, markup = build_lurkers_page(rows, page=0, min_days=min_days)
+        bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+
+    except Exception as e:
+        print(f"Помилка пошуку мовчунів: {e}")
+        bot.reply_to(message, f"❌ <b>Помилка БД або коду:</b> <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("lurkers_page:"))
+def handle_lurkers_page(call):
+    if not is_chat_admin(call.message.chat.id, call.from_user.id):
+        return bot.answer_callback_query(call.id, "❌ Ця команда тільки для адмінів/модераторів!", show_alert=True)
+
+    try:
+        parts = call.data.split(":")
+        page = int(parts[1])
+        min_days = int(parts[2]) if len(parts) > 2 else 0
+        chat_id = call.message.chat.id
+
+        rows = _fetch_lurkers(min_days=min_days)
+        if not rows:
+            bot.edit_message_text("🎉 Мовчунів більше немає — список порожній!", chat_id=chat_id, message_id=call.message.message_id)
+            return bot.answer_callback_query(call.id)
+
+        text, markup = build_lurkers_page(rows, page=page, min_days=min_days)
+        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.answer_callback_query(call.id)
+
+    except Exception as e:
+        print(f"Помилка перемикання сторінок мовчунів: {e}")
+        bot.answer_callback_query(call.id, "❌ Не вдалося оновити сторінку")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("lurker_kick:"))
+def handle_lurker_kick(call):
+    chat_id = call.message.chat.id
+
+    if not is_chat_admin(chat_id, call.from_user.id):
+        return bot.answer_callback_query(call.id, "❌ У тебе немає прав для цього!", show_alert=True)
+
+    try:
+        parts = call.data.split(":")
+        target_id = int(parts[1])
+        page = int(parts[2]) if len(parts) > 2 else 0
+        min_days = int(parts[3]) if len(parts) > 3 else 0
+    except (IndexError, ValueError):
+        return bot.answer_callback_query(call.id, "❌ Не вдалось розпізнати користувача")
+
+    if is_chat_admin(chat_id, target_id):
+        return bot.answer_callback_query(call.id, "🛡️ Це адмін/модератор, його не можна кікнути звідси.", show_alert=True)
+
+    try:
+        target_member = bot.get_chat_member(chat_id, target_id)
+        target_name = target_member.user.first_name or "Хтось"
+    except Exception:
+        target_name = "Хтось"
+
+    try:
+        bot.ban_chat_member(chat_id, target_id)
+        bot.unban_chat_member(chat_id, target_id)
+
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (target_id,))
+                conn.commit()
+                conn.close()
+        except Exception as db_err:
+            print(f"Помилка оновлення in_chat після кіку мовчуна: {db_err}")
+
+        bot.answer_callback_query(call.id, f"👞 {target_name} кікнутий!")
+
+        rows = _fetch_lurkers(min_days=min_days)
+        if not rows:
+            bot.edit_message_text(
+                "🎉 Всіх мовчунів кікнуто (або список був вичерпаний). Порожньо!",
+                chat_id=chat_id, message_id=call.message.message_id
+            )
+            return
+
+        text, markup = build_lurkers_page(rows, page=page, min_days=min_days)
+        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+    except Exception as e:
+        print(f"Помилка кіку мовчуна: {e}")
+        bot.answer_callback_query(call.id, f"❌ Не вдалось кікнути: {e}", show_alert=True)
 
 
 # ===================================================================
