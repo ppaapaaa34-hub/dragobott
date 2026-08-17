@@ -636,6 +636,8 @@ POLLINATIONS_REFERRER = "dragobott"
 def translate_prompt_to_english(prompt: str) -> str:
     """Flux/пollinations розуміють англійські промпти набагато краще за українські.
     Перекладаємо через Gemini коротким одноразовим викликом (без історії чату)."""
+    if is_ai_disabled():
+        return prompt
     try:
         translation_model = genai.GenerativeModel(model_name="gemini-2.5-flash")
         result = translation_model.generate_content(
@@ -4849,6 +4851,9 @@ def analyze_gender_from_user(user) -> str:
     if not name_info:
         return 'Невідомо'
 
+    if is_ai_disabled():
+        return 'Невідомо'
+
     prompt = (
         f"Визнач стать людини тільки по імені/нікнейму: '{name_info}'. "
         "Якщо ім'я українське/слов'янське — визначай по закінченню. "
@@ -4868,6 +4873,9 @@ def analyze_gender_from_user(user) -> str:
 def analyze_gender_from_text(text: str) -> str:
     """Визначає стать автора за контекстом речення (закінчення дієслів/прикметників)."""
     if len(text.strip()) < 5:
+        return 'Невідомо'
+
+    if is_ai_disabled():
         return 'Невідомо'
 
     prompt = (
@@ -5136,6 +5144,11 @@ def init_lockdown_db():
                         CHECK (id = 1)
                     )
                 """)
+                # 🤖 Окремий перемикач: вимикає ТІЛЬКИ Gemini-функції (чат, фото, новини,
+                # визначення статі, переклад промптів), а решта бота (ігри, економіка,
+                # модерація) продовжує працювати як завжди. Корисно, коли закінчився
+                # тариф/квота Gemini API, а бот в іншому має жити.
+                cursor.execute("ALTER TABLE bot_mode ADD COLUMN IF NOT EXISTS ai_disabled BOOLEAN DEFAULT FALSE")
                 cursor.execute("INSERT INTO bot_mode (id, lockdown) VALUES (1, FALSE) ON CONFLICT (id) DO NOTHING")
             conn.commit()
             conn.close()
@@ -5188,6 +5201,56 @@ def set_lockdown_active(value: bool):
         print(f"Помилка запису режиму бота: {e}")
 
 
+# ===================================================================
+# 🤖 ОКРЕМЕ ВИМКНЕННЯ ШІ (GEMINI) — БЕЗ LOCKDOWN'У ВСЬОГО БОТА
+# ===================================================================
+_ai_disabled_lock = threading.Lock()
+_AI_DISABLED_CACHE = {"value": False, "loaded": False}
+
+
+def is_ai_disabled() -> bool:
+    """Швидка перевірка (кешована в пам'яті), чи вимкнено Gemini-функції."""
+    with _ai_disabled_lock:
+        if _AI_DISABLED_CACHE["loaded"]:
+            return _AI_DISABLED_CACHE["value"]
+
+    value = False
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT ai_disabled FROM bot_mode WHERE id = 1")
+                row = cursor.fetchone()
+            conn.close()
+        value = bool(row[0]) if row else False
+    except Exception as e:
+        print(f"Помилка читання режиму ШІ: {e}")
+
+    with _ai_disabled_lock:
+        _AI_DISABLED_CACHE["value"] = value
+        _AI_DISABLED_CACHE["loaded"] = True
+    return value
+
+
+def set_ai_disabled(value: bool):
+    """Перемикає режим 'ШІ вимкнено' та одразу зберігає в БД."""
+    with _ai_disabled_lock:
+        _AI_DISABLED_CACHE["value"] = value
+        _AI_DISABLED_CACHE["loaded"] = True
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE bot_mode SET ai_disabled = %s WHERE id = 1", (value,))
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"Помилка запису режиму ШІ: {e}")
+
+
+AI_DISABLED_REPLY = "🤖💤 ШІ тимчасово вимкнено адміністратором (закінчився тариф Gemini). Спробуй трохи пізніше!"
+
+
 LOCKDOWN_ON_TEXT = (
     "🔒 <b>УВАГА: бот переходить у РЕЖИМ АДМІНІСТРАТОРА.</b>\n\n"
     "Усі функції ШІ, ігри, економіка та розваги тимчасово вимкнено.\n"
@@ -5226,6 +5289,8 @@ def get_main_admin_keyboard():
     markup.add(types.InlineKeyboardButton("💾 Управління БД", callback_data="admin_menu_db"))
     lockdown_label = "🔓 Вимкнути режим адміністратора" if is_lockdown_active() else "🔒 Режим адміністратора"
     markup.add(types.InlineKeyboardButton(lockdown_label, callback_data="admin_toggle_lockdown"))
+    ai_label = "🤖✅ Увімкнути ШІ (Gemini)" if is_ai_disabled() else "🤖❌ Вимкнути ШІ (Gemini)"
+    markup.add(types.InlineKeyboardButton(ai_label, callback_data="admin_toggle_ai"))
     return markup
 
 def get_mail_keyboard():
@@ -5715,6 +5780,21 @@ def handle_admin_callbacks(call):
         else:
             bot.answer_callback_query(call.id, "🔓 Режим адміністратора вимкнено!")
             _broadcast_lockdown_notice(LOCKDOWN_OFF_TEXT)
+
+        bot.edit_message_text(
+            "👑 <b>Головне меню управління:</b>\nОбери потрібний розділ:",
+            call.message.chat.id, call.message.message_id,
+            reply_markup=get_main_admin_keyboard(), parse_mode="HTML"
+        )
+
+    elif action == "admin_toggle_ai":
+        new_value = not is_ai_disabled()
+        set_ai_disabled(new_value)
+
+        if new_value:
+            bot.answer_callback_query(call.id, "🤖💤 ШІ (Gemini) вимкнено!")
+        else:
+            bot.answer_callback_query(call.id, "🤖✅ ШІ (Gemini) знову увімкнено!")
 
         bot.edit_message_text(
             "👑 <b>Головне меню управління:</b>\nОбери потрібний розділ:",
@@ -7035,7 +7115,11 @@ def handle_day_vote(call):
 @bot.message_handler(commands=['news', 'новини'])
 def generate_chat_news(message):
     chat_id = message.chat.id
-    
+
+    if is_ai_disabled():
+        bot.reply_to(message, AI_DISABLED_REPLY)
+        return
+
     if len(RECENT_MESSAGES) < 5:
         bot.reply_to(
             message, 
@@ -7139,6 +7223,12 @@ def handle_photo(message):
         is_mentioned = True
 
     if not is_mentioned:
+        return
+
+    # 🤖 ШІ вимкнено окремим перемикачем адміна — на фото Драго не реагує,
+    # решта бота працює як завжди.
+    if is_ai_disabled():
+        bot.reply_to(message, AI_DISABLED_REPLY)
         return
 
     # 🐢 Ліміт запитів до ШІ — лише коли бота справді покликали на фото.
@@ -7292,6 +7382,9 @@ def save_user_fact(user_id: int, user_name: str, new_fact: str):
 def extract_and_save_facts(user_id: int, user_name: str, text: str):
     """Викликає Gemini в режимі JSON для пошуку нових фактів у повідомленні юзера."""
     if len(text.strip()) < 5:
+        return
+
+    if is_ai_disabled():
         return
 
     extract_prompt = f"""
@@ -8072,6 +8165,12 @@ def handle_text(message):
         is_mentioned = True
 
     if not is_mentioned:
+        return
+
+    # 🤖 ШІ вимкнено окремим перемикачем адміна (наприклад, закінчився тариф Gemini) —
+    # решта бота (ігри, економіка, модерація) далі працює як завжди.
+    if is_ai_disabled():
+        bot.reply_to(message, AI_DISABLED_REPLY)
         return
 
     # 🐢 Ліміт запитів до ШІ — перевіряємо тільки тут, тобто лише коли бота
