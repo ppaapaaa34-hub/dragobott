@@ -382,6 +382,7 @@ LOCKDOWN_ALLOWED_COMMANDS = {
     'mute', 'unmute', 'ban', 'unban', 'kick',
     'clear', 'purge',
     'check_users', 'cleanup', 'чистка',
+    'lurkers', 'мовчуни', 'невидимки', 'молчуны',
 }
 LOCKDOWN_ALLOWED_FUNCS = {
     'admin_panel',
@@ -390,6 +391,7 @@ LOCKDOWN_ALLOWED_FUNCS = {
     'ban_user', 'unban_user', 'kick_user',
     'clear_messages',
     'cmd_cleanup_users',
+    'find_lurkers',
 }
 # Callback-кнопки, дозволені в режимі адміністратора (за префіксом call.data)
 LOCKDOWN_ALLOWED_CALLBACK_PREFIXES = ('admin_',)
@@ -5244,6 +5246,7 @@ def get_users_keyboard():
     markup.add(types.InlineKeyboardButton("✅ Розбанити", callback_data="admin_unban"))
     markup.add(types.InlineKeyboardButton("🗑 Видалити з бази (по ID/ніку)", callback_data="admin_delete_user"))
     markup.add(types.InlineKeyboardButton("🔕 Ігнор тегів (@all/збір)", callback_data="admin_menu_tagignore"))
+    markup.add(types.InlineKeyboardButton("👻 Мовчуни (0 повідомлень)", callback_data="admin_lurkers"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
 
@@ -5267,6 +5270,70 @@ def get_db_keyboard():
     markup.add(types.InlineKeyboardButton("🛠 Виконати SQL запит", callback_data="admin_sql"))
     markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_main"))
     return markup
+
+
+ADMIN_LURKERS_PAGE_SIZE = 6
+
+def build_admin_lurkers_page(rows, page=0, min_days=0):
+    """Те саме, що build_lurkers_page, але для адмін-панелі:
+    кік завжди йде в TARGET_GROUP_ID (незалежно, звідки натиснута кнопка —
+    хоч з ЛС), плюс кнопки швидкого фільтра за днями."""
+    total_users = len(rows)
+    total_pages = (total_users + ADMIN_LURKERS_PAGE_SIZE - 1) // ADMIN_LURKERS_PAGE_SIZE if total_users > 0 else 1
+
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * ADMIN_LURKERS_PAGE_SIZE
+    end_idx = start_idx + ADMIN_LURKERS_PAGE_SIZE
+    page_rows = rows[start_idx:end_idx]
+
+    lines = []
+    for idx, (user_id, name, count, last_seen) in enumerate(page_rows, start=start_idx + 1):
+        clean_name = html.escape(str(name)) if name else "Хтось"
+        seen_str = format_time_ago(last_seen) if last_seen else "ще не з'являвся в полі зору бота"
+        lines.append(
+            f"{idx}. <a href=\"tg://user?id={user_id}\">{clean_name}</a> "
+            f"— 0 пов., {seen_str}"
+        )
+
+    threshold_line = f"<i>Поріг: у чаті щонайменше {min_days} дн., 0 повідомлень.</i>\n\n" if min_days > 0 else \
+        "<i>Ці в чаті, але жодного разу не написали.</i>\n\n"
+
+    if lines:
+        body = "\n".join(lines)
+    else:
+        body = "— (на цій сторінці порожньо) —"
+
+    response_text = (
+        f"👻 <b>МОВЧУНИ (всього: {total_users}), стор. {page + 1}/{total_pages}</b>\n"
+        + threshold_line + body +
+        "\n\n👆 Кнопка під іменем — кік із групи. Кнопки нижче — фільтр за днями в чаті."
+    )
+
+    markup = types.InlineKeyboardMarkup()
+    for user_id, name, count, last_seen in page_rows:
+        short_name = html.unescape(str(name))[:20] if name else "Хтось"
+        markup.add(types.InlineKeyboardButton(
+            f"👞 Кікнути: {short_name}",
+            callback_data=f"admin_lurker_kick:{user_id}:{page}:{min_days}"
+        ))
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(types.InlineKeyboardButton("⬅️", callback_data=f"admin_lurkers_page:{page - 1}:{min_days}"))
+    nav_buttons.append(types.InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_buttons.append(types.InlineKeyboardButton("➡️", callback_data=f"admin_lurkers_page:{page + 1}:{min_days}"))
+    if nav_buttons:
+        markup.row(*nav_buttons)
+
+    filter_buttons = []
+    for label, days in [("Усі", 0), ("3+ дн.", 3), ("7+ дн.", 7), ("14+ дн.", 14)]:
+        prefix = "✅ " if days == min_days else ""
+        filter_buttons.append(types.InlineKeyboardButton(f"{prefix}{label}", callback_data=f"admin_lurkers_page:0:{days}"))
+    markup.row(*filter_buttons)
+
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_users"))
+    return response_text, markup
 
 @bot.message_handler(commands=['admin', 'адмін'])
 def admin_panel(message):
@@ -5462,6 +5529,92 @@ def handle_admin_callbacks(call):
     elif action == "admin_tagignore_cancel":
         bot.answer_callback_query(call.id, "Скасовано")
         bot.edit_message_text("🛑 Скасовано.", call.message.chat.id, call.message.message_id, reply_markup=get_tagignore_keyboard())
+
+    elif action == "admin_lurkers":
+        try:
+            rows = _fetch_lurkers(min_days=0)
+            if not rows:
+                bot.answer_callback_query(call.id, "🎉 Мовчунів немає!")
+                bot.edit_message_text(
+                    "🎉 Мовчунів не знайдено — всі в чаті хоч раз та й написали щось!",
+                    call.message.chat.id, call.message.message_id, reply_markup=get_users_keyboard()
+                )
+            else:
+                text, markup = build_admin_lurkers_page(rows, page=0, min_days=0)
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+                bot.answer_callback_query(call.id)
+        except Exception as e:
+            bot.answer_callback_query(call.id, "❌ Помилка")
+            bot.send_message(call.message.chat.id, f"❌ Помилка пошуку мовчунів: {e}")
+
+    elif action.startswith("admin_lurkers_page:"):
+        try:
+            parts = action.split(":")
+            page = int(parts[1])
+            min_days = int(parts[2]) if len(parts) > 2 else 0
+
+            rows = _fetch_lurkers(min_days=min_days)
+            if not rows:
+                bot.answer_callback_query(call.id, "🎉 Мовчунів немає з таким фільтром!")
+                bot.edit_message_text(
+                    f"🎉 Мовчунів з порогом {min_days}+ дн. не знайдено!" if min_days > 0 else "🎉 Мовчунів не знайдено!",
+                    call.message.chat.id, call.message.message_id, reply_markup=get_users_keyboard()
+                )
+            else:
+                text, markup = build_admin_lurkers_page(rows, page=page, min_days=min_days)
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+                bot.answer_callback_query(call.id)
+        except Exception as e:
+            bot.answer_callback_query(call.id, "❌ Не вдалося оновити сторінку")
+            print(f"Помилка admin_lurkers_page: {e}")
+
+    elif action.startswith("admin_lurker_kick:"):
+        try:
+            parts = action.split(":")
+            target_id = int(parts[1])
+            page = int(parts[2]) if len(parts) > 2 else 0
+            min_days = int(parts[3]) if len(parts) > 3 else 0
+        except (IndexError, ValueError):
+            bot.answer_callback_query(call.id, "❌ Не вдалось розпізнати користувача")
+        else:
+            if is_chat_admin(TARGET_GROUP_ID, target_id):
+                bot.answer_callback_query(call.id, "🛡️ Це адмін/модератор, його не можна кікнути звідси.", show_alert=True)
+            else:
+                try:
+                    target_member = bot.get_chat_member(TARGET_GROUP_ID, target_id)
+                    target_name = target_member.user.first_name or "Хтось"
+                except Exception:
+                    target_name = "Хтось"
+
+                try:
+                    bot.ban_chat_member(TARGET_GROUP_ID, target_id)
+                    bot.unban_chat_member(TARGET_GROUP_ID, target_id)
+
+                    try:
+                        with db_lock:
+                            conn = get_db_connection()
+                            with conn.cursor() as cursor:
+                                cursor.execute("UPDATE stats SET in_chat = FALSE WHERE user_id = %s", (target_id,))
+                            conn.commit()
+                            conn.close()
+                    except Exception as db_err:
+                        print(f"Помилка оновлення in_chat після кіку мовчуна (адмінпанель): {db_err}")
+
+                    bot.answer_callback_query(call.id, f"👞 {target_name} кікнутий!")
+
+                    rows = _fetch_lurkers(min_days=min_days)
+                    if not rows:
+                        bot.edit_message_text(
+                            "🎉 Всіх мовчунів кікнуто (або список був вичерпаний). Порожньо!",
+                            call.message.chat.id, call.message.message_id, reply_markup=get_users_keyboard()
+                        )
+                    else:
+                        text, markup = build_admin_lurkers_page(rows, page=page, min_days=min_days)
+                        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+                except Exception as e:
+                    print(f"Помилка кіку мовчуна (адмінпанель): {e}")
+                    bot.answer_callback_query(call.id, f"❌ Не вдалось кікнути: {e}", show_alert=True)
 
     elif action == "admin_stats":
         try:
