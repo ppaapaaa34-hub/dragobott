@@ -7311,7 +7311,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             
         bot.send_message(message.chat.id, greeting, parse_mode="HTML")
 
-    # 2. ЮЗЕР ДІЙСНО ВИЙШОВ АБО ЙОГО ВИГНАЛИ
+   # 2. ЮЗЕР ДІЙСНО ВИЙШОВ АБО ЙОГО ВИГНАЛИ
     elif old_status in ['member', 'administrator', 'restricted'] and new_status in ['left', 'kicked']:
         leaving_user = message.old_chat_member.user
         name = leaving_user.first_name
@@ -7327,7 +7327,7 @@ def handle_member_updates(message: types.ChatMemberUpdated):
         except Exception as e:
             print(f"Помилка БД при виході юзера: {e}")
 
-       goodbyes = [
+        goodbyes = [
             f"Ну і пофіг, <b>{name}</b> пішов. Менше народу — більше кисню. 👋",
             f"Аривідерчі, <b>{name}</b>! Не забудь двері зачинити. 🚪",
             f"<b>{name}</b> покинув чат. Схоже, не витримав нашого рівня інтелекту... 🧠",
@@ -7335,8 +7335,14 @@ def handle_member_updates(message: types.ChatMemberUpdated):
             f"<b>{name}</b> злився. Туди й дорога, ніхто плакати не буде. 🗑",
             f"Ще один чмоня (<b>{name}</b>) випав із чату. Нам же краще. 📉",
             f"<b>{name}</b> звалив у туман. Без тебе тут повітря чистіше стане. 💨",
-            f"Двертам, <b>{name}</b>. Без тебе цей чат точно нічого не втратив. 🖕"
+            f"Двері там, <b>{name}</b>. Без тебе цей чат точно нічого не втратив. 🖕",
+            f"Ну нарешті це непорозуміння (<b>{name}</b>) виповзло з чату. Скатертиною дорога! 🛤",
+            f"<b>{name}</b> здмився. На одну баластну одиницю в чаті менше. ⚓️",
+            f"Скатертиною дорога, <b>{name}</b>. Без тебе тут хоч на одного нитика менше стане. 🥱"
         ]
+        
+        bot.send_message(message.chat.id, random.choice(goodbyes), parse_mode="HTML")
+
 # ===================================================================
 # 🧠 РОБОТА З ПЕРСОНАЛЬНОЮ ПАМ'ЯТЮ ЮЗЕРІВ В БД
 # ===================================================================
