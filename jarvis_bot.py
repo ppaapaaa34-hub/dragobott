@@ -7164,7 +7164,7 @@ def generate_chat_news(message):
     chat_id = message.chat.id
 
     if is_ai_disabled():
-        bot.reply_to(message, AI_DISABLED_REPLY)
+        pass  # ШІ вимкнено — бот мовчить, без повідомлення користувачу
         return
 
     if len(RECENT_MESSAGES) < 5:
@@ -7275,7 +7275,7 @@ def handle_photo(message):
     # 🤖 ШІ вимкнено окремим перемикачем адміна — на фото Драго не реагує,
     # решта бота працює як завжди.
     if is_ai_disabled():
-        bot.reply_to(message, AI_DISABLED_REPLY)
+        pass  # ШІ вимкнено — бот мовчить, без повідомлення користувачу
         return
 
     # 🐢 Ліміт запитів до ШІ — лише коли бота справді покликали на фото.
@@ -8226,7 +8226,7 @@ def handle_text(message):
     # 🤖 ШІ вимкнено окремим перемикачем адміна (наприклад, закінчився тариф Gemini) —
     # решта бота (ігри, економіка, модерація) далі працює як завжди.
     if is_ai_disabled():
-        bot.reply_to(message, AI_DISABLED_REPLY)
+        pass  # ШІ вимкнено — бот мовчить, без повідомлення користувачу
         return
 
     # 🐢 Ліміт запитів до ШІ — перевіряємо тільки тут, тобто лише коли бота
