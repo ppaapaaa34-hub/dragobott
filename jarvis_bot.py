@@ -7,6 +7,7 @@ import json
 import random
 import io
 import threading
+import weakref
 import asyncio
 import math
 import html
@@ -41,15 +42,38 @@ db_lock = threading.Lock()
 # готових з'єднань і роздаємо їх повторно.
 # ===================================================================
 _db_pool = None
+_db_pool_init_lock = threading.Lock()
 
 def _init_db_pool():
     global _db_pool
     if _db_pool is None:
-        _db_pool = pg_pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=20,
-            dsn=DATABASE_URL,
-        )
+        with _db_pool_init_lock:
+            if _db_pool is None:
+                _db_pool = pg_pool.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=20,
+                    dsn=DATABASE_URL,
+                )
+
+def _return_conn_to_pool(pool_ref, raw_conn):
+    """Реально повертає (або викидає) сире з'єднання в пул.
+    Винесено в окрему функцію, бо її викликає і .close(), і
+    weakref-фіналізатор нижче (страховка на випадок, якщо .close()
+    так і не був викликаний через виняток по дорозі)."""
+    try:
+        if raw_conn.closed:
+            pool_ref.putconn(raw_conn, close=True)
+        else:
+            try:
+                raw_conn.rollback()
+            except Exception:
+                pass
+            pool_ref.putconn(raw_conn)
+    except Exception:
+        try:
+            raw_conn.close()
+        except Exception:
+            pass
 
 class _PooledConnection:
     """Обгортка над з'єднанням з пулу.
@@ -58,38 +82,61 @@ class _PooledConnection:
         conn = get_db_connection()
         ...
         conn.close()
+
     Різниця лише в тому, що .close() тепер не рве TCP-з'єднання,
-    а повертає його назад у пул для наступного запиту."""
+    а повертає його назад у пул для наступного запиту.
+
+    🛟 СТРАХОВКА ВІД ВИТОКУ З'ЄДНАНЬ ("connection pool exhausted"):
+    У коді бота ~80 місць викликають get_db_connection(), і більшість
+    з них НЕ обгорнуті в try/finally — лише try/except. Це значить, що
+    коли всередині блоку стається виняток (наприклад та сама SSL-помилка
+    нижче), .close() ніколи не викликається, з'єднання "губиться" і
+    лічильник зайнятих з'єднань пулу росте, поки maxconn=20 не
+    вичерпається. weakref.finalize гарантує, що з'єднання буде повернуте
+    в пул автоматично, щойно об'єкт _PooledConnection зникне зі scope —
+    навіть якщо .close() так і не викликали."""
 
     def __init__(self, pool_ref, conn):
         self._pool = pool_ref
         self._conn = conn
+        self._finalizer = weakref.finalize(self, _return_conn_to_pool, pool_ref, conn)
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
 
     def close(self):
-        try:
-            if self._conn.closed:
-                # з'єднання вже зламане (наприклад, розірвалось по мережі) — не повертаємо в пул
-                self._pool.putconn(self._conn, close=True)
-            else:
-                # на випадок незакомічених змін, щоб не тягнути відкриту транзакцію в пул
-                try:
-                    self._conn.rollback()
-                except Exception:
-                    pass
-                self._pool.putconn(self._conn)
-        except Exception:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
+        if self._finalizer.alive:
+            self._finalizer()  # викликає _return_conn_to_pool рівно один раз
 
 # Підключаємося до БД (тепер бере з'єднання з пулу замість нового щоразу)
 def get_db_connection():
     _init_db_pool()
-    raw_conn = _db_pool.getconn()
+    # 🔌 Neon (як і багато serverless-Postgres) сам рве неактивні SSL-з'єднання.
+    # Якщо пул віддає таке "мертве" з'єднання не перевіривши — код бота падає
+    # з "SSL connection has been closed unexpectedly". Тому перед видачею
+    # робимо дешеву перевірку живучості (SELECT 1) і, якщо вона провалилась,
+    # викидаємо це з'єднання й пробуємо наступне з пулу.
+    for _attempt in range(3):
+        raw_conn = _db_pool.getconn()
+        if raw_conn.closed:
+            try:
+                _db_pool.putconn(raw_conn, close=True)
+            except Exception:
+                pass
+            continue
+        try:
+            with raw_conn.cursor() as _probe_cur:
+                _probe_cur.execute("SELECT 1")
+        except Exception:
+            try:
+                _db_pool.putconn(raw_conn, close=True)
+            except Exception:
+                pass
+            continue
+        return _PooledConnection(_db_pool, raw_conn)
+    # Останній шанс: якщо весь пул виявився "мертвим" одночасно —
+    # відкриваємо пряме з'єднання в обхід пулу, аби бот не впав повністю.
+    raw_conn = psycopg2.connect(DATABASE_URL)
     return _PooledConnection(_db_pool, raw_conn)
 
 # Створення та авто-оновлення таблиць при запуску
